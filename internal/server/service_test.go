@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
@@ -31,6 +32,19 @@ func newTestServer(t *testing.T) (gruv1connect.GruServiceClient, *store.Store) {
 
 	client := gruv1connect.NewGruServiceClient(ts.Client(), ts.URL)
 	return client, s
+}
+
+// newTestService returns a *Service and the underlying *store.Store for direct method testing.
+func newTestService(t *testing.T) (*server.Service, *store.Store) {
+	t.Helper()
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	pub := ingestion.NewPublisher()
+	svc := server.NewService(s, pub)
+	return svc, s
 }
 
 func TestListSessions_empty(t *testing.T) {
@@ -104,4 +118,156 @@ func TestListProjects(t *testing.T) {
 	if len(resp.Msg.Projects) != 2 {
 		t.Errorf("projects = %d, want 2", len(resp.Msg.Projects))
 	}
+}
+
+func TestService_LaunchSession(t *testing.T) {
+	svc, s := newTestService(t)
+
+	reg := controller.NewRegistry()
+	launched := make(chan controller.LaunchOptions, 1)
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			launched <- opts
+			done := make(chan struct{})
+			close(done)
+			return &controller.SessionHandle{
+				SessionID:   opts.SessionID,
+				TmuxSession: "gru-testproject",
+				TmuxWindow:  "feat-dev·abcd1234",
+				Kill:        func(ctx context.Context) error { return nil },
+				Done:        done,
+				ExitCode:    func() int { return 0 },
+			}, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	projectDir := t.TempDir()
+	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir: projectDir,
+		Prompt:     "write tests",
+		Profile:    "default",
+	})
+
+	resp, err := svc.LaunchSession(context.Background(), req)
+	if err != nil {
+		t.Fatalf("LaunchSession: unexpected error: %v", err)
+	}
+	if resp.Msg.Session == nil {
+		t.Fatal("expected Session in response, got nil")
+	}
+	sess := resp.Msg.Session
+	if sess.Id == "" {
+		t.Error("session ID is empty")
+	}
+	if sess.Status != gruv1.SessionStatus_SESSION_STATUS_STARTING {
+		t.Errorf("Status = %v, want STARTING", sess.Status)
+	}
+	if sess.Runtime != "claude-code" {
+		t.Errorf("Runtime = %q, want claude-code", sess.Runtime)
+	}
+	if sess.TmuxSession != "gru-testproject" {
+		t.Errorf("TmuxSession = %q, want gru-testproject", sess.TmuxSession)
+	}
+	if sess.TmuxWindow != "feat-dev·abcd1234" {
+		t.Errorf("TmuxWindow = %q, want feat-dev·abcd1234", sess.TmuxWindow)
+	}
+
+	select {
+	case opts := <-launched:
+		if opts.Prompt != "write tests" {
+			t.Errorf("Prompt = %q, want %q", opts.Prompt, "write tests")
+		}
+		if opts.SessionID == "" {
+			t.Error("SessionID was not set in LaunchOptions")
+		}
+	default:
+		t.Error("controller.Launch was not called")
+	}
+
+	stored, err := s.Queries().GetSession(context.Background(), sess.Id)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if stored.TmuxSession == nil || *stored.TmuxSession != "gru-testproject" {
+		t.Errorf("stored TmuxSession = %v, want gru-testproject", stored.TmuxSession)
+	}
+}
+
+func TestService_KillSession(t *testing.T) {
+	svc, s := newTestService(t)
+
+	reg := controller.NewRegistry()
+	killCalled := make(chan struct{}, 1)
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			done := make(chan struct{})
+			close(done)
+			return &controller.SessionHandle{
+				SessionID:   opts.SessionID,
+				TmuxSession: "gru-testproject",
+				TmuxWindow:  "feat-dev·kill1234",
+				Kill:        func(ctx context.Context) error { killCalled <- struct{}{}; return nil },
+				Done:        done,
+				ExitCode:    func() int { return 0 },
+			}, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	projectDir := t.TempDir()
+	launchResp, err := svc.LaunchSession(context.Background(), connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir: projectDir,
+		Prompt:     "do work",
+	}))
+	if err != nil {
+		t.Fatalf("LaunchSession: %v", err)
+	}
+	sessionID := launchResp.Msg.Session.Id
+
+	killResp, err := svc.KillSession(context.Background(), connect.NewRequest(&gruv1.KillSessionRequest{Id: sessionID}))
+	if err != nil {
+		t.Fatalf("KillSession: unexpected error: %v", err)
+	}
+	if !killResp.Msg.Success {
+		t.Error("KillSession: Success = false, want true")
+	}
+
+	select {
+	case <-killCalled:
+	default:
+		t.Error("handle.Kill was not called")
+	}
+
+	stored, err := s.Queries().GetSession(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("GetSession after kill: %v", err)
+	}
+	if stored.Status != "killed" {
+		t.Errorf("status after kill = %q, want killed", stored.Status)
+	}
+	_ = s
+}
+
+func TestService_KillSession_NotFound(t *testing.T) {
+	svc, _ := newTestService(t)
+	svc.SetControllerRegistry(controller.NewRegistry())
+
+	_, err := svc.KillSession(context.Background(), connect.NewRequest(&gruv1.KillSessionRequest{Id: "nonexistent-id"}))
+	if err == nil {
+		t.Fatal("expected error for nonexistent session, got nil")
+	}
+}
+
+type fakeSessionController struct {
+	runtimeID string
+	launchFn  func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error)
+}
+
+func (f *fakeSessionController) RuntimeID() string                      { return f.runtimeID }
+func (f *fakeSessionController) Capabilities() []controller.Capability { return nil }
+func (f *fakeSessionController) Launch(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+	return f.launchFn(ctx, opts)
 }

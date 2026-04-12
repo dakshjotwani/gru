@@ -4,29 +4,46 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/store/db"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Service implements gruv1connect.GruServiceHandler.
 type Service struct {
-	store *store.Store
-	pub   *ingestion.Publisher
+	store         *store.Store
+	pub           *ingestion.Publisher
+	controllerReg *controller.Registry
+	handlesMu     sync.Mutex
+	handles       map[string]*controller.SessionHandle
 }
 
 var _ gruv1connect.GruServiceHandler = (*Service)(nil)
 
 func NewService(s *store.Store, pub *ingestion.Publisher) *Service {
-	return &Service{store: s, pub: pub}
+	return &Service{
+		store:         s,
+		pub:           pub,
+		controllerReg: controller.NewRegistry(),
+		handles:       make(map[string]*controller.SessionHandle),
+	}
+}
+
+func (s *Service) SetControllerRegistry(reg *controller.Registry) {
+	s.controllerReg = reg
 }
 
 func (s *Service) ListSessions(
@@ -65,14 +82,102 @@ func (s *Service) LaunchSession(
 	ctx context.Context,
 	req *connect.Request[gruv1.LaunchSessionRequest],
 ) (*connect.Response[gruv1.LaunchSessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("launch not yet implemented"))
+	projectDir := filepath.Clean(req.Msg.ProjectDir)
+	prompt := req.Msg.Prompt
+	profile := req.Msg.Profile
+
+	projectID, err := s.upsertProject(ctx, projectDir)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("upsert project: %w", err))
+	}
+
+	runtimeID := "claude-code"
+	ctrl, err := s.controllerReg.Get(runtimeID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("no controller for runtime %q", runtimeID))
+	}
+
+	sessionID := uuid.NewString()
+
+	handle, err := ctrl.Launch(ctx, controller.LaunchOptions{
+		SessionID:  sessionID,
+		ProjectDir: projectDir,
+		Prompt:     prompt,
+		Profile:    profile,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("launch: %w", err))
+	}
+
+	nilStr := func(v string) *string {
+		if v == "" {
+			return nil
+		}
+		return &v
+	}
+
+	row, err := s.store.Queries().CreateSession(ctx, store.CreateSessionParams{
+		ID:          sessionID,
+		ProjectID:   projectID,
+		Runtime:     runtimeID,
+		Status:      "starting",
+		Profile:     nilStr(profile),
+		TmuxSession: nilStr(handle.TmuxSession),
+		TmuxWindow:  nilStr(handle.TmuxWindow),
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create session row: %w", err))
+	}
+
+	s.handlesMu.Lock()
+	s.handles[sessionID] = handle
+	s.handlesMu.Unlock()
+
+	go func() {
+		<-handle.Done
+		s.handlesMu.Lock()
+		delete(s.handles, sessionID)
+		s.handlesMu.Unlock()
+	}()
+
+	return connect.NewResponse(&gruv1.LaunchSessionResponse{
+		Session: rowToSession(row),
+	}), nil
 }
 
 func (s *Service) KillSession(
 	ctx context.Context,
 	req *connect.Request[gruv1.KillSessionRequest],
 ) (*connect.Response[gruv1.KillSessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("kill not yet implemented"))
+	sessionID := req.Msg.Id
+	_, err := s.store.Queries().GetSession(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("session %q not found", sessionID))
+	} else if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	s.handlesMu.Lock()
+	handle, ok := s.handles[sessionID]
+	s.handlesMu.Unlock()
+
+	if ok && handle.Kill != nil {
+		killCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		if err := handle.Kill(killCtx); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("kill: %w", err))
+		}
+	}
+
+	_, err = s.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
+		Status: "killed",
+		ID:     sessionID,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("update status: %w", err))
+	}
+
+	return connect.NewResponse(&gruv1.KillSessionResponse{Success: true}), nil
 }
 
 func (s *Service) ListProjects(
@@ -146,6 +251,20 @@ func (s *Service) SubscribeEvents(
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+
+func (s *Service) upsertProject(ctx context.Context, projectDir string) (string, error) {
+	name := filepath.Base(projectDir)
+	row, err := s.store.Queries().UpsertProject(ctx, store.UpsertProjectParams{
+		ID:      uuid.NewString(),
+		Name:    name,
+		Path:    projectDir,
+		Runtime: "claude-code",
+	})
+	if err != nil {
+		return "", err
+	}
+	return row.ID, nil
+}
 
 func statusToString(s gruv1.SessionStatus) string {
 	switch s {
