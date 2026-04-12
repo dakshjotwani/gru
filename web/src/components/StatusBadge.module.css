@@ -1,0 +1,67 @@
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.statusNeedsAttention {
+  background: #ff4d4f22;
+  color: #ff4d4f;
+  border: 1px solid #ff4d4f88;
+}
+
+.statusRunning {
+  background: #52c41a22;
+  color: #52c41a;
+  border: 1px solid #52c41a88;
+}
+
+.statusIdle {
+  background: #faad1422;
+  color: #d48806;
+  border: 1px solid #faad1488;
+}
+
+.statusStarting {
+  background: #1677ff22;
+  color: #1677ff;
+  border: 1px solid #1677ff88;
+}
+
+.statusCompleted {
+  background: #8c8c8c22;
+  color: #8c8c8c;
+  border: 1px solid #8c8c8c88;
+}
+
+.statusErrored {
+  background: #ff4d4f22;
+  color: #cf1322;
+  border: 1px solid #ff4d4f88;
+}
+
+.statusKilled {
+  background: #8c8c8c22;
+  color: #595959;
+  border: 1px solid #8c8c8c88;
+}
+
+.statusUnknown {
+  background: #d9d9d922;
+  color: #595959;
+  border: 1px solid #d9d9d9;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pulsing {
+  animation: pulse 1.4s ease-in-out infinite;
+}

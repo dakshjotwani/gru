@@ -1,0 +1,61 @@
+.killBtn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #ff4d4f88;
+  background: transparent;
+  color: #ff4d4f;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.killBtn:hover {
+  background: #ff4d4f11;
+}
+
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.question {
+  font-size: 0.8rem;
+  color: #595959;
+}
+
+.confirmBtn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: none;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.confirmBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+  background: transparent;
+  color: #595959;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.cancelBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  font-size: 0.75rem;
+  color: #ff4d4f;
+}
