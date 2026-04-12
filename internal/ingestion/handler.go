@@ -131,6 +131,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update session's last_event_at. Status transition logic lives in Phase 1b
+	// normalizers; here we preserve the current status and refresh the timestamp.
+	lastEventAt := evt.Timestamp.UTC().Format(time.RFC3339)
+	if err := q.UpdateSessionLastEvent(r.Context(), store.UpdateSessionLastEventParams{
+		Status:         sess.Status,
+		LastEventAt:    &lastEventAt,
+		AttentionScore: sess.AttentionScore,
+		ID:             sess.ID,
+	}); err != nil {
+		// Non-fatal: event is stored and published even if the session timestamp update fails.
+		// Log and continue.
+		fmt.Printf("ingestion: update session last_event_at %s: %v\n", sess.ID, err)
+	}
+
 	protoEvt := &gruv1.SessionEvent{
 		Id:        evt.ID,
 		SessionId: evt.SessionID,

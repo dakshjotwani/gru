@@ -102,6 +102,8 @@ func (s *Service) SubscribeEvents(
 	req *connect.Request[gruv1.SubscribeEventsRequest],
 	stream *connect.ServerStream[gruv1.SessionEvent],
 ) error {
+	// TODO(phase-1c): apply req.Msg.ProjectIds and req.Msg.MinAttention filters
+	// to both the snapshot and the live stream.
 	rows, err := s.store.Queries().ListSessions(ctx, store.ListSessionsParams{})
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
