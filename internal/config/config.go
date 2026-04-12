@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -28,6 +29,9 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			cfg.APIKey = generateKey()
+			if err := cfg.save(path); err != nil {
+				return nil, fmt.Errorf("persist config: %w", err)
+			}
 			return cfg, nil
 		}
 		return nil, err
@@ -39,9 +43,23 @@ func Load(path string) (*Config, error) {
 
 	if cfg.APIKey == "" {
 		cfg.APIKey = generateKey()
+		if err := cfg.save(path); err != nil {
+			return nil, fmt.Errorf("persist config: %w", err)
+		}
 	}
 
 	return cfg, nil
+}
+
+func (c *Config) save(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("mkdir: %w", err)
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
 }
 
 func generateKey() string {

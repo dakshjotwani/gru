@@ -55,10 +55,35 @@ mkfifo "$SERVER_PIPE" "$WEB_PIPE"
 : > "$LOG_DIR/server.log"
 : > "$LOG_DIR/web.log"
 
+# Ensure ~/.gru/server.yaml exists with a stable API key.
+# The key is created once and reused across restarts so the web dashboard
+# and hook scripts always talk to the same server with the same credentials.
+GRU_CONFIG_FILE="${HOME}/.gru/server.yaml"
+mkdir -p "$(dirname "$GRU_CONFIG_FILE")"
+if [[ ! -f "$GRU_CONFIG_FILE" ]] || ! grep -q "^api_key:" "$GRU_CONFIG_FILE"; then
+  GENERATED_KEY="$(openssl rand -hex 16 2>/dev/null || \
+    od -vN 16 -A n -t x1 /dev/urandom | tr -d ' \n')"
+  cat > "$GRU_CONFIG_FILE" <<YAML
+addr: :7777
+api_key: ${GENERATED_KEY}
+db_path: ${HOME}/.gru/gru.db
+YAML
+  echo "created $GRU_CONFIG_FILE with new API key"
+fi
+GRU_API_KEY="$(grep '^api_key:' "$GRU_CONFIG_FILE" | awk '{print $2}' | tr -d '"'\''[:space:]')"
+export VITE_GRU_API_KEY="${GRU_API_KEY}"
+
 # Build the server binary first so we catch compile errors early.
+# Ensure fnm-managed node/npm is on PATH if not already present.
+FNM_BIN="${HOME}/.local/share/fnm/aliases/default/bin"
+if [[ -d "$FNM_BIN" && ":${PATH}:" != *":${FNM_BIN}:"* ]]; then
+  export PATH="${FNM_BIN}:${PATH}"
+fi
+
 echo "building gru..."
 cd "$ROOT"
-go build -o /tmp/gru-dev ./cmd/gru
+GO="${GO:-$(command -v go 2>/dev/null || echo /home/daksh/go/bin/go)}"
+"$GO" build -o /tmp/gru-dev ./cmd/gru
 
 echo "starting gru server..."
 /tmp/gru-dev server > "$SERVER_PIPE" 2>&1 &
@@ -68,7 +93,8 @@ SERVER_LOG_PID=$!
 
 echo "starting web dashboard..."
 cd "$ROOT/web"
-npm run dev > "$WEB_PIPE" 2>&1 &
+NPM="${NPM:-$(command -v npm)}"
+"$NPM" run dev > "$WEB_PIPE" 2>&1 &
 WEB_PID=$!
 prefix_log "web   " "\033[0;32m" "$LOG_DIR/web.log" "$WEB_PIPE" &
 WEB_LOG_PID=$!

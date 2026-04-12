@@ -131,11 +131,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update session's last_event_at. Status transition logic lives in Phase 1b
-	// normalizers; here we preserve the current status and refresh the timestamp.
+	// Derive the new session status from the event type.
+	newStatus := sess.Status
+	switch evt.Type {
+	case adapter.EventSessionStart:
+		newStatus = "running"
+	case adapter.EventSessionEnd:
+		newStatus = "completed"
+	case adapter.EventSessionCrash:
+		newStatus = "errored"
+	case adapter.EventToolPre, adapter.EventToolPost, adapter.EventToolError,
+		adapter.EventSubagentStart, adapter.EventSubagentEnd:
+		if sess.Status == "starting" {
+			newStatus = "running"
+		}
+	}
+
 	lastEventAt := evt.Timestamp.UTC().Format(time.RFC3339)
 	if err := q.UpdateSessionLastEvent(r.Context(), store.UpdateSessionLastEventParams{
-		Status:         sess.Status,
+		Status:         newStatus,
 		LastEventAt:    &lastEventAt,
 		AttentionScore: sess.AttentionScore,
 		ID:             sess.ID,

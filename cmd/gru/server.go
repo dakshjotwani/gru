@@ -11,8 +11,10 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/adapter"
-	"github.com/dakshjotwani/gru/internal/adapter/claude"
+	claudeadapter "github.com/dakshjotwani/gru/internal/adapter/claude"
 	"github.com/dakshjotwani/gru/internal/config"
+	"github.com/dakshjotwani/gru/internal/controller"
+	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
@@ -43,11 +45,15 @@ func runServer() error {
 	defer s.Close()
 
 	pub := ingestion.NewPublisher()
-	reg := adapter.NewRegistry()
-	reg.Register(claude.NewNormalizer())
+	adapterReg := adapter.NewRegistry()
+	adapterReg.Register(claudeadapter.NewNormalizer())
+
+	ctrlReg := controller.NewRegistry()
+	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", "7777"))
 
 	svc := server.NewService(s, pub)
-	ingestionHandler := ingestion.NewHandler(s, reg, pub)
+	svc.SetControllerRegistry(ctrlReg)
+	ingestionHandler := ingestion.NewHandler(s, adapterReg, pub)
 
 	// Start process liveness supervisor in the background.
 	serverCtx, serverCancel := context.WithCancel(context.Background())
@@ -71,9 +77,10 @@ func runServer() error {
 	mux.Handle("POST /events", server.BearerAuth(cfg.APIKey, ingestionHandler))
 
 	// h2c enables HTTP/2 cleartext (required for gRPC without TLS).
+	// CORS wraps the mux so OPTIONS preflights are answered before BearerAuth runs.
 	httpServer := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: h2c.NewHandler(mux, &http2.Server{}),
+		Handler: h2c.NewHandler(server.CORS(mux), &http2.Server{}),
 	}
 
 	log.Printf("gru server listening on %s (db: %s)", cfg.Addr, cfg.DBPath)

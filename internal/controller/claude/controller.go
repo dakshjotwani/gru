@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,18 +29,23 @@ func (r *realTmux) Output(args ...string) ([]byte, error) {
 }
 
 type ClaudeController struct {
-	apiKey string
-	host   string
-	port   string
-	tmux   tmuxRunner
+	apiKey    string
+	host      string
+	port      string
+	claudeBin string
+	tmux      tmuxRunner
 }
 
 func NewClaudeController(apiKey, host, port string) *ClaudeController {
-	return &ClaudeController{apiKey: apiKey, host: host, port: port, tmux: &realTmux{}}
+	bin, err := exec.LookPath("claude")
+	if err != nil {
+		bin = "claude" // fall back and let the shell report the error at launch time
+	}
+	return &ClaudeController{apiKey: apiKey, host: host, port: port, claudeBin: bin, tmux: &realTmux{}}
 }
 
 func NewClaudeControllerWithRunner(apiKey, host, port string, runner tmuxRunner) *ClaudeController {
-	return &ClaudeController{apiKey: apiKey, host: host, port: port, tmux: runner}
+	return &ClaudeController{apiKey: apiKey, host: host, port: port, claudeBin: "claude", tmux: runner}
 }
 
 func (c *ClaudeController) RuntimeID() string { return "claude-code" }
@@ -88,7 +94,16 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		windowName = shortID
 	}
 
-	claudeCmd := fmt.Sprintf("claude --dangerously-skip-permissions -p '%s'", opts.Prompt)
+	logDir := filepath.Join(os.Getenv("HOME"), ".gru", "sessions")
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		return nil, fmt.Errorf("claude: create session log dir: %w", err)
+	}
+	logFile := filepath.Join(logDir, sessionID+".log")
+
+	// Tee output to a log file so it survives after the window closes.
+	// remain-on-exit keeps the pane visible for inspection with gru attach.
+	claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions -p '%s' 2>&1 | tee %s",
+		c.claudeBin, opts.Prompt, logFile)
 
 	newWindowArgs := []string{
 		"new-window",
@@ -104,6 +119,11 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	if err := c.tmux.Run(newWindowArgs...); err != nil {
 		return nil, fmt.Errorf("claude: tmux new-window: %w", err)
 	}
+	// Set remain-on-exit on the specific window so the pane stays visible
+	// after the command finishes. Must target the window directly — setting
+	// this at the session level does not propagate to new windows in tmux.
+	windowTarget := tmuxSession + ":" + windowName
+	_ = c.tmux.Run("set-window-option", "-t", windowTarget, "remain-on-exit", "on")
 
 	done := make(chan struct{})
 
