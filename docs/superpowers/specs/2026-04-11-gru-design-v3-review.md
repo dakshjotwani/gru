@@ -1,6 +1,6 @@
-# Minions Design v3 -- Final Review
+# Gru Design v3 -- Final Review
 
-**Spec reviewed:** `2026-04-11-minions-design-v3.md` (Draft v3 -- Go + gRPC + Claude Code intelligence)
+**Spec reviewed:** `2026-04-11-gru-design-v3.md` (Draft v3 -- Go + gRPC + Claude Code intelligence)
 **Reviewer:** Claude Opus 4.6
 **Date:** 2026-04-10
 **Prior reviews:** v1 review (all issues addressed), v2 discussion (all decisions incorporated)
@@ -68,7 +68,7 @@ resources:
   max_concurrent_agents: 4
 ```
 
-With port management punted, the `ports` field has no consumer in the system. Either remove it or add a comment that it is informational (consumed by setup scripts, not enforced by minions).
+With port management punted, the `ports` field has no consumer in the system. Either remove it or add a comment that it is informational (consumed by setup scripts, not enforced by gru).
 
 ---
 
@@ -88,7 +88,7 @@ The frontend reference to `@connectrpc/connect-web` (line 654) already implies t
 
 The spec says ".proto files are the single source of truth for the API contract" (line 259) but provides no proto definitions or even a sketch of the service structure. For Phase 1, a developer needs to know at minimum:
 
-- Service names and RPC signatures (`MinionsService.ListSessions`, `MinionsService.SubscribeEvents`, `MinionsService.LaunchSession`, `MinionsService.KillSession`)
+- Service names and RPC signatures (`GruService.ListSessions`, `GruService.SubscribeEvents`, `GruService.LaunchSession`, `GruService.KillSession`)
 - Key message types (`Session`, `Event`, `EventFilter`, `LaunchRequest`)
 - Where the .proto files live in the repo
 
@@ -97,7 +97,7 @@ This does not need to be a complete proto file, but a sketch of the service defi
 **Recommendation:** Add a proto sketch section, something like:
 
 ```protobuf
-service MinionsService {
+service GruService {
   // Unary
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   rpc GetSession(GetSessionRequest) returns (Session);
@@ -114,7 +114,7 @@ service MinionsService {
 For a Go project, the module path and package structure matter for code generation (protoc-gen-go, sqlc) and for agents working on the codebase. A suggested layout:
 
 ```
-cmd/minions/         # main binary (server + CLI)
+cmd/gru/         # main binary (server + CLI)
 internal/
   server/            # gRPC server implementation
   store/             # SQLite store (sqlc generated)
@@ -141,7 +141,7 @@ Phase 1 depends on Claude Code hook scripts POSTing events to the backend. The s
 
 - Which Claude Code hooks to register (PreToolUse? PostToolUse? Notification? All of them?)
 - The hook script template (bash script that curls the backend)
-- How to install hooks (manual? `minions init` command?)
+- How to install hooks (manual? `gru init` command?)
 - What data is available in each hook event (this maps to Open Question 1, but Phase 1 cannot ship without answering it)
 
 A developer cannot build the EventNormalizer for Claude Code without knowing the exact shape of hook event payloads.
@@ -149,17 +149,17 @@ A developer cannot build the EventNormalizer for Claude Code without knowing the
 **Recommendation:** Add a "Claude Code Hook Integration" subsection to Phase 1 scope or to the adapter section. It should list:
 - Hooks to register: `PreToolUse`, `PostToolUse`, `Notification`, `Stop` (at minimum)
 - Hook script template: `#!/bin/bash\ncurl -s -m 2 -X POST http://localhost:$MINIONS_PORT/events -H "Authorization: Bearer $MINIONS_API_KEY" -d "$CLAUDE_HOOK_DATA" &`
-- Installation: `minions init` writes hook entries to `.claude/settings.json` (or user does it manually in MVP)
+- Installation: `gru init` writes hook entries to `.claude/settings.json` (or user does it manually in MVP)
 
 ### [IMPORTANT] Session ID generation and correlation undefined
 
-When a hook fires, how does the backend know which session it belongs to? The spec shows `session_id` in `MinionsEvent` but does not explain:
+When a hook fires, how does the backend know which session it belongs to? The spec shows `session_id` in `GruEvent` but does not explain:
 
 - Does Claude Code provide a session ID in hook events? If so, what is the field name?
-- If not, how does minions correlate events to sessions? By PID? By working directory?
-- For quick-launched sessions (Phase 1), minions spawns the process and knows the PID. But for externally started sessions (user runs `claude` manually), hooks fire but minions has no prior knowledge of the session.
+- If not, how does gru correlate events to sessions? By PID? By working directory?
+- For quick-launched sessions (Phase 1), gru spawns the process and knows the PID. But for externally started sessions (user runs `claude` manually), hooks fire but gru has no prior knowledge of the session.
 
-This is critical for Phase 1 because the primary use case is monitoring sessions that are already running, not just sessions launched by minions.
+This is critical for Phase 1 because the primary use case is monitoring sessions that are already running, not just sessions launched by gru.
 
 **Recommendation:** Research Claude Code hook payloads to determine what session identifier is available. If Claude Code provides a session ID or conversation ID in hook data, document it. If not, define a correlation strategy (e.g., PID from hook environment, or first `session.start` event creates a session entry keyed by working directory + PID).
 
@@ -215,15 +215,15 @@ The spec describes happy paths well but does not address common failure modes:
 - What happens when the Claude Code binary is not found or not installed?
 - What happens when SQLite write fails (disk full, permissions)?
 - What happens when a hook POST arrives for an unknown project?
-- What happens when `minions launch` is called and the backend is not running?
+- What happens when `gru launch` is called and the backend is not running?
 
 These do not need exhaustive treatment, but a "Failure Modes" subsection would help implementers handle edge cases consistently.
 
 ### [MINOR] Config file location ambiguity
 
-The spec references both `~/.minions/config.yaml` (line 272, for global config like API key) and `.minions/config.yaml` (line 240, for project config). These are different files in different locations. The naming overlap could cause confusion.
+The spec references both `~/.gru/config.yaml` (line 272, for global config like API key) and `.gru/config.yaml` (line 240, for project config). These are different files in different locations. The naming overlap could cause confusion.
 
-**Recommendation:** Rename the global config to `~/.minions/settings.yaml` or `~/.minions/server.yaml` to distinguish it from the per-project `.minions/config.yaml`.
+**Recommendation:** Rename the global config to `~/.gru/settings.yaml` or `~/.gru/server.yaml` to distinguish it from the per-project `.gru/config.yaml`.
 
 ### [MINOR] Attention decay formula may produce confusing UX
 

@@ -1,6 +1,6 @@
-# Minions Design Specification -- Review
+# Gru Design Specification -- Review
 
-**Spec reviewed:** `2026-04-11-minions-design.md` (Draft)
+**Spec reviewed:** `2026-04-11-gru-design.md` (Draft)
 **Reviewer:** Claude Opus 4.6
 **Date:** 2026-04-10
 
@@ -29,15 +29,15 @@ There is no resource manager described in the component breakdown. The Session L
 - Reject launch requests when `max_concurrent_agents` is reached (or queue them)
 - Handle lease expiry for zombie sessions (session crashes without teardown)
 
-DAKSH: maintaining valid ports in a db is kinda weird. what if an app external to minions takes one of these ports? i think it's ok to do this for resource conflicts between minions managed stuff but minions cannot necessarily guarantee the port isn't taken by something else. Lmk your thoughts but I feel like for something running locally we can say fuck it (assume configs handle this well and agents can bring up issues if something goes wrong) and not worry about the complexity this introduces. Do we need to architect this now or would this be easy to architect and introduce later after an mvp?
+DAKSH: maintaining valid ports in a db is kinda weird. what if an app external to gru takes one of these ports? i think it's ok to do this for resource conflicts between gru managed stuff but gru cannot necessarily guarantee the port isn't taken by something else. Lmk your thoughts but I feel like for something running locally we can say fuck it (assume configs handle this well and agents can bring up issues if something goes wrong) and not worry about the complexity this introduces. Do we need to architect this now or would this be easy to architect and introduce later after an mvp?
 
-DAKSH: Unrelated to this section, but I think we're going to need to make it clear to every agent that it is being managed by minions: provide them with the context on what that means, when they should stop and bubble info, when they should bubble up info, etc. Also would we need an MCP for agents to get info from minions or to communicate custom events? Please research the claude code sdk thoroughly before answering that.
+DAKSH: Unrelated to this section, but I think we're going to need to make it clear to every agent that it is being managed by gru: provide them with the context on what that means, when they should stop and bubble info, when they should bubble up info, etc. Also would we need an MCP for agents to get info from gru or to communicate custom events? Please research the claude code sdk thoroughly before answering that.
 
 #### [CRITICAL] No process supervision or crash recovery strategy
 
 The Session Launcher spawns agent processes, but the spec does not describe what happens when:
 - An agent process crashes (SIGKILL, OOM, machine restart)
-- The minions backend itself crashes and restarts
+- The gru backend itself crashes and restarts
 - Environment setup succeeds but agent spawn fails (partial setup state)
 - Teardown scripts fail or hang
 
@@ -85,7 +85,7 @@ SQLite is the right choice for MVP, but with 10-20 concurrent sessions generatin
 - Events older than N days (configurable, default 30) are pruned or archived
 - Session metadata and insights are retained longer (90 days default)
 - Knowledge entries are permanent
-- Add a `minions db prune` CLI command
+- Add a `gru db prune` CLI command
 
 DAKSH: Can you present to me a couple DB/event queue options here? for session metadata/insights and knowledge yeah i can see SQLite or postgres making sense but for the events I wanna understand if there are better solutions.
 
@@ -112,7 +112,7 @@ interface RuntimeAdapter {
   launch(options: LaunchOptions): Promise<SessionHandle>;
 
   // Normalize a raw event from this runtime into the common schema.
-  normalizeEvent(rawEvent: unknown): MinionsEvent;
+  normalizeEvent(rawEvent: unknown): GruEvent;
 
   // Required capabilities (adapter declares what it supports)
   capabilities: Set<'kill' | 'pause' | 'resume' | 'injectContext'>;
@@ -154,7 +154,7 @@ The spec lists signal weights (HIGH/MEDIUM/LOW) but does not describe how they c
 - New events reset the relevant signal's timestamp
 - Threshold for notification: configurable, default 8 (triggers on any HIGH signal)
 
-#### [MINOR] "Chat with Minions" has no described implementation approach
+#### [MINOR] "Chat with Gru" has no described implementation approach
 
 The chat panel is listed as Phase 3 scope but has no implementation details. Is it a Claude API call with the fleet state as context? Does it have tool use to query the database? Can it execute actions (spawn, kill)?
 
@@ -209,7 +209,7 @@ With 10-20 concurrent sessions, each emitting events on every tool call, the bac
 #### [IMPORTANT] Process management via `child_process` is fragile for long-lived sessions
 
 The tech stack recommends `child_process` / Bun shell for launching `claude` processes. For sessions that run for hours:
-- The minions backend process is the parent -- if it restarts, all child processes become orphans (re-parented to init, but minions loses the PID mapping)
+- The gru backend process is the parent -- if it restarts, all child processes become orphans (re-parented to init, but gru loses the PID mapping)
 - Stdout/stderr buffering of child processes can cause memory pressure if not properly drained
 - No mention of process groups -- killing a session should kill the entire process tree, not just the top-level PID
 
@@ -222,7 +222,7 @@ The tech stack recommends `child_process` / Bun shell for launching `claude` pro
 
 #### [MINOR] Hook scripts as `curl` POST have failure modes
 
-The hook scripts are described as thin `curl POST` commands. If the minions backend is down or slow:
+The hook scripts are described as thin `curl POST` commands. If the gru backend is down or slow:
 - `curl` will block the Claude Code hook execution. If Claude Code hooks are synchronous (blocking the agent), this adds latency to every tool call.
 - Lost events mean incomplete session tracking. There is no retry or local buffering.
 
@@ -238,8 +238,8 @@ The hook scripts are described as thin `curl POST` commands. If the minions back
 #### [IMPORTANT] Adapter abstraction conflates event ingestion with session control
 
 The current adapter interface has four concerns lumped together. In practice, the Event Source concern flows in the opposite direction from the other three:
-- **Event Source:** runtime pushes to minions (inbound)
-- **Session Launcher / Control / Metadata:** minions calls into the runtime (outbound)
+- **Event Source:** runtime pushes to gru (inbound)
+- **Session Launcher / Control / Metadata:** gru calls into the runtime (outbound)
 
 For Claude Code, the event source is hook scripts (HTTP POST) that run outside the adapter code entirely. The adapter itself only handles the outbound direction. This means the "adapter" is really two separate things: an event normalizer (stateless, runs in the ingestion pipeline) and a session controller (stateful, manages processes).
 
@@ -261,12 +261,12 @@ Different runtimes (and different versions of the same runtime) will support dif
 
 #### [IMPORTANT] MVP lacks session launching -- this limits the "daily driver" value
 
-The spec explicitly excludes session launching from Phase 1: "you still launch `claude` manually; minions just watches." For a user running 10-20 concurrent sessions, the monitoring dashboard alone is useful, but the *pain* of managing sessions is in launching them with the right environment. Phase 1 becomes a "nice to have" visibility tool, not a daily driver that changes workflow.
+The spec explicitly excludes session launching from Phase 1: "you still launch `claude` manually; gru just watches." For a user running 10-20 concurrent sessions, the monitoring dashboard alone is useful, but the *pain* of managing sessions is in launching them with the right environment. Phase 1 becomes a "nice to have" visibility tool, not a daily driver that changes workflow.
 
 **Proposed fix:** Consider pulling the simplest possible launch capability into Phase 1:
 - A "quick launch" button that runs `claude --resume` or `claude -p "prompt"` in a specified directory
 - No environment setup, no agent profiles, no health checks -- just "spawn claude in this directory with this prompt"
-- This turns minions from "a dashboard you check" into "the place you start and watch sessions" from day one
+- This turns gru from "a dashboard you check" into "the place you start and watch sessions" from day one
 
 Alternatively, if you want to keep Phase 1 scope tight, add a Phase 1.5 milestone: basic launch (no env setup) that can be built in a day after Phase 1.
 
@@ -275,15 +275,15 @@ DAKSH: I think this is important. I do think session management is a key part of
 #### [IMPORTANT] No CLI interface for MVP
 
 The spec describes a web dashboard as the MVP frontend. For a power user running 10-20 sessions, a CLI is often faster than switching to a browser. Common operations:
-- `minions status` -- fleet overview
-- `minions launch av-sim feature-dev "implement the parking feature"`
-- `minions kill session-123`
-- `minions attention` -- what needs me?
+- `gru status` -- fleet overview
+- `gru launch av-sim feature-dev "implement the parking feature"`
+- `gru kill session-123`
+- `gru attention` -- what needs me?
 
 **Proposed fix:** Add a minimal CLI to Phase 1 or Phase 1.5:
-- `minions status` (list sessions, one line each)
-- `minions kill <session-id>`
-- `minions tail <session-id>` (stream events from a session)
+- `gru status` (list sessions, one line each)
+- `gru kill <session-id>`
+- `gru tail <session-id>` (stream events from a session)
 - The CLI just calls the REST API -- minimal implementation cost
 
 #### [MINOR] Desktop notifications via browser Notification API require the dashboard to be open
@@ -293,7 +293,7 @@ The spec uses browser Notification API for desktop notifications. This only work
 **Proposed fix:** Options:
 - Use a service worker for background notifications (works in Chrome even when tab is closed, but not all browsers) DAKSH: do this please if possible
 - Add native notification support via `node-notifier` or Bun equivalent as a backend-side option
-- MVP compromise: document the limitation; the CLI polling approach (`minions watch --notify`) is a backup
+- MVP compromise: document the limitation; the CLI polling approach (`gru watch --notify`) is a backup
 
 ---
 
@@ -303,33 +303,33 @@ The five open questions are relevant, but there are several obvious gaps:
 
 #### Missing Open Questions
 
-**[IMPORTANT] How does minions handle worktree management?**
+**[IMPORTANT] How does gru handle worktree management?**
 
-For 10-20 concurrent sessions on the same repo, each session likely needs its own git worktree. The spec mentions worktree helpers in `.minions/helpers/` but never describes the worktree lifecycle: who creates worktrees? Who cleans them up? Does the Session Launcher create one per session? Is there a pool? This is one of the most operationally important questions for the target use case.
+For 10-20 concurrent sessions on the same repo, each session likely needs its own git worktree. The spec mentions worktree helpers in `.gru/helpers/` but never describes the worktree lifecycle: who creates worktrees? Who cleans them up? Does the Session Launcher create one per session? Is there a pool? This is one of the most operationally important questions for the target use case.
 
-**Proposed addition:** Add as Open Question 6: "Worktree management: Does minions manage git worktrees for concurrent sessions on the same repo? If so, how are they allocated, named, and cleaned up? If not, how does the user manage this manually at scale?"
+**Proposed addition:** Add as Open Question 6: "Worktree management: Does gru manage git worktrees for concurrent sessions on the same repo? If so, how are they allocated, named, and cleaned up? If not, how does the user manage this manually at scale?"
 
-Suggested answer: Minions should own worktree lifecycle for launched sessions. The Session Launcher creates a worktree (named `minions-<session-id>`) from the configured base branch, the agent works in it, and teardown removes it (or marks it for manual cleanup if the session produced commits).
+Suggested answer: Gru should own worktree lifecycle for launched sessions. The Session Launcher creates a worktree (named `gru-<session-id>`) from the configured base branch, the agent works in it, and teardown removes it (or marks it for manual cleanup if the session produced commits).
 
 **[IMPORTANT] What is the cost model for the intelligence layer?**
 
-The intelligence layer makes Claude API calls for classification, stuck detection, and summaries. With 10-20 sessions, each getting classified and periodically re-evaluated, plus periodic summaries, the API cost of running minions itself could be significant. The spec does not estimate costs or discuss strategies to minimize them.
+The intelligence layer makes Claude API calls for classification, stuck detection, and summaries. With 10-20 sessions, each getting classified and periodically re-evaluated, plus periodic summaries, the API cost of running gru itself could be significant. The spec does not estimate costs or discuss strategies to minimize them.
 
 **Proposed addition:** Add as Open Question 7: "What is the expected Claude API cost of running the intelligence layer for 10-20 concurrent sessions? What are the strategies to keep this manageable?"
 
 Suggested answer: Use Haiku for all classification and stuck detection (stated but worth quantifying). Use prompt caching aggressively. Batch classifications. Budget estimate: ~$2-5/day for intelligence layer at 20 sessions (mostly Haiku calls).
 
-**[IMPORTANT] How does minions discover existing projects?**
+**[IMPORTANT] How does gru discover existing projects?**
 
-The spec describes project config in `.minions/config.yaml`, but never explains how minions knows which projects exist. Is there a registry? Does the user add them manually? Does minions scan a directory tree?
+The spec describes project config in `.gru/config.yaml`, but never explains how gru knows which projects exist. Is there a registry? Does the user add them manually? Does gru scan a directory tree?
 
-**Proposed addition:** Add as Open Question 8: "Project discovery: how does minions know about projects? Manual registration, directory scan, or config file?"
+**Proposed addition:** Add as Open Question 8: "Project discovery: how does gru know about projects? Manual registration, directory scan, or config file?"
 
-Suggested answer: MVP uses a global `~/.minions/projects.yaml` listing project paths. Phase 2 could add `minions init` to register a project and auto-discovery from git repos in configured directories.
+Suggested answer: MVP uses a global `~/.gru/projects.yaml` listing project paths. Phase 2 could add `gru init` to register a project and auto-discovery from git repos in configured directories.
 
-**[MINOR] How does the "use minions to build minions" bootstrap actually work?**
+**[MINOR] How does the "use gru to build gru" bootstrap actually work?**
 
-The spec mentions this as a goal but never describes the mechanics. Once Phase 1 is running, what does "use minions to build Phase 2" look like concretely? This should be sketched out to validate the phasing.
+The spec mentions this as a goal but never describes the mechanics. Once Phase 1 is running, what does "use gru to build Phase 2" look like concretely? This should be sketched out to validate the phasing.
 
 **Proposed addition:** Add a short "Bootstrap Plan" subsection:
 - Build Phase 1 manually (one Claude Code session)

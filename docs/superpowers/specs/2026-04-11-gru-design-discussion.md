@@ -1,4 +1,4 @@
-# Minions Design — Discussion Notes
+# Gru Design — Discussion Notes
 
 **Date:** 2026-04-11
 **Participants:** Daksh, Claude
@@ -54,20 +54,20 @@
 **Decision:** No Resource Manager for ports. Setup scripts handle port allocation themselves. If a port is taken, the setup script fails and the agent deals with it.
 
 **Rationale:**
-- Minions can't guarantee system-wide port availability anyway
-- External apps can grab ports that minions "allocated"
+- Gru can't guarantee system-wide port availability anyway
+- External apps can grab ports that gru "allocated"
 - `max_concurrent_agents` is just a counter — doesn't need a resource manager
 - Easy to add later if collisions become a real problem
 
 ### 5. Agent Awareness: Skill First, MCP Later
 
-**Decision:** Phase 1-2 uses a `.claude/skills/minions-agent.md` skill loaded into every managed session. Phase 3+ adds a minions MCP server for richer bidirectional communication.
+**Decision:** Phase 1-2 uses a `.claude/skills/gru-agent.md` skill loaded into every managed session. Phase 3+ adds a gru MCP server for richer bidirectional communication.
 
 **Rationale:**
 - Skill is zero-infrastructure — just a markdown file explaining the protocol
-- Hooks provide the outbound channel (agent → minions) for free
+- Hooks provide the outbound channel (agent → gru) for free
 - MCP server adds value only when there's knowledge to query (Phase 3+)
-- Agents can push status via hook events; MCP lets them pull context from minions
+- Agents can push status via hook events; MCP lets them pull context from gru
 
 ### 6. Session Launching + Attach in Phase 1
 
@@ -77,7 +77,7 @@
 - AI agents are building this — no human implementation bottleneck to justify splitting phases
 - Session launching is the highest-value feature for daily driving
 - Attach = dashboard live event stream + context injection (works across tailnet)
-- Terminal attach (`minions attach <id>`) as a nice-to-have
+- Terminal attach (`gru attach <id>`) as a nice-to-have
 
 ### 7. Event Store: SQLite for Everything
 
@@ -113,4 +113,4 @@
 - Context injection mechanism: file-based vs stdin vs MCP — prototype during Phase 1
 - Worktree management strategy: document in Phase 2 spec
 - Intelligence cost model: measure actual Claude Code (Haiku) session costs during Phase 2
-- Project discovery: `~/.minions/projects.yaml` for MVP
+- Project discovery: `~/.gru/projects.yaml` for MVP

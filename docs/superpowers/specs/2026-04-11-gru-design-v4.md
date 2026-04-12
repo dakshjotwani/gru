@@ -1,21 +1,21 @@
-# Minions — Design Specification
+# Gru — Design Specification
 
 **Date:** 2026-04-11
-**Status:** Draft v3 (post-discussion — Go + gRPC + Claude Code intelligence)
+**Status:** Draft v4 (final review fixes)
 
 ## Vision
 
-Minions is mission control for a fleet of AI coding agent sessions. It watches, informs, alerts, suggests, and launches — but never tells agents how to do their job. The underlying agent runtime (Claude Code, Codex, or future tools) handles execution and internal orchestration. Minions handles visibility, intelligence, and session-level orchestration across projects.
+Gru is mission control for a fleet of AI coding agent sessions. It watches, informs, alerts, suggests, and launches — but never tells agents how to do their job. The underlying agent runtime (Claude Code, Codex, or future tools) handles execution and internal orchestration. Gru handles visibility, intelligence, and session-level orchestration across projects.
 
-Minions is **runtime-agnostic by design**. Claude Code is the primary runtime, but the interfaces are generic enough to support any agentic tool that can emit events and be launched programmatically.
+Gru is **runtime-agnostic by design**. Claude Code is the primary runtime, but the interfaces are generic enough to support any agentic tool that can emit events and be launched programmatically.
 
-The long-term goal: you describe what you want done, minions figures out which projects need work, spins up the right agents with the right environments, monitors them, surfaces what needs your attention, accumulates knowledge, and gets smarter over time. "Use minions to build minions."
+The long-term goal: you describe what you want done, gru figures out which projects need work, spins up the right agents with the right environments, monitors them, surfaces what needs your attention, accumulates knowledge, and gets smarter over time. "Use gru to build gru."
 
 ---
 
 ## Core Concepts
 
-### What Minions Is
+### What Gru Is
 
 - A **monitoring layer** that gives you at-a-glance status of all running sessions
 - An **intelligence layer** that classifies sessions, detects stuck agents, scores attention priority, and summarizes fleet state
@@ -23,14 +23,14 @@ The long-term goal: you describe what you want done, minions figures out which p
 - A **knowledge accumulator** that learns from agent sessions and generates skills for future agents
 - A **notification system** that bubbles up what needs your attention across any frontend
 
-### What Minions Is NOT
+### What Gru Is NOT
 
 - Not an agent orchestration framework — the agent runtime (Claude Code, etc.) handles subagents, agent teams, and internal coordination
 - Not a CI/CD system — the agent runtime with its own integrations handles CI failures autonomously
 - Not an analytics-only dashboard — it acts (launches, notifies, generates skills), not just reports
 - Not coupled to a specific agent runtime — Claude Code is the primary target, but the interfaces support any runtime that can emit events and be launched programmatically
 
-### Responsibility Boundary: Minions vs Agent Runtime
+### Responsibility Boundary: Gru vs Agent Runtime
 
 | Concern | Owner |
 |---|---|
@@ -38,12 +38,12 @@ The long-term goal: you describe what you want done, minions figures out which p
 | Spawning and coordinating subagents | Agent runtime |
 | Handling CI failures, retries | Agent runtime (with MCP or built-in integrations) |
 | Choosing tools, writing code, running tests | Agent runtime |
-| Monitoring all sessions across all projects | **Minions** |
-| Classifying session type, detecting stuck agents | **Minions** |
-| Setting up environments for new sessions | **Minions** |
-| Notifying the human when attention is needed | **Minions** |
-| Suggesting what agents to spawn from external context | **Minions** |
-| Accumulating knowledge and generating skills | **Minions** |
+| Monitoring all sessions across all projects | **Gru** |
+| Classifying session type, detecting stuck agents | **Gru** |
+| Setting up environments for new sessions | **Gru** |
+| Notifying the human when attention is needed | **Gru** |
+| Suggesting what agents to spawn from external context | **Gru** |
+| Accumulating knowledge and generating skills | **Gru** |
 
 ---
 
@@ -51,9 +51,9 @@ The long-term goal: you describe what you want done, minions figures out which p
 
 | Entity | Description | Lifecycle |
 |---|---|---|
-| **Project** | A codebase with a `.minions/` config directory | Persistent — exists as long as the repo does |
+| **Project** | A codebase with a `.gru/` config directory | Persistent — exists as long as the repo does |
 | **Session** | A running agent process via any runtime adapter (Claude Code, Managed Agents, etc.) | Ephemeral — created, runs, terminates |
-| **Agent Profile** | A preconfigured way to launch sessions: skills, env scripts, model choice | Persistent — defined in `.minions/config.yaml` |
+| **Agent Profile** | A preconfigured way to launch sessions: skills, env scripts, model choice | Persistent — defined in `.gru/config.yaml` |
 | **Event** | An emission from any runtime adapter (hooks, SSE, etc.) | Append-only — stored in the backend |
 | **Insight** | An AI-derived observation: type classification, stuck detection, attention score | Computed — derived from events |
 | **Knowledge Entry** | An accumulated learning from agent sessions | Persistent — grows over time, may graduate to skills |
@@ -107,12 +107,12 @@ Hooks are thin (just HTTP POST raw event JSON). The Go backend ingests, processe
 
 ### Agent Runtime Adapter
 
-Minions is runtime-agnostic. The **Agent Runtime Adapter** is the abstraction boundary between minions and the underlying agentic tool. Claude Code is the first implementation; others (Codex, future tools) can be added by implementing the same interface.
+Gru is runtime-agnostic. The **Agent Runtime Adapter** is the abstraction boundary between gru and the underlying agentic tool. Claude Code is the first implementation; others (Codex, future tools) can be added by implementing the same interface.
 
 The adapter is split into two interfaces that can be implemented independently:
 
-1. **EventNormalizer** — stateless, registered per runtime type. Called during event ingestion to normalize raw events into the common schema. A new runtime only needs this for Phase 1 (monitoring).
-2. **SessionController** — stateful, manages launching, controlling, and querying sessions. Needed for Phase 2 (launching).
+1. **EventNormalizer** — stateless, registered per runtime type. Called during event ingestion to normalize raw events into the common schema. Needed from Phase 1 (monitoring).
+2. **SessionController** — stateful, manages launching, controlling, and querying sessions. Basic `Launch` + `Kill` needed in Phase 1 (quick-launch, kill switch). Full capabilities (pause, resume, inject context, env lifecycle) added in Phase 2.
 
 ```go
 // --- Event normalization (Phase 1) ---
@@ -121,10 +121,10 @@ The adapter is split into two interfaces that can be implemented independently:
 // Stateless — registered per runtime type.
 type EventNormalizer interface {
     RuntimeID() string // "claude-code", "managed-agents", "codex", ...
-    Normalize(rawEvent json.RawMessage) (*MinionsEvent, error)
+    Normalize(rawEvent json.RawMessage) (*GruEvent, error)
 }
 
-type MinionsEvent struct {
+type GruEvent struct {
     ID        string         `json:"id"`
     SessionID string         `json:"session_id"`
     ProjectID string         `json:"project_id"`
@@ -150,7 +150,7 @@ const (
     EventSubagentEnd   EventType = "subagent.end"    // optional
 )
 
-// --- Session control (Phase 2) ---
+// --- Session control (Phase 1: Launch + Kill; Phase 2: full capabilities) ---
 
 // SessionController manages launching and controlling sessions for a runtime.
 type SessionController interface {
@@ -196,10 +196,35 @@ type SessionHandle struct {
 
 | Interface | Implementation |
 |---|---|
-| EventNormalizer | Translates Claude Code hook JSON (SessionStart, PreToolUse, PostToolUse, Notification, etc.) to MinionsEvent |
+| EventNormalizer | Translates Claude Code hook JSON (SessionStart, PreToolUse, PostToolUse, Notification, etc.) to GruEvent |
 | SessionController | Spawns `claude` process with `setsid`, passes flags/skills, returns PID/PGID handle |
 
 Each runtime adapter is responsible for translating its native events into the common schema. The processing pipeline, intelligence layer, and frontends only speak the normalized schema.
+
+### Claude Code Hook Integration
+
+**Hooks to register:** `SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop`, `SubagentStart`, `SubagentStop`
+
+**Hook script template:**
+
+```bash
+#!/bin/bash
+curl -s -m 2 -X POST "http://${MINIONS_HOST:-localhost}:${MINIONS_PORT:-7777}/events" \
+  -H "Authorization: Bearer $MINIONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$CLAUDE_HOOK_EVENT" &
+```
+
+**Installation:** `gru init <project-dir>` writes hook entries to the project's `.claude/settings.json`. Manual setup also documented.
+
+**Session ID correlation:** Claude Code provides a session ID in hook event data. For sessions launched by gru (quick-launch or full launch), the backend already knows the session ID from the spawn. For externally started sessions (user runs `claude` manually), the first `SessionStart` hook event creates a new session entry keyed by the Claude Code session ID. Research needed on exact field name in hook payload (Open Question 1).
+
+### Intelligence Sessions
+
+Internal Claude Code (Haiku) sessions spawned by the processing pipeline for classification, stuck detection, and summarization. These are:
+- **Not shown** in the dashboard by default (tagged as system sessions, filterable)
+- **Not managed** by the Process Supervisor — managed by a dedicated goroutine pool with a concurrency limit (max 3)
+- **Spawned** via a dedicated internal launcher, not the user-facing `SessionController`
 
 ### Component Breakdown
 
@@ -229,16 +254,15 @@ Each runtime adapter is responsible for translating its native events into the c
 - SQLite for MVP, migration path to Postgres if needed
 - Retention: events pruned after 30 days (configurable), session metadata kept 90 days, knowledge entries permanent
 
-**Resource Manager**
-- Maintains a resource allocation table in SQLite (ports, session slots per project)
-- Provides `acquire(projectId, resources) → Lease` and `release(leaseId)` operations
-- Single source of truth for port assignment from the `ports` range in project config
-- Rejects launch requests when `max_concurrent_agents` is reached (returns error with queue position)
-- Detects and reclaims leases from zombie sessions (sessions whose process is no longer alive)
+**Session Slot Manager**
+- Enforces `max_concurrent_agents` per project via a simple counter in SQLite
+- Rejects launch requests when limit is reached (returns error with current count)
+- Reclaims slots from zombie sessions (sessions whose process is no longer alive)
+- Port management deliberately deferred — setup scripts handle port allocation; agents deal with conflicts
 
 **Session Launcher**
-- Loads project config from `.minions/config.yaml`
-- Acquires resources via Resource Manager (ports, session slot)
+- Loads project config from `.gru/config.yaml`
+- Checks session slot availability via Session Slot Manager
 - Runs environment setup scripts in order; on failure at step N, rollback runs (idempotent — safe to run even if setup never started)
 - Healthcheck: polls URL with configurable interval (default 2s), timeout (default 60s), max retries (default 30)
 - Template variables in scripts/healthchecks: `{{PORT}}`, `{{PROJECT_DIR}}`, `{{SESSION_ID}}`, `{{WORKTREE_DIR}}`
@@ -260,6 +284,24 @@ Each runtime adapter is responsible for translating its native events into the c
 - Server-streaming RPCs: real-time session status updates, notifications, events
 - Frontend-agnostic: grpc-web for browsers, native gRPC for CLI/mobile/agents
 - Debug with `grpcurl`
+- **grpc-web strategy:** Use `connectrpc/connect-go` to serve both native gRPC and grpc-web from the same Go HTTP handler. No Envoy sidecar needed. Single binary, single port.
+- **Single port:** Event ingestion (HTTP POST from hooks) and gRPC API coexist on one `http.Handler` — connect-go routes gRPC requests by content-type, regular HTTP by path.
+
+**Proto service sketch (Phase 1):**
+
+```protobuf
+service GruService {
+  // Unary
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc GetSession(GetSessionRequest) returns (Session);
+  rpc LaunchSession(LaunchSessionRequest) returns (LaunchSessionResponse);
+  rpc KillSession(KillSessionRequest) returns (KillSessionResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+
+  // Server streaming
+  rpc SubscribeEvents(EventFilter) returns (stream SessionEvent);
+}
+```
 
 **Streaming Protocol:**
 - `SubscribeEvents` server-streaming RPC: on call, server sends a state snapshot message, then streams incremental events
@@ -267,21 +309,37 @@ Each runtime adapter is responsible for translating its native events into the c
 - Optional subscription filters: `EventFilter { projects: ["av-sim"], min_attention: 5 }` (MVP: all sessions)
 - All messages are protobuf — consistent serialization across the entire API
 
+**Go module structure:**
+
+```
+cmd/gru/              # main binary (server + CLI subcommands)
+internal/
+  server/                 # gRPC service implementation
+  store/                  # SQLite store (sqlc generated)
+  adapter/claude/         # Claude Code EventNormalizer + SessionController
+  pipeline/               # Processing pipeline (Phase 3)
+  supervisor/             # Process supervisor
+proto/
+  gru/v1/             # .proto files → generated Go + TypeScript
+web/                      # React frontend (Vite)
+hooks/                    # Hook script templates
+```
+
 ### Authentication
 
-**MVP:** Pre-shared API key configured in `~/.minions/config.yaml`. Sent as gRPC metadata (`authorization: Bearer <key>`) on all RPCs. Hook scripts include it via environment variable (`MINIONS_API_KEY`). Event ingestion endpoint (HTTP POST from hooks) uses the same key in the `Authorization` header.
+**MVP:** Pre-shared API key configured in `~/.gru/server.yaml`. Sent as gRPC metadata (`authorization: Bearer <key>`) on all RPCs. Hook scripts include it via environment variable (`MINIONS_API_KEY`). Event ingestion endpoint (HTTP POST from hooks) uses the same key in the `Authorization` header.
 
 **Future:** Tailscale auth integration (identity from WireGuard peer, zero-config on Tailnet).
 
 **Threat model:** Single user, trusted network in MVP. Auth required for multi-machine operation. Kill switch and launch endpoints are gated on auth even in MVP.
 
-### Agent Awareness of Minions
+### Agent Awareness of Gru
 
-Every agent session managed by minions needs to know it's part of a fleet. Two-phase approach:
+Every agent session managed by gru needs to know it's part of a fleet. Two-phase approach:
 
 **Phase 1-2: Skill-based (zero infrastructure)**
-A `.claude/skills/minions-agent.md` skill loaded into every managed session. Explains:
-- You are managed by minions mission control
+A `.claude/skills/gru-agent.md` skill loaded into every managed session. Explains:
+- You are managed by gru mission control
 - When to bubble up info vs handle autonomously (structured escalation via Notification hooks)
 - How to report status and progress
 - When to stop and ask for human input
@@ -289,11 +347,11 @@ A `.claude/skills/minions-agent.md` skill loaded into every managed session. Exp
 Agents communicate outbound via existing hook events — no new channel needed.
 
 **Phase 3+: MCP server (richer bidirectional communication)**
-Minions runs an MCP server that agents connect to. Adds the ability for agents to *pull* context:
-- `minions.reportStatus("implementing auth module, 60% complete")`
-- `minions.escalate({tried: [...], failed: "...", needsHuman: "..."})`
-- `minions.queryKnowledge("known issues with test DB in this project")`
-- `minions.getContext("what are other agents working on in this project?")`
+Gru runs an MCP server that agents connect to. Adds the ability for agents to *pull* context:
+- `gru.reportStatus("implementing auth module, 60% complete")`
+- `gru.escalate({tried: [...], failed: "...", needsHuman: "..."})`
+- `gru.queryKnowledge("known issues with test DB in this project")`
+- `gru.getContext("what are other agents working on in this project?")`
 
 ---
 
@@ -302,11 +360,11 @@ Minions runs an MCP server that agents connect to. Adds the ability for agents t
 ### Directory Structure
 
 ```
-.minions/
+.gru/
   config.yaml              # Project config: agent profiles, resources, settings
-  skills/                  # Minions-specific operational skills
+  skills/                  # Gru-specific operational skills
   env/                     # Setup/teardown/rollback scripts
-  helpers/                 # Reusable scripts (worktree helper, port allocator)
+  helpers/                 # Reusable utility scripts (worktree helper, etc.)
   knowledge/               # Accumulated learnings from agent sessions
   candidate-skills/        # AI-drafted skills pending human review
 
@@ -316,25 +374,25 @@ Minions runs an MCP server that agents connect to. Adds the ability for agents t
   settings.json            # Claude Code settings
 ```
 
-### Delineation: `.minions/` vs `.claude/`
+### Delineation: `.gru/` vs `.claude/`
 
-| | `.claude/` | `.minions/` |
+| | `.claude/` | `.gru/` |
 |---|---|---|
-| **Consumed by** | Claude Code (the agent) | Minions (mission control) |
+| **Consumed by** | Claude Code (the agent) | Gru (mission control) |
 | **Contains** | How to work with this codebase | How to launch and manage agents for this codebase |
 | **Examples** | "Use pytest", "Auth uses JWT", "Run `make test`" | "Feature agents need the simulator", "Port pool 8080-8099" |
-| **Authorship** | Human-authored + graduated from minions | Human config + AI-accumulated knowledge |
+| **Authorship** | Human-authored + graduated from gru | Human config + AI-accumulated knowledge |
 
 ### Knowledge → Skill Graduation Pipeline
 
 ```
 Agents work and discover things
-  → minions accumulates in .minions/knowledge/ (raw learnings)
-  → intelligence layer distills into .minions/candidate-skills/ (AI-drafted)
+  → gru accumulates in .gru/knowledge/ (raw learnings)
+  → intelligence layer distills into .gru/candidate-skills/ (AI-drafted)
   → human reviews (approve, edit, reject)
   → approved skills graduate to .claude/skills/ or .claude/CLAUDE.md
   → future agents load these skills automatically
-  → cycle repeats — minions gets smarter over time
+  → cycle repeats — gru gets smarter over time
 ```
 
 ### config.yaml Schema
@@ -344,7 +402,7 @@ project:
   name: av-simulator
   repo: git@github.com:org/av-sim.git
 
-  skills:                              # operational skills for minions
+  skills:                              # operational skills for gru
     - ./skills/simulator-ops.md
 
   environment:
@@ -358,8 +416,8 @@ project:
       - script: ./env/rollback.sh       # idempotent
 
   resources:
-    ports: [8080-8099]
-    max_concurrent_agents: 4
+    ports: [8080-8099]             # informational — consumed by setup scripts, not enforced by gru
+    max_concurrent_agents: 4       # enforced by Session Slot Manager
 
   runtime: claude-code                  # default runtime for this project
                                          # could also be "managed-agents", "codex", etc.
@@ -425,8 +483,9 @@ Combines multiple signals into a single priority score that determines notificat
 
 **Algorithm:**
 - Score = max(active signal weights), not sum — a session can only need so much attention
-- Scores decay: multiply by 0.9 per minute since triggering event, with floor of 0
-- New events reset the relevant signal's decay timestamp
+- **Persistent signals** (blocked, stuck) do NOT decay — they hold their score until the condition resolves (new events indicate progress)
+- **Transient signals** (finished, anomalous behavior) decay: multiply by 0.9 per minute since triggering event, with floor of 0
+- New events reset the relevant signal's decay timestamp or clear the signal entirely
 - Notification threshold: configurable, default 8 (fires on any HIGH signal)
 
 **Output:** Each session gets an attention score. Dashboard sorts by this. Notifications fire when score crosses the threshold.
@@ -444,7 +503,7 @@ Periodically synthesizes fleet state into a human-readable briefing.
 - Cost breakdown
 - Suggested next actions
 
-**Delivery:** Dashboard panel, daily digest (Slack/email), response to "chat with minions"
+**Delivery:** Dashboard panel, daily digest (Slack/email), response to "chat with gru"
 
 ### Knowledge Accumulation
 
@@ -456,7 +515,7 @@ Extracts reusable learnings from session events and outcomes.
 - Effective approaches ("for this repo, always run `make lint` before `make test`")
 - Failure patterns ("auth tests are flaky, retry once before escalating")
 
-**Implementation:** After session completion, intelligence layer reviews the session's events and extracts learnings. Stores in `.minions/knowledge/` as structured entries. Periodically distills into candidate skills in `.minions/candidate-skills/`.
+**Implementation:** After session completion, intelligence layer reviews the session's events and extracts learnings. Stores in `.gru/knowledge/` as structured entries. Periodically distills into candidate skills in `.gru/candidate-skills/`.
 
 ### External Context Integration (Phase 5)
 
@@ -465,7 +524,7 @@ Connects to Slack, Atlassian (Jira/Confluence), Gmail via MCP servers to:
 - Suggest which agents to spawn for which projects
 - Provide context for predictive spawning
 
-**Implementation:** MCP server connections from the minions backend. Intelligence layer periodically polls or subscribes to events. Matches work items against project configs to suggest spawn actions.
+**Implementation:** MCP server connections from the gru backend. Intelligence layer periodically polls or subscribes to events. Matches work items against project configs to suggest spawn actions.
 
 ### Predictive Spawning (Phase 5)
 
@@ -508,7 +567,7 @@ Primary view: session grid organized by project.
 - Desktop notifications (browser Notification API + service worker)
 - In-dashboard notification center
 
-### Chat with Minions
+### Chat with Gru
 
 Natural language interface to fleet state. Available as:
 - Dashboard panel (MVP)
@@ -536,7 +595,7 @@ Summary meta-agent's primary output. Delivered to configured channels.
 
 From the dashboard, send context to a running agent without switching terminals.
 
-**Implementation:** Minions writes context to a file or uses Claude Code's input mechanism. The agent picks it up on its next prompt cycle.
+**Implementation:** Gru writes context to a file or uses Claude Code's input mechanism. The agent picks it up on its next prompt cycle.
 
 ### Git Artifact Tracking
 
@@ -564,14 +623,14 @@ Link sessions to their git artifacts in the dashboard.
 - Backend: event ingestion API (HTTP for hooks), gRPC API (for frontends/CLI), session store (SQLite), server-streaming for real-time updates, auth (API key)
 - Session tracking: start, running, idle, finished, errored
 - Project organization: group sessions by project (detected from working directory)
-- Project registry: `~/.minions/projects.yaml` listing known project paths
+- Project registry: `~/.gru/projects.yaml` listing known project paths
 - Basic attention detection: agent waiting for input (from Notification hooks)
 - Time on current task: tracked from hook timestamps
 - Web dashboard: session grid with status cards, project grouping
 - Quick launch: spawn an agent in a directory with a prompt from the dashboard (no env setup — just `claude -p "prompt"`)
 - Kill switch: terminate a session via process signal (Claude Code-specific; generalized to runtime adapter in Phase 2)
 - Desktop notifications: service worker for background notifications + fallback to browser Notification API
-- Minimal CLI: `minions status`, `minions kill <id>`, `minions launch <dir> "prompt"`, `minions tail <id>` (native gRPC client, same Go binary as server)
+- Minimal CLI: `gru status`, `gru kill <id>`, `gru launch <dir> "prompt"`, `gru tail <id>` (native gRPC client, same Go binary as server)
 
 **NOT in MVP:**
 - AI-powered classification (sessions show raw status, not inferred type)
@@ -581,6 +640,19 @@ Link sessions to their git artifacts in the dashboard.
 - Chat interface
 - Full session launching with environment lifecycle (Phase 2 — MVP quick-launch is bare-bones)
 
+**Phase 1 implementation order:**
+1. Go scaffold + proto definitions + codegen + SQLite schema (day 1)
+2. Event ingestion HTTP endpoint + Claude Code EventNormalizer (day 2)
+3. Hook script templates + installation (`gru init`) (day 2)
+4. gRPC service (list, get, subscribe) + connect-go setup (day 3)
+5. Quick-launch + kill (basic SessionController) + process liveness polling (day 4)
+6. CLI commands: status, kill, launch, tail (day 5)
+7. React dashboard: session grid, status cards, project groups, gRPC streaming client (days 6-8)
+8. Desktop notifications (service worker) + auth middleware (day 9)
+9. Integration testing + polish (day 10)
+
+**De-risk:** Build backend + CLI first (days 1-6). The CLI alone provides daily-driver value. If the dashboard takes longer, Phase 1 is still useful.
+
 **Bootstrap value:** Once Phase 1 is running, you use it to launch and monitor the Claude Code sessions that build Phase 2.
 
 ### Phase 2 — Launch: "Do Everything"
@@ -588,13 +660,13 @@ Link sessions to their git artifacts in the dashboard.
 **Goal:** A structured way to launch and manage agent sessions from project configs. Major productivity boost — no more manual environment setup.
 
 **Scope:**
-- Project configuration (`.minions/config.yaml`)
+- Project configuration (`.gru/config.yaml`)
 - Session launcher (env setup, health checks, agent process management, teardown)
 - Agent profiles (preconfigured launch templates)
 - Environment lifecycle (setup → run → teardown with idempotent rollback)
 - Context injection (basic: manual text push to running agent; Phase 3 adds intelligent timing and suggestions)
 - Runtime adapter interface (Claude Code first implementation: EventNormalizer + SessionController)
-- Resource Manager (port allocation, session slot enforcement)
+- Session Slot Manager (concurrent session enforcement, zombie detection)
 - Process Supervisor (crash recovery, orphan detection)
 
 **Depends on:** Phase 1 (monitoring — see launched sessions in the dashboard)
@@ -608,7 +680,7 @@ Link sessions to their git artifacts in the dashboard.
 - Stuck detection (timing heuristics + Claude Code Haiku for ambiguous cases)
 - Attention scoring (multi-signal priority)
 - Summary agent (on-demand + periodic)
-- Chat with minions (dashboard panel)
+- Chat with gru (dashboard panel)
 - Natural language spawning ("spawn a review agent for PR #423") — builds on Phase 2 launcher
 - Git artifact tracking
 - Progress stage inference
@@ -656,7 +728,7 @@ Link sessions to their git artifacts in the dashboard.
 | Hook scripts | **Shell (bash/sh)** | Minimal — `curl POST` with 2s timeout, backgrounded to avoid blocking the agent |
 | Desktop notifications | **Service worker** (background) + browser Notification API (fallback) | Service worker works even with tab closed |
 | Process management | **`setsid` + `os/exec`** | Agents in own process group; PID/PGID persisted to DB for crash recovery |
-| CLI | **Go** (same binary as server) | `minions status`, `minions launch`, `minions kill`, `minions tail` — native gRPC client, no proxy needed |
+| CLI | **Go** (same binary as server) | `gru status`, `gru launch`, `gru kill`, `gru tail` — native gRPC client, no proxy needed |
 
 ---
 
@@ -664,22 +736,22 @@ Link sessions to their git artifacts in the dashboard.
 
 1. **Hook data richness:** How much context do Claude Code hooks provide? Do we get enough from hook events to classify session type, or do we need to supplement with log file reading?
 2. **Context injection mechanism:** What's the best way to send context to a running Claude Code session? File-based? Stdin? MCP?
-3. **Multi-machine coordination:** When agents run on different machines in the tailnet, how does the hook → backend communication work? Just HTTP POST to a known minions backend URL?
-4. **Session state persistence:** If minions backend restarts, can it reconstruct session state from hooks that fire after restart, or do we need to persist enough to survive restarts? (v2: Process Supervisor reconciles on startup by checking PID liveness against DB state)
+3. **Multi-machine coordination:** When agents run on different machines in the tailnet, how does the hook → backend communication work? Just HTTP POST to a known gru backend URL?
+4. **Session state persistence:** If gru backend restarts, can it reconstruct session state from hooks that fire after restart, or do we need to persist enough to survive restarts? (v2: Process Supervisor reconciles on startup by checking PID liveness against DB state)
 5. **Cost tracking:** Can we get token usage data from Claude Code hooks, or do we need another data source?
-6. **Worktree management:** Does minions manage git worktrees for concurrent sessions on the same repo? If so, how are they allocated, named, and cleaned up? Suggested: Session Launcher creates `minions-<session-id>` worktree from configured base branch; teardown removes it (or preserves for review if commits exist).
+6. **Worktree management:** Does gru manage git worktrees for concurrent sessions on the same repo? If so, how are they allocated, named, and cleaned up? Suggested: Session Launcher creates `gru-<session-id>` worktree from configured base branch; teardown removes it (or preserves for review if commits exist).
 7. **Intelligence layer cost model:** What is the expected cost of running Claude Code (Haiku) sessions for the intelligence layer with 10-20 concurrent user sessions? Strategies: short-lived Haiku sessions, batching classifications, reusing summary agent session. Measure actual costs during Phase 3 development. Door open for direct API calls later if API key becomes available.
-8. **Project discovery:** How does minions know about projects? MVP: manual registry in `~/.minions/projects.yaml`. Later: `minions init` command + auto-discovery from git repos in configured directories.
+8. **Project discovery:** How does gru know about projects? MVP: manual registry in `~/.gru/projects.yaml`. Later: `gru init` command + auto-discovery from git repos in configured directories.
 
 ---
 
 ## Bootstrap Plan
 
-How "use minions to build minions" works in practice:
+How "use gru to build gru" works in practice:
 
-1. **Build Phase 1 manually** — one Claude Code session, no minions yet
+1. **Build Phase 1 manually** — one Claude Code session, no gru yet
 2. **Deploy Phase 1 locally** — start using it as your daily driver for monitoring
 3. **Build Phase 2** — launch 2-3 Claude Code sessions from the Phase 1 dashboard (quick-launch); monitor them in real-time
 4. **Deploy Phase 2** — now you have structured launching with env setup
 5. **Build Phase 3+** — use Phase 2's launcher + agent profiles to spawn sessions for Phase 3 development; the intelligence layer from Phase 3 makes building Phase 4+ faster
-6. **Flywheel spins** — knowledge accumulated from building minions itself becomes skills that improve future development sessions
+6. **Flywheel spins** — knowledge accumulated from building gru itself becomes skills that improve future development sessions
