@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package gru.v1;
+
+option go_package = "github.com/dakshjotwani/gru/proto/gru/v1;gruv1";
+
+import "google/protobuf/timestamp.proto";
+
+service GruService {
+  // Sessions
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc GetSession(GetSessionRequest)     returns (Session);
+  rpc LaunchSession(LaunchSessionRequest) returns (LaunchSessionResponse);
+  rpc KillSession(KillSessionRequest)   returns (KillSessionResponse);
+
+  // Projects
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+
+  // Real-time event stream
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream SessionEvent);
+}
+
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED      = 0;
+  SESSION_STATUS_STARTING         = 1;
+  SESSION_STATUS_RUNNING          = 2;
+  SESSION_STATUS_IDLE             = 3;
+  SESSION_STATUS_NEEDS_ATTENTION  = 4;
+  SESSION_STATUS_COMPLETED        = 5;
+  SESSION_STATUS_ERRORED          = 6;
+  SESSION_STATUS_KILLED           = 7;
+}
+
+message Session {
+  string         id              = 1;
+  string         project_id      = 2;
+  string         runtime         = 3;
+  SessionStatus  status          = 4;
+  string         profile         = 5;
+  double         attention_score = 6;
+  google.protobuf.Timestamp started_at    = 7;
+  google.protobuf.Timestamp ended_at      = 8;
+  google.protobuf.Timestamp last_event_at = 9;
+  int32          pid             = 10;
+  string         tmux_session    = 11;
+  string         tmux_window     = 12;
+}
+
+message Project {
+  string id      = 1;
+  string name    = 2;
+  string path    = 3;
+  string runtime = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message SessionEvent {
+  string id         = 1;
+  string session_id = 2;
+  string project_id = 3;
+  string runtime    = 4;
+  string type       = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  bytes  payload    = 7;
+}
+
+message ListSessionsRequest {
+  string        project_id = 1;
+  SessionStatus status     = 2;
+}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message GetSessionRequest {
+  string id = 1;
+}
+
+message LaunchSessionRequest {
+  string project_dir = 1;
+  string prompt      = 2;
+  string profile     = 3;
+}
+
+message LaunchSessionResponse {
+  Session session = 1;
+}
+
+message KillSessionRequest {
+  string id = 1;
+}
+
+message KillSessionResponse {
+  bool success = 1;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
+}
+
+message SubscribeEventsRequest {
+  repeated string project_ids   = 1;
+  double          min_attention = 2;
+}
