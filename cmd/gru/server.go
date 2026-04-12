@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/adapter"
@@ -61,7 +64,22 @@ func runServer() error {
 		Handler: h2c.NewHandler(mux, &http2.Server{}),
 	}
 
+	// Graceful shutdown on SIGTERM/SIGINT so defer s.Close() runs and SQLite
+	// WAL is checkpointed cleanly.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		<-quit
+		log.Printf("gru server shutting down...")
+		if err := httpServer.Shutdown(context.Background()); err != nil {
+			log.Printf("server shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("gru server listening on %s (db: %s)", cfg.Addr, cfg.DBPath)
 	log.Printf("API key: %s", cfg.APIKey)
-	return httpServer.ListenAndServe()
+	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

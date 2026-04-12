@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -41,11 +42,12 @@ func (p *Publisher) Unsubscribe(id string) {
 func (p *Publisher) Publish(evt *gruv1.SessionEvent) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for _, ch := range p.subs {
+	for id, ch := range p.subs {
 		select {
 		case ch <- evt:
 		default:
 			// Slow subscriber: drop rather than block ingestion.
+			log.Printf("ingestion: slow subscriber %s dropped event %s (type: %s)", id, evt.Id, evt.Type)
 		}
 	}
 }
