@@ -13,6 +13,15 @@ func main() {
 }
 
 func run(args []string) error {
-	fmt.Println("gru — not yet implemented")
-	return nil
+	if len(args) == 0 {
+		fmt.Println("usage: gru <command>")
+		fmt.Println("commands: server")
+		return nil
+	}
+	switch args[0] {
+	case "server":
+		return runServer()
+	default:
+		return fmt.Errorf("unknown command: %s", args[0])
+	}
 }
