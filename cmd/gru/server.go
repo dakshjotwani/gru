@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/adapter"
@@ -14,6 +16,8 @@ import (
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
+	"github.com/dakshjotwani/gru/internal/supervisor"
+	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -44,6 +48,16 @@ func runServer() error {
 	svc := server.NewService(s, pub)
 	ingestionHandler := ingestion.NewHandler(s, reg, pub)
 
+	// Start process liveness supervisor in the background.
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+	sv := supervisor.New(
+		&supervisorStoreAdapter{store: s},
+		&supervisorPublisherAdapter{pub: pub},
+		10*time.Second,
+	)
+	go sv.Run(serverCtx)
+
 	mux := http.NewServeMux()
 
 	// gRPC + grpc-web via connect-go (single port, no Envoy).
@@ -64,4 +78,57 @@ func runServer() error {
 	log.Printf("gru server listening on %s (db: %s)", cfg.Addr, cfg.DBPath)
 	log.Printf("API key: %s", cfg.APIKey)
 	return httpServer.ListenAndServe()
+}
+
+// supervisorStoreAdapter adapts *store.Store to supervisor.SessionStore.
+type supervisorStoreAdapter struct {
+	store *store.Store
+}
+
+func (a *supervisorStoreAdapter) ListLiveSessions(ctx context.Context) ([]supervisor.LiveSession, error) {
+	rows, err := a.store.Queries().ListSessions(ctx, store.ListSessionsParams{
+		ProjectID: "",
+		Status:    "",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var live []supervisor.LiveSession
+	for _, r := range rows {
+		if r.Status != "running" && r.Status != "starting" {
+			continue
+		}
+		ls := supervisor.LiveSession{
+			ID:     r.ID,
+			Status: r.Status,
+		}
+		if r.TmuxSession != nil {
+			ls.TmuxSession = *r.TmuxSession
+		}
+		if r.TmuxWindow != nil {
+			ls.TmuxWindow = *r.TmuxWindow
+		}
+		live = append(live, ls)
+	}
+	return live, nil
+}
+
+func (a *supervisorStoreAdapter) MarkSessionErrored(ctx context.Context, sessionID string) error {
+	_, err := a.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
+		Status: "errored",
+		ID:     sessionID,
+	})
+	return err
+}
+
+// supervisorPublisherAdapter adapts *ingestion.Publisher to supervisor.EventPublisher.
+type supervisorPublisherAdapter struct {
+	pub *ingestion.Publisher
+}
+
+func (a *supervisorPublisherAdapter) PublishCrash(_ context.Context, e supervisor.CrashEvent) {
+	a.pub.Publish(&gruv1.SessionEvent{
+		Type:      "session.crash",
+		SessionId: e.SessionID,
+	})
 }
