@@ -14,13 +14,18 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		fmt.Println("usage: gru <command>")
-		fmt.Println("commands: server")
+		fmt.Fprintf(os.Stderr, "Usage: gru <server|init> [args...]\n")
 		return nil
 	}
 	switch args[0] {
 	case "server":
 		return runServer()
+	case "init":
+		if err := runInit(args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}

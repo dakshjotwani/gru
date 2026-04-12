@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/adapter"
+	"github.com/dakshjotwani/gru/internal/adapter/claude"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/server"
@@ -38,8 +39,7 @@ func runServer() error {
 
 	pub := ingestion.NewPublisher()
 	reg := adapter.NewRegistry()
-	// Phase 1b registers the Claude Code normalizer here:
-	// reg.Register(claude.NewNormalizer())
+	reg.Register(claude.NewNormalizer())
 
 	svc := server.NewService(s, pub)
 	ingestionHandler := ingestion.NewHandler(s, reg, pub)
