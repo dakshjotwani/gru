@@ -14,8 +14,8 @@ ORDER BY started_at DESC;
 
 -- name: UpdateSessionStatus :one
 UPDATE sessions
-SET status = sqlc.arg(status),
-    ended_at = CASE WHEN sqlc.arg(status) IN ('completed','errored','killed') THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE ended_at END
+SET status   = sqlc.arg(status),
+    ended_at = COALESCE(ended_at, sqlc.narg(ended_at))
 WHERE id = sqlc.arg(id)
 RETURNING *;
 

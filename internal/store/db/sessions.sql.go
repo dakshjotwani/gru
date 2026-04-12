@@ -174,19 +174,20 @@ func (q *Queries) UpdateSessionPID(ctx context.Context, arg UpdateSessionPIDPara
 
 const updateSessionStatus = `-- name: UpdateSessionStatus :one
 UPDATE sessions
-SET status = ?1,
-    ended_at = CASE WHEN sqlc.arg(status) IN ('completed','errored','killed') THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE ended_at END
-WHERE id = ?2
+SET status   = ?1,
+    ended_at = COALESCE(ended_at, ?2)
+WHERE id = ?3
 RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window
 `
 
 type UpdateSessionStatusParams struct {
-	Status string
-	ID     string
+	Status  string
+	EndedAt *string
+	ID      string
 }
 
 func (q *Queries) UpdateSessionStatus(ctx context.Context, arg UpdateSessionStatusParams) (Session, error) {
-	row := q.db.QueryRowContext(ctx, updateSessionStatus, arg.Status, arg.ID)
+	row := q.db.QueryRowContext(ctx, updateSessionStatus, arg.Status, arg.EndedAt, arg.ID)
 	var i Session
 	err := row.Scan(
 		&i.ID,

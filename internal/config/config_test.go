@@ -22,6 +22,23 @@ func TestLoad_defaults(t *testing.T) {
 	}
 }
 
+func TestLoad_emptyAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.yaml")
+	content := "addr: \":8080\"\napi_key: \"\"\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.APIKey == "" {
+		t.Error("APIKey should be auto-generated when api_key field is empty")
+	}
+}
+
 func TestLoad_fromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.yaml")
