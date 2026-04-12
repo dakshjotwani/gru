@@ -1,0 +1,62 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+)
+
+type Capability string
+
+const (
+	CapKill          Capability = "kill"
+	CapPause         Capability = "pause"
+	CapResume        Capability = "resume"
+	CapInjectContext Capability = "inject_context"
+)
+
+type LaunchOptions struct {
+	SessionID  string
+	ProjectDir string
+	Prompt     string
+	Profile    string
+	Env        map[string]string
+}
+
+type SessionHandle struct {
+	SessionID   string
+	TmuxSession string
+	TmuxWindow  string
+	Kill        func(ctx context.Context) error
+	Done        <-chan struct{}
+	ExitCode    func() int
+}
+
+type SessionController interface {
+	RuntimeID() string
+	Capabilities() []Capability
+	Launch(ctx context.Context, opts LaunchOptions) (*SessionHandle, error)
+}
+
+type Registry struct {
+	controllers map[string]SessionController
+}
+
+func NewRegistry() *Registry {
+	return &Registry{controllers: make(map[string]SessionController)}
+}
+
+func (r *Registry) Register(c SessionController) {
+	id := c.RuntimeID()
+	if _, exists := r.controllers[id]; exists {
+		panic(fmt.Sprintf("controller: duplicate registration for runtime %q", id))
+	}
+	r.controllers[id] = c
+}
+
+func (r *Registry) Get(runtimeID string) (SessionController, error) {
+	c, ok := r.controllers[runtimeID]
+	if !ok {
+		return nil, fmt.Errorf("controller: no controller registered for runtime %q", runtimeID)
+	}
+	return c, nil
+}
