@@ -1,4 +1,4 @@
-.PHONY: proto sqlc build test generate lint
+.PHONY: proto sqlc build test generate lint dev
 
 proto:
 	go tool buf generate
@@ -17,3 +17,6 @@ generate: proto sqlc
 lint:
 	go tool buf lint
 	go vet ./...
+
+dev:
+	./scripts/dev.sh
