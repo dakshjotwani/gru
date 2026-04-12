@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 )
 
 // hookScriptSrc is the path to the hook script to copy.
@@ -123,4 +125,15 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	return out.Close()
+}
+
+func newInitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init <project-dir>",
+		Short: "Install Claude Code hook scripts into a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInit(args)
+		},
+	}
 }

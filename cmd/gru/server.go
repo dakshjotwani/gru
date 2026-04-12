@@ -19,6 +19,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/supervisor"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
+	"github.com/spf13/cobra"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -131,4 +132,14 @@ func (a *supervisorPublisherAdapter) PublishCrash(_ context.Context, e superviso
 		Type:      "session.crash",
 		SessionId: e.SessionID,
 	})
+}
+
+func newServerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "server",
+		Short: "Start the gru server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServer()
+		},
+	}
 }
