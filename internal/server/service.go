@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
+	"log"
 	"time"
 
 	"connectrpc.com/connect"
@@ -13,6 +13,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/store/db"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -107,7 +108,10 @@ func (s *Service) SubscribeEvents(
 	}
 	for _, row := range rows {
 		sess := rowToSession(row)
-		payload, _ := sessionToJSON(sess)
+		payload, err := sessionToJSON(sess)
+		if err != nil {
+			log.Printf("SubscribeEvents: marshal session %s: %v", row.ID, err)
+		}
 		if err := stream.Send(&gruv1.SessionEvent{
 			Type:      "snapshot.session",
 			SessionId: row.ID,
@@ -222,5 +226,5 @@ func rowToSession(r db.Session) *gruv1.Session {
 }
 
 func sessionToJSON(sess *gruv1.Session) ([]byte, error) {
-	return json.Marshal(sess)
+	return protojson.Marshal(sess)
 }
