@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func runServer() error {
@@ -103,7 +104,7 @@ func (a *supervisorStoreAdapter) ListLiveSessions(ctx context.Context) ([]superv
 	}
 	var live []supervisor.LiveSession
 	for _, r := range rows {
-		if r.Status != "running" && r.Status != "starting" {
+		if r.Status != "running" && r.Status != "starting" && r.Status != "idle" && r.Status != "needs_attention" {
 			continue
 		}
 		ls := supervisor.LiveSession{
@@ -121,9 +122,9 @@ func (a *supervisorStoreAdapter) ListLiveSessions(ctx context.Context) ([]superv
 	return live, nil
 }
 
-func (a *supervisorStoreAdapter) MarkSessionErrored(ctx context.Context, sessionID string) error {
+func (a *supervisorStoreAdapter) UpdateSessionStatus(ctx context.Context, sessionID, status string) error {
 	_, err := a.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
-		Status: "errored",
+		Status: status,
 		ID:     sessionID,
 	})
 	return err
@@ -134,10 +135,17 @@ type supervisorPublisherAdapter struct {
 	pub *ingestion.Publisher
 }
 
-func (a *supervisorPublisherAdapter) PublishCrash(_ context.Context, e supervisor.CrashEvent) {
+func (a *supervisorPublisherAdapter) PublishExit(_ context.Context, e supervisor.ExitEvent) {
+	eventType := "session.crash"
+	if e.NewStatus == "completed" {
+		eventType = "session.end"
+	} else if e.NewStatus == "killed" {
+		eventType = "session.killed"
+	}
 	a.pub.Publish(&gruv1.SessionEvent{
-		Type:      "session.crash",
+		Type:      eventType,
 		SessionId: e.SessionID,
+		Timestamp: timestamppb.Now(),
 	})
 }
 

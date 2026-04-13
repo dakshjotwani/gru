@@ -19,19 +19,20 @@ type StatusUpdate struct {
 	Status    string
 }
 
-type CrashEvent struct {
+type ExitEvent struct {
 	SessionID   string
 	TmuxSession string
 	TmuxWindow  string
+	NewStatus   string // "errored" or "completed"
 }
 
 type SessionStore interface {
 	ListLiveSessions(ctx context.Context) ([]LiveSession, error)
-	MarkSessionErrored(ctx context.Context, sessionID string) error
+	UpdateSessionStatus(ctx context.Context, sessionID, status string) error
 }
 
 type EventPublisher interface {
-	PublishCrash(ctx context.Context, e CrashEvent)
+	PublishExit(ctx context.Context, e ExitEvent)
 }
 
 type tmuxOutputRunner interface {
@@ -79,13 +80,20 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 		if s.windowExists(sess.TmuxSession, sess.TmuxWindow) {
 			continue
 		}
-		if err := s.store.MarkSessionErrored(ctx, sess.ID); err != nil {
+		// Sessions that were idle/needs_attention completed normally;
+		// running/starting sessions crashed.
+		newStatus := "errored"
+		if sess.Status == "idle" || sess.Status == "needs_attention" {
+			newStatus = "completed"
+		}
+		if err := s.store.UpdateSessionStatus(ctx, sess.ID, newStatus); err != nil {
 			continue
 		}
-		s.pub.PublishCrash(ctx, CrashEvent{
+		s.pub.PublishExit(ctx, ExitEvent{
 			SessionID:   sess.ID,
 			TmuxSession: sess.TmuxSession,
 			TmuxWindow:  sess.TmuxWindow,
+			NewStatus:   newStatus,
 		})
 	}
 }

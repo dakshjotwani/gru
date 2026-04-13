@@ -157,6 +157,14 @@ func (s *Service) KillSession(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("update status: %w", err))
 	}
 
+	s.pub.Publish(&gruv1.SessionEvent{
+		SessionId: sessionID,
+		ProjectId: row.ProjectID,
+		Runtime:   row.Runtime,
+		Type:      "session.killed",
+		Timestamp: timestamppb.Now(),
+	})
+
 	return connect.NewResponse(&gruv1.KillSessionResponse{Success: true}), nil
 }
 

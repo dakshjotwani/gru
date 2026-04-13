@@ -18,16 +18,16 @@ func (f *fakeSessionStore) ListLiveSessions(ctx context.Context) ([]supervisor.L
 	return f.sessions, nil
 }
 
-func (f *fakeSessionStore) MarkSessionErrored(ctx context.Context, sessionID string) error {
-	f.updated = append(f.updated, supervisor.StatusUpdate{SessionID: sessionID, Status: "errored"})
+func (f *fakeSessionStore) UpdateSessionStatus(ctx context.Context, sessionID, status string) error {
+	f.updated = append(f.updated, supervisor.StatusUpdate{SessionID: sessionID, Status: status})
 	return nil
 }
 
 type fakePublisher struct {
-	events []supervisor.CrashEvent
+	events []supervisor.ExitEvent
 }
 
-func (f *fakePublisher) PublishCrash(ctx context.Context, e supervisor.CrashEvent) {
+func (f *fakePublisher) PublishExit(ctx context.Context, e supervisor.ExitEvent) {
 	f.events = append(f.events, e)
 }
 
@@ -44,7 +44,7 @@ func (f *fakeTmuxRunner) Output(args ...string) ([]byte, error) {
 	return nil, nil
 }
 
-func TestSupervisor_MarksDeadWindowErrored(t *testing.T) {
+func TestSupervisor_MarksDeadRunningSessionErrored(t *testing.T) {
 	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-av-sim": {}}}
 	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
 		ID: "sess-dead", TmuxSession: "gru-av-sim", TmuxWindow: "feat-dev·abcd1234", Status: "running",
@@ -62,7 +62,29 @@ func TestSupervisor_MarksDeadWindowErrored(t *testing.T) {
 		t.Errorf("updated status = %q, want %q", store.updated[0].Status, "errored")
 	}
 	if len(pub.events) != 1 || pub.events[0].SessionID != "sess-dead" {
-		t.Errorf("expected 1 crash event for sess-dead, got %v", pub.events)
+		t.Errorf("expected 1 exit event for sess-dead, got %v", pub.events)
+	}
+	if pub.events[0].NewStatus != "errored" {
+		t.Errorf("exit event status = %q, want %q", pub.events[0].NewStatus, "errored")
+	}
+}
+
+func TestSupervisor_MarksDeadIdleSessionCompleted(t *testing.T) {
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-av-sim": {}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
+		ID: "sess-idle", TmuxSession: "gru-av-sim", TmuxWindow: "feat-dev·abcd1234", Status: "idle",
+	}}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 1 {
+		t.Fatalf("expected 1 status update, got %d", len(store.updated))
+	}
+	if store.updated[0].Status != "completed" {
+		t.Errorf("updated status = %q, want %q", store.updated[0].Status, "completed")
+	}
+	if pub.events[0].NewStatus != "completed" {
+		t.Errorf("exit event status = %q, want %q", pub.events[0].NewStatus, "completed")
 	}
 }
 
@@ -78,7 +100,7 @@ func TestSupervisor_DoesNotMarkAliveWindow(t *testing.T) {
 		t.Errorf("expected no updates for alive window, got %v", store.updated)
 	}
 	if len(pub.events) != 0 {
-		t.Errorf("expected no crash events, got %v", pub.events)
+		t.Errorf("expected no exit events, got %v", pub.events)
 	}
 }
 

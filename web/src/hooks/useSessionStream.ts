@@ -43,6 +43,9 @@ function applyEvent(sessions: Map<string, Session>, event: SessionEvent): Map<st
     case 'session.crash':
       updated.status = SessionStatus.ERRORED;
       break;
+    case 'session.killed':
+      updated.status = SessionStatus.KILLED;
+      break;
     case 'notification.needs_attention':
       updated.status = SessionStatus.NEEDS_ATTENTION;
       break;
