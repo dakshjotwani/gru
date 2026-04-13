@@ -15,11 +15,14 @@ const (
 )
 
 type LaunchOptions struct {
-	SessionID  string
-	ProjectDir string
-	Prompt     string
-	Profile    string
-	Env        map[string]string
+	SessionID       string
+	ProjectDir      string
+	Prompt          string
+	Profile         string
+	Model           string            // optional; passed as --model to the agent runtime
+	ExtraPrompt     string            // optional extra system prompt content (skills, etc.)
+	AutoMode        bool              // pass --enable-auto-mode to use classifier-based auto-approval
+	Env             map[string]string
 }
 
 type SessionHandle struct {

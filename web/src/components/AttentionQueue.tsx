@@ -85,6 +85,7 @@ function sortSessions(sessions: Session[]): Session[] {
 
 export function AttentionQueue({ sessions, events, projects, connected }: AttentionQueueProps) {
   const [hideRunning, setHideRunning] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const projectMap = useMemo(() => {
     const m = new Map<string, Project>();
@@ -94,19 +95,24 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
     return m;
   }, [projects]);
 
-  const { sortedSessions, runningCount } = useMemo(() => {
-    const active: Session[] = [];
+  const { sortedSessions, runningCount, completedCount } = useMemo(() => {
+    const visible: Session[] = [];
     let running = 0;
+    let completed = 0;
     for (const session of sessions.values()) {
-      if (isTerminalStatus(session.status)) continue;
+      if (isTerminalStatus(session.status)) {
+        completed++;
+        if (showCompleted) visible.push(session);
+        continue;
+      }
       if (session.status === SessionStatus.RUNNING) {
         running++;
         if (hideRunning) continue;
       }
-      active.push(session);
+      visible.push(session);
     }
-    return { sortedSessions: sortSessions(active), runningCount: running };
-  }, [sessions, hideRunning]);
+    return { sortedSessions: sortSessions(visible), runningCount: running, completedCount: completed };
+  }, [sessions, hideRunning, showCompleted]);
 
   if (sortedSessions.length === 0 && connected) {
     return (
@@ -127,6 +133,16 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
   return (
     <div className={styles.queue}>
       <div className={styles.toolbar}>
+        <label className={styles.toggle}>
+          <input
+            type="checkbox"
+            checked={showCompleted}
+            onChange={() => setShowCompleted((s) => !s)}
+          />
+          <span className={styles.toggleLabel}>
+            Show completed{completedCount > 0 ? ` (${completedCount})` : ''}
+          </span>
+        </label>
         <label className={styles.toggle}>
           <input
             type="checkbox"

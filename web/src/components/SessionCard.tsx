@@ -38,9 +38,11 @@ function getTimeInState(session: Session): string {
 function getContextPreview(session: Session, events: SessionEvent[]): string {
   switch (session.status) {
     case SessionStatus.NEEDS_ATTENTION: {
-      const evt = findLastEventOfType(events, 'notification.needs_attention');
-      if (evt?.payload) {
-        const parsed = parseEventPayload(evt.payload);
+      // The notification payload has no tool info — look at the preceding tool.pre event.
+      const toolEvt = findLastEventOfType(events, 'tool.pre');
+      if (toolEvt?.payload) {
+        const parsed = parseEventPayload(toolEvt.payload);
+        if (parsed.toolSummary) return `${parsed.toolName}: ${parsed.toolSummary}`;
         if (parsed.toolName) return `Wants to use: ${parsed.toolName}`;
       }
       return 'Needs your attention';
@@ -49,6 +51,7 @@ function getContextPreview(session: Session, events: SessionEvent[]): string {
       const evt = findLastEventOfType(events, 'tool.pre');
       if (evt?.payload) {
         const parsed = parseEventPayload(evt.payload);
+        if (parsed.toolSummary) return `${parsed.toolName}: ${parsed.toolSummary}`;
         if (parsed.toolName) return `Using: ${parsed.toolName}`;
       }
       return 'Working...';
@@ -174,18 +177,18 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
 
           {needsAttentionContext && (
             <div className={styles.section}>
-              <span className={styles.label}>Context</span>
+              <span className={styles.label}>Permission request</span>
               <div className={styles.contextBlock}>
                 {needsAttentionContext.toolName && (
-                  <div className={styles.contextLine}>Tool: {needsAttentionContext.toolName}</div>
-                )}
-                {needsAttentionContext.toolInput && (
                   <div className={styles.contextLine}>
-                    <code className={styles.code}>{needsAttentionContext.toolInput}</code>
+                    <span className={styles.toolBadge}>{needsAttentionContext.toolName}</span>
+                    {needsAttentionContext.toolSummary && (
+                      <span className={styles.toolSummary}>{needsAttentionContext.toolSummary}</span>
+                    )}
                   </div>
                 )}
-                {needsAttentionContext.message && (
-                  <div className={styles.contextLine}>{needsAttentionContext.message}</div>
+                {needsAttentionContext.toolInput && (
+                  <code className={styles.code}>{needsAttentionContext.toolInput}</code>
                 )}
               </div>
             </div>
@@ -220,13 +223,23 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
                   className={styles.approveBtn}
                   onClick={() => handleSendInput('y')}
                   disabled={sending}
+                  title="Allow this once"
                 >
                   Approve
+                </button>
+                <button
+                  className={styles.approveAlwaysBtn}
+                  onClick={() => handleSendInput('2')}
+                  disabled={sending}
+                  title="Allow for this session (don't ask again)"
+                >
+                  Always
                 </button>
                 <button
                   className={styles.denyBtn}
                   onClick={() => handleSendInput('n')}
                   disabled={sending}
+                  title="Deny"
                 >
                   Deny
                 </button>
@@ -286,12 +299,21 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
   );
 }
 
-function getAttentionContext(events: SessionEvent[]): { toolName?: string; toolInput?: string; message?: string } | null {
-  const evt = findLastEventOfType(events, 'notification.needs_attention');
-  if (!evt?.payload) return null;
-  const parsed = parseEventPayload(evt.payload);
-  if (!parsed.toolName && !parsed.message) return null;
-  return parsed;
+function getAttentionContext(events: SessionEvent[]): { toolName?: string; toolSummary?: string; toolInput?: string; message?: string } | null {
+  // tool_name and tool_input live in the tool.pre event, not the notification event.
+  const toolEvt = findLastEventOfType(events, 'tool.pre');
+  const notifEvt = findLastEventOfType(events, 'notification.needs_attention');
+
+  const toolParsed = toolEvt?.payload ? parseEventPayload(toolEvt.payload) : {};
+  const notifParsed = notifEvt?.payload ? parseEventPayload(notifEvt.payload) : {};
+
+  if (!toolParsed.toolName && !notifParsed.message) return null;
+  return {
+    toolName: toolParsed.toolName,
+    toolSummary: toolParsed.toolSummary,
+    toolInput: toolParsed.toolInput,
+    message: notifParsed.message,
+  };
 }
 
 function getIdleContext(events: SessionEvent[]): string | null {

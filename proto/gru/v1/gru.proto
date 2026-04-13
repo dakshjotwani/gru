@@ -16,6 +16,7 @@ service GruService {
 
   // Projects
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
 
   // Real-time event stream
   rpc SubscribeEvents(SubscribeEventsRequest) returns (stream SessionEvent);
@@ -105,6 +106,20 @@ message ListProjectsRequest {}
 
 message ListProjectsResponse {
   repeated Project projects = 1;
+}
+
+message AgentProfile {
+  string name        = 1;
+  string description = 2;
+  string model       = 3;
+}
+
+message ListProfilesRequest {
+  string project_dir = 1;
+}
+
+message ListProfilesResponse {
+  repeated AgentProfile profiles = 1;
 }
 
 message SendInputRequest {

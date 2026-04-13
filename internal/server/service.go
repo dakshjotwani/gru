@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/store"
@@ -100,11 +101,29 @@ func (s *Service) LaunchSession(
 
 	sessionID := uuid.NewString()
 
+	// Load project config and resolve agent profile if specified.
+	projCfg, err := config.LoadProjectConfig(projectDir)
+	if err != nil {
+		log.Printf("LaunchSession: load project config: %v (continuing without profile)", err)
+		projCfg = &config.ProjectConfig{}
+	}
+	agentProfile, err := projCfg.Profile(profile)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	skillContent, err := agentProfile.SkillContent(projectDir)
+	if err != nil {
+		log.Printf("LaunchSession: load skill content: %v (continuing without skills)", err)
+	}
+
 	handle, err := ctrl.Launch(ctx, controller.LaunchOptions{
-		SessionID:  sessionID,
-		ProjectDir: projectDir,
-		Prompt:     prompt,
-		Profile:    profile,
+		SessionID:       sessionID,
+		ProjectDir:      projectDir,
+		Prompt:          prompt,
+		Profile:         profile,
+		Model:           agentProfile.Model,
+		ExtraPrompt:     skillContent,
+		AutoMode:        agentProfile.AutoMode,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("launch: %w", err))
@@ -221,6 +240,26 @@ func (s *Service) SendInput(
 	}
 
 	return connect.NewResponse(&gruv1.SendInputResponse{Success: true}), nil
+}
+
+func (s *Service) ListProfiles(
+	ctx context.Context,
+	req *connect.Request[gruv1.ListProfilesRequest],
+) (*connect.Response[gruv1.ListProfilesResponse], error) {
+	projectDir := filepath.Clean(req.Msg.ProjectDir)
+	projCfg, err := config.LoadProjectConfig(projectDir)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("load project config: %w", err))
+	}
+	profiles := make([]*gruv1.AgentProfile, 0, len(projCfg.Project.AgentProfiles))
+	for name, p := range projCfg.Project.AgentProfiles {
+		profiles = append(profiles, &gruv1.AgentProfile{
+			Name:        name,
+			Description: p.Description,
+			Model:       p.Model,
+		})
+	}
+	return connect.NewResponse(&gruv1.ListProfilesResponse{Profiles: profiles}), nil
 }
 
 func (s *Service) ListProjects(

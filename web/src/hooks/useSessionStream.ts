@@ -1,6 +1,6 @@
 import { useEffect, useRef, useReducer, useCallback } from 'react';
 import { gruClient } from '../client';
-import type { Session, SessionEvent } from '../types';
+import type { Project, Session, SessionEvent } from '../types';
 import { SessionStatus } from '../types';
 
 export interface SessionState {
@@ -127,8 +127,12 @@ const MAX_BACKOFF_MS = 30000;
 function notifyAttention(session: Session, projectName: string): void {
   if (document.hasFocus()) return;
   if (Notification.permission !== 'granted') return;
+  const sessionLabel = session.name || session.id.slice(0, 8);
+  const body = projectName
+    ? `${sessionLabel} in ${projectName} needs your attention`
+    : `${sessionLabel} needs your attention`;
   new Notification('Gru — Attention needed', {
-    body: `Session ${session.id.slice(0, 8)} in ${projectName} needs your attention`,
+    body,
     tag: `gru-attention-${session.id}`,
   });
 }
@@ -137,7 +141,7 @@ export interface UseSessionStreamResult extends SessionState {
   sessionsSortedByAttention: (projectId: string) => Session[];
 }
 
-export function useSessionStream(projectId?: string): UseSessionStreamResult {
+export function useSessionStream(projectId?: string, projects?: Project[]): UseSessionStreamResult {
   const [state, dispatch] = useReducer(reducer, {
     sessions: new Map(),
     events: new Map(),
@@ -148,6 +152,8 @@ export function useSessionStream(projectId?: string): UseSessionStreamResult {
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
   const abortRef = useRef<AbortController | null>(null);
   const prevStatusRef = useRef<Map<string, SessionStatus>>(new Map());
+  const projectsRef = useRef<Project[]>(projects ?? []);
+  projectsRef.current = projects ?? [];
 
   const connect = useCallback(async () => {
     abortRef.current?.abort();
@@ -197,7 +203,8 @@ export function useSessionStream(projectId?: string): UseSessionStreamResult {
         session.status === SessionStatus.NEEDS_ATTENTION &&
         prev !== SessionStatus.NEEDS_ATTENTION
       ) {
-        notifyAttention(session, session.projectId);
+        const project = projectsRef.current.find((p) => p.id === session.projectId);
+        notifyAttention(session, project?.name ?? '');
       }
       prevStatusRef.current.set(id, session.status);
     }

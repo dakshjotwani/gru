@@ -98,6 +98,16 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	// --worktree <shortID> tells Claude Code to create/reuse a worktree at
 	// <projectDir>/.claude/worktrees/<shortID>, preserving memories across sessions.
 	claudeArgs := []string{"--worktree", shortID}
+	if opts.AutoMode {
+		claudeArgs = append(claudeArgs, "--permission-mode", "auto")
+	}
+	if opts.Model != "" {
+		claudeArgs = append(claudeArgs, "--model", opts.Model)
+	}
+	if opts.ExtraPrompt != "" {
+		escaped := "'" + strings.ReplaceAll(opts.ExtraPrompt, "'", "'\\''") + "'"
+		claudeArgs = append(claudeArgs, "--append-system-prompt", escaped)
+	}
 	if opts.Prompt != "" {
 		// Shell-quote the prompt using single quotes so spaces and special
 		// characters are passed through to claude verbatim.

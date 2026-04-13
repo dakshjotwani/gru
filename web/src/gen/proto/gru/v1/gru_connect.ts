@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest } from "./gru_pb.js";
+import { GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest } from "./gru_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -68,6 +68,15 @@ export const GruService = {
       name: "ListProjects",
       I: ListProjectsRequest,
       O: ListProjectsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc gru.v1.GruService.ListProfiles
+     */
+    listProfiles: {
+      name: "ListProfiles",
+      I: ListProfilesRequest,
+      O: ListProfilesResponse,
       kind: MethodKind.Unary,
     },
     /**

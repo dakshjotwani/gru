@@ -73,16 +73,35 @@ fi
 GRU_API_KEY="$(grep '^api_key:' "$GRU_CONFIG_FILE" | awk '{print $2}' | tr -d '"'\''[:space:]')"
 export VITE_GRU_API_KEY="${GRU_API_KEY}"
 
+# Detect the Tailscale IP so the frontend (running in a remote browser) can
+# reach the gRPC server directly.  Falls back to localhost if tailscale isn't
+# running or isn't on PATH.
+TAILSCALE_IP="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+if [[ -n "$TAILSCALE_IP" ]]; then
+  export VITE_GRU_SERVER_URL="http://${TAILSCALE_IP}:7777"
+else
+  export VITE_GRU_SERVER_URL="http://localhost:7777"
+fi
+
 # Build the server binary first so we catch compile errors early.
-# Ensure fnm-managed node/npm is on PATH if not already present.
-FNM_BIN="${HOME}/.local/share/fnm/aliases/default/bin"
-if [[ -d "$FNM_BIN" && ":${PATH}:" != *":${FNM_BIN}:"* ]]; then
-  export PATH="${FNM_BIN}:${PATH}"
+# Ensure nvm-managed node/npm is on PATH if not already present.
+NVM_BIN="${HOME}/.nvm/alias/default"
+if [[ -f "$NVM_BIN" ]]; then
+  NVM_DEFAULT_VERSION="$(cat "$NVM_BIN")"
+  NVM_DEFAULT_BIN="${HOME}/.nvm/versions/node/${NVM_DEFAULT_VERSION}/bin"
+  # Resolve symlink (e.g. "22" -> "v22.22.2")
+  if [[ ! -d "$NVM_DEFAULT_BIN" ]]; then
+    NVM_DEFAULT_VERSION="$(ls "${HOME}/.nvm/versions/node/" | grep "^v${NVM_DEFAULT_VERSION#v}" | tail -1)"
+    NVM_DEFAULT_BIN="${HOME}/.nvm/versions/node/${NVM_DEFAULT_VERSION}/bin"
+  fi
+  if [[ -d "$NVM_DEFAULT_BIN" && ":${PATH}:" != *":${NVM_DEFAULT_BIN}:"* ]]; then
+    export PATH="${NVM_DEFAULT_BIN}:${PATH}"
+  fi
 fi
 
 echo "building gru..."
 cd "$ROOT"
-GO="${GO:-$(command -v go 2>/dev/null || echo /home/daksh/go/bin/go)}"
+GO="${GO:-$(command -v go 2>/dev/null)}"
 "$GO" build -o /tmp/gru-dev ./cmd/gru
 
 echo "starting gru server..."
@@ -105,7 +124,13 @@ WEB_LOG_PID=$!
 
 echo ""
 echo "gru server:    http://localhost:7777"
-echo "web dashboard: http://localhost:3000"
+if [[ -n "$TAILSCALE_IP" ]]; then
+  echo "web dashboard: http://localhost:3000  (local)"
+  echo "               http://${TAILSCALE_IP}:3000  (tailnet)"
+  echo "gRPC backend:  ${VITE_GRU_SERVER_URL}  (baked into frontend)"
+else
+  echo "web dashboard: http://localhost:3000"
+fi
 echo "logs:          $LOG_DIR/"
 echo ""
 echo "  tail -f $LOG_DIR/server.log"

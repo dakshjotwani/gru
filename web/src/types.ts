@@ -3,6 +3,7 @@ export type {
   Session,
   SessionEvent,
   Project,
+  AgentProfile,
   ListSessionsRequest,
   ListSessionsResponse,
   GetSessionRequest,
@@ -12,6 +13,8 @@ export type {
   KillSessionResponse,
   ListProjectsRequest,
   ListProjectsResponse,
+  ListProfilesRequest,
+  ListProfilesResponse,
   SubscribeEventsRequest,
 } from './gen/proto/gru/v1/gru_pb';
 

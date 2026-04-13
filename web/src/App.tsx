@@ -1,13 +1,28 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AttentionQueue } from './components/AttentionQueue';
+import { LaunchModal } from './components/LaunchModal';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
 import styles from './App.module.css';
 
 export function App() {
-  const { projects } = useProjects();
-  const { sessions, events, connected } = useSessionStream();
+  const { projects, refetch: refetchProjects } = useProjects();
+  const { sessions, events, connected } = useSessionStream(undefined, projects);
+  const [showLaunch, setShowLaunch] = useState(false);
+
+  // Global keyboard shortcut: press 'n' to open launch dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        setShowLaunch(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Register the service worker.
   useEffect(() => {
@@ -42,6 +57,13 @@ export function App() {
           <span className={styles.sessionCount}>
             {activeCount} active session{activeCount !== 1 ? 's' : ''}
           </span>
+          <button
+            className={styles.launchBtn}
+            onClick={() => setShowLaunch(true)}
+            title="Launch a new agent session"
+          >
+            Launch
+          </button>
         </div>
       </header>
 
@@ -53,6 +75,14 @@ export function App() {
           connected={connected}
         />
       </main>
+
+      {showLaunch && (
+        <LaunchModal
+          projects={projects}
+          onClose={() => setShowLaunch(false)}
+          onLaunched={() => refetchProjects()}
+        />
+      )}
     </div>
   );
 }

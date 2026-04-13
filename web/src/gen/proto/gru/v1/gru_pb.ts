@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file proto/gru/v1/gru.proto.
  */
 export const file_proto_gru_v1_gru: GenFile = /*@__PURE__*/
-  fileDesc("ChZwcm90by9ncnUvdjEvZ3J1LnByb3RvEgZncnUudjEihwMKB1Nlc3Npb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdydW50aW1lGAMgASgJEiUKBnN0YXR1cxgEIAEoDjIVLmdydS52MS5TZXNzaW9uU3RhdHVzEg8KB3Byb2ZpbGUYBSABKAkSFwoPYXR0ZW50aW9uX3Njb3JlGAYgASgBEi4KCnN0YXJ0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1sYXN0X2V2ZW50X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNwaWQYCiABKAUSFAoMdG11eF9zZXNzaW9uGAsgASgJEhMKC3RtdXhfd2luZG93GAwgASgJEgwKBG5hbWUYDSABKAkSEwoLZGVzY3JpcHRpb24YDiABKAkSDgoGcHJvbXB0GA8gASgJInIKB1Byb2plY3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRwYXRoGAMgASgJEg8KB3J1bnRpbWUYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAioQEKDFNlc3Npb25FdmVudBIKCgJpZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSDwoHcnVudGltZRgEIAEoCRIMCgR0eXBlGAUgASgJEi0KCXRpbWVzdGFtcBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHcGF5bG9hZBgHIAEoDCJQChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSJQoGc3RhdHVzGAIgASgOMhUuZ3J1LnYxLlNlc3Npb25TdGF0dXMiOQoUTGlzdFNlc3Npb25zUmVzcG9uc2USIQoIc2Vzc2lvbnMYASADKAsyDy5ncnUudjEuU2Vzc2lvbiIfChFHZXRTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJvChRMYXVuY2hTZXNzaW9uUmVxdWVzdBITCgtwcm9qZWN0X2RpchgBIAEoCRIOCgZwcm9tcHQYAiABKAkSDwoHcHJvZmlsZRgDIAEoCRIMCgRuYW1lGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJIjkKFUxhdW5jaFNlc3Npb25SZXNwb25zZRIgCgdzZXNzaW9uGAEgASgLMg8uZ3J1LnYxLlNlc3Npb24iIAoSS2lsbFNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJIiYKE0tpbGxTZXNzaW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIVChNMaXN0UHJvamVjdHNSZXF1ZXN0IjkKFExpc3RQcm9qZWN0c1Jlc3BvbnNlEiEKCHByb2plY3RzGAEgAygLMg8uZ3J1LnYxLlByb2plY3QiNAoQU2VuZElucHV0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiOwoRU2VuZElucHV0UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIVCg1lcnJvcl9tZXNzYWdlGAIgASgJIkQKFlN1YnNjcmliZUV2ZW50c1JlcXVlc3QSEwoLcHJvamVjdF9pZHMYASADKAkSFQoNbWluX2F0dGVudGlvbhgCIAEoASr6AQoNU2Vzc2lvblN0YXR1cxIeChpTRVNTSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEhsKF1NFU1NJT05fU1RBVFVTX1NUQVJUSU5HEAESGgoWU0VTU0lPTl9TVEFUVVNfUlVOTklORxACEhcKE1NFU1NJT05fU1RBVFVTX0lETEUQAxIiCh5TRVNTSU9OX1NUQVRVU19ORUVEU19BVFRFTlRJT04QBBIcChhTRVNTSU9OX1NUQVRVU19DT01QTEVURUQQBRIaChZTRVNTSU9OX1NUQVRVU19FUlJPUkVEEAYSGQoVU0VTU0lPTl9TVEFUVVNfS0lMTEVEEAcy/wMKCkdydVNlcnZpY2USSQoMTGlzdFNlc3Npb25zEhsuZ3J1LnYxLkxpc3RTZXNzaW9uc1JlcXVlc3QaHC5ncnUudjEuTGlzdFNlc3Npb25zUmVzcG9uc2USOAoKR2V0U2Vzc2lvbhIZLmdydS52MS5HZXRTZXNzaW9uUmVxdWVzdBoPLmdydS52MS5TZXNzaW9uEkwKDUxhdW5jaFNlc3Npb24SHC5ncnUudjEuTGF1bmNoU2Vzc2lvblJlcXVlc3QaHS5ncnUudjEuTGF1bmNoU2Vzc2lvblJlc3BvbnNlEkYKC0tpbGxTZXNzaW9uEhouZ3J1LnYxLktpbGxTZXNzaW9uUmVxdWVzdBobLmdydS52MS5LaWxsU2Vzc2lvblJlc3BvbnNlEkAKCVNlbmRJbnB1dBIYLmdydS52MS5TZW5kSW5wdXRSZXF1ZXN0GhkuZ3J1LnYxLlNlbmRJbnB1dFJlc3BvbnNlEkkKDExpc3RQcm9qZWN0cxIbLmdydS52MS5MaXN0UHJvamVjdHNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlEkkKD1N1YnNjcmliZUV2ZW50cxIeLmdydS52MS5TdWJzY3JpYmVFdmVudHNSZXF1ZXN0GhQuZ3J1LnYxLlNlc3Npb25FdmVudDABQn8KCmNvbS5ncnUudjFCCEdydVByb3RvUAFaLmdpdGh1Yi5jb20vZGFrc2hqb3R3YW5pL2dydS9wcm90by9ncnUvdjE7Z3J1djGiAgNHWFiqAgZHcnUuVjHKAgZHcnVcVjHiAhJHcnVcVjFcR1BCTWV0YWRhdGHqAgdHcnU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChZwcm90by9ncnUvdjEvZ3J1LnByb3RvEgZncnUudjEihwMKB1Nlc3Npb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdydW50aW1lGAMgASgJEiUKBnN0YXR1cxgEIAEoDjIVLmdydS52MS5TZXNzaW9uU3RhdHVzEg8KB3Byb2ZpbGUYBSABKAkSFwoPYXR0ZW50aW9uX3Njb3JlGAYgASgBEi4KCnN0YXJ0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1sYXN0X2V2ZW50X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNwaWQYCiABKAUSFAoMdG11eF9zZXNzaW9uGAsgASgJEhMKC3RtdXhfd2luZG93GAwgASgJEgwKBG5hbWUYDSABKAkSEwoLZGVzY3JpcHRpb24YDiABKAkSDgoGcHJvbXB0GA8gASgJInIKB1Byb2plY3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRwYXRoGAMgASgJEg8KB3J1bnRpbWUYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAioQEKDFNlc3Npb25FdmVudBIKCgJpZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSDwoHcnVudGltZRgEIAEoCRIMCgR0eXBlGAUgASgJEi0KCXRpbWVzdGFtcBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHcGF5bG9hZBgHIAEoDCJQChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSJQoGc3RhdHVzGAIgASgOMhUuZ3J1LnYxLlNlc3Npb25TdGF0dXMiOQoUTGlzdFNlc3Npb25zUmVzcG9uc2USIQoIc2Vzc2lvbnMYASADKAsyDy5ncnUudjEuU2Vzc2lvbiIfChFHZXRTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJvChRMYXVuY2hTZXNzaW9uUmVxdWVzdBITCgtwcm9qZWN0X2RpchgBIAEoCRIOCgZwcm9tcHQYAiABKAkSDwoHcHJvZmlsZRgDIAEoCRIMCgRuYW1lGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJIjkKFUxhdW5jaFNlc3Npb25SZXNwb25zZRIgCgdzZXNzaW9uGAEgASgLMg8uZ3J1LnYxLlNlc3Npb24iIAoSS2lsbFNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJIiYKE0tpbGxTZXNzaW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIVChNMaXN0UHJvamVjdHNSZXF1ZXN0IjkKFExpc3RQcm9qZWN0c1Jlc3BvbnNlEiEKCHByb2plY3RzGAEgAygLMg8uZ3J1LnYxLlByb2plY3QiQAoMQWdlbnRQcm9maWxlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDQoFbW9kZWwYAyABKAkiKgoTTGlzdFByb2ZpbGVzUmVxdWVzdBITCgtwcm9qZWN0X2RpchgBIAEoCSI+ChRMaXN0UHJvZmlsZXNSZXNwb25zZRImCghwcm9maWxlcxgBIAMoCzIULmdydS52MS5BZ2VudFByb2ZpbGUiNAoQU2VuZElucHV0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiOwoRU2VuZElucHV0UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIVCg1lcnJvcl9tZXNzYWdlGAIgASgJIkQKFlN1YnNjcmliZUV2ZW50c1JlcXVlc3QSEwoLcHJvamVjdF9pZHMYASADKAkSFQoNbWluX2F0dGVudGlvbhgCIAEoASr6AQoNU2Vzc2lvblN0YXR1cxIeChpTRVNTSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEhsKF1NFU1NJT05fU1RBVFVTX1NUQVJUSU5HEAESGgoWU0VTU0lPTl9TVEFUVVNfUlVOTklORxACEhcKE1NFU1NJT05fU1RBVFVTX0lETEUQAxIiCh5TRVNTSU9OX1NUQVRVU19ORUVEU19BVFRFTlRJT04QBBIcChhTRVNTSU9OX1NUQVRVU19DT01QTEVURUQQBRIaChZTRVNTSU9OX1NUQVRVU19FUlJPUkVEEAYSGQoVU0VTU0lPTl9TVEFUVVNfS0lMTEVEEAcyygQKCkdydVNlcnZpY2USSQoMTGlzdFNlc3Npb25zEhsuZ3J1LnYxLkxpc3RTZXNzaW9uc1JlcXVlc3QaHC5ncnUudjEuTGlzdFNlc3Npb25zUmVzcG9uc2USOAoKR2V0U2Vzc2lvbhIZLmdydS52MS5HZXRTZXNzaW9uUmVxdWVzdBoPLmdydS52MS5TZXNzaW9uEkwKDUxhdW5jaFNlc3Npb24SHC5ncnUudjEuTGF1bmNoU2Vzc2lvblJlcXVlc3QaHS5ncnUudjEuTGF1bmNoU2Vzc2lvblJlc3BvbnNlEkYKC0tpbGxTZXNzaW9uEhouZ3J1LnYxLktpbGxTZXNzaW9uUmVxdWVzdBobLmdydS52MS5LaWxsU2Vzc2lvblJlc3BvbnNlEkAKCVNlbmRJbnB1dBIYLmdydS52MS5TZW5kSW5wdXRSZXF1ZXN0GhkuZ3J1LnYxLlNlbmRJbnB1dFJlc3BvbnNlEkkKDExpc3RQcm9qZWN0cxIbLmdydS52MS5MaXN0UHJvamVjdHNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlEkkKDExpc3RQcm9maWxlcxIbLmdydS52MS5MaXN0UHJvZmlsZXNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RQcm9maWxlc1Jlc3BvbnNlEkkKD1N1YnNjcmliZUV2ZW50cxIeLmdydS52MS5TdWJzY3JpYmVFdmVudHNSZXF1ZXN0GhQuZ3J1LnYxLlNlc3Npb25FdmVudDABQn8KCmNvbS5ncnUudjFCCEdydVByb3RvUAFaLmdpdGh1Yi5jb20vZGFrc2hqb3R3YW5pL2dydS9wcm90by9ncnUvdjE7Z3J1djGiAgNHWFiqAgZHcnUuVjHKAgZHcnVcVjHiAhJHcnVcVjFcR1BCTWV0YWRhdGHqAgdHcnU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message gru.v1.Session
@@ -370,6 +370,67 @@ export const ListProjectsResponseSchema: GenMessage<ListProjectsResponse> = /*@_
   messageDesc(file_proto_gru_v1_gru, 11);
 
 /**
+ * @generated from message gru.v1.AgentProfile
+ */
+export type AgentProfile = Message<"gru.v1.AgentProfile"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 2;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string model = 3;
+   */
+  model: string;
+};
+
+/**
+ * Describes the message gru.v1.AgentProfile.
+ * Use `create(AgentProfileSchema)` to create a new message.
+ */
+export const AgentProfileSchema: GenMessage<AgentProfile> = /*@__PURE__*/
+  messageDesc(file_proto_gru_v1_gru, 12);
+
+/**
+ * @generated from message gru.v1.ListProfilesRequest
+ */
+export type ListProfilesRequest = Message<"gru.v1.ListProfilesRequest"> & {
+  /**
+   * @generated from field: string project_dir = 1;
+   */
+  projectDir: string;
+};
+
+/**
+ * Describes the message gru.v1.ListProfilesRequest.
+ * Use `create(ListProfilesRequestSchema)` to create a new message.
+ */
+export const ListProfilesRequestSchema: GenMessage<ListProfilesRequest> = /*@__PURE__*/
+  messageDesc(file_proto_gru_v1_gru, 13);
+
+/**
+ * @generated from message gru.v1.ListProfilesResponse
+ */
+export type ListProfilesResponse = Message<"gru.v1.ListProfilesResponse"> & {
+  /**
+   * @generated from field: repeated gru.v1.AgentProfile profiles = 1;
+   */
+  profiles: AgentProfile[];
+};
+
+/**
+ * Describes the message gru.v1.ListProfilesResponse.
+ * Use `create(ListProfilesResponseSchema)` to create a new message.
+ */
+export const ListProfilesResponseSchema: GenMessage<ListProfilesResponse> = /*@__PURE__*/
+  messageDesc(file_proto_gru_v1_gru, 14);
+
+/**
  * @generated from message gru.v1.SendInputRequest
  */
 export type SendInputRequest = Message<"gru.v1.SendInputRequest"> & {
@@ -391,7 +452,7 @@ export type SendInputRequest = Message<"gru.v1.SendInputRequest"> & {
  * Use `create(SendInputRequestSchema)` to create a new message.
  */
 export const SendInputRequestSchema: GenMessage<SendInputRequest> = /*@__PURE__*/
-  messageDesc(file_proto_gru_v1_gru, 12);
+  messageDesc(file_proto_gru_v1_gru, 15);
 
 /**
  * @generated from message gru.v1.SendInputResponse
@@ -413,7 +474,7 @@ export type SendInputResponse = Message<"gru.v1.SendInputResponse"> & {
  * Use `create(SendInputResponseSchema)` to create a new message.
  */
 export const SendInputResponseSchema: GenMessage<SendInputResponse> = /*@__PURE__*/
-  messageDesc(file_proto_gru_v1_gru, 13);
+  messageDesc(file_proto_gru_v1_gru, 16);
 
 /**
  * @generated from message gru.v1.SubscribeEventsRequest
@@ -435,7 +496,7 @@ export type SubscribeEventsRequest = Message<"gru.v1.SubscribeEventsRequest"> & 
  * Use `create(SubscribeEventsRequestSchema)` to create a new message.
  */
 export const SubscribeEventsRequestSchema: GenMessage<SubscribeEventsRequest> = /*@__PURE__*/
-  messageDesc(file_proto_gru_v1_gru, 14);
+  messageDesc(file_proto_gru_v1_gru, 17);
 
 /**
  * @generated from enum gru.v1.SessionStatus
@@ -543,6 +604,14 @@ export const GruService: GenService<{
     methodKind: "unary";
     input: typeof ListProjectsRequestSchema;
     output: typeof ListProjectsResponseSchema;
+  },
+  /**
+   * @generated from rpc gru.v1.GruService.ListProfiles
+   */
+  listProfiles: {
+    methodKind: "unary";
+    input: typeof ListProfilesRequestSchema;
+    output: typeof ListProfilesResponseSchema;
   },
   /**
    * Real-time event stream

@@ -69,6 +69,23 @@
   color: #595959;
 }
 
+.launchBtn {
+  padding: 5px 14px;
+  border: 1px solid #1677ff;
+  border-radius: 6px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+
+.launchBtn:hover {
+  background: #1060d9;
+  border-color: #1060d9;
+}
+
 .main {
   max-width: 1200px;
   margin: 0 auto;

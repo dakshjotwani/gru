@@ -1,0 +1,39 @@
+project:
+  name: gru
+  runtime: claude-code
+
+  agent_profiles:
+    feature:
+      description: "Implement new features — backend, frontend, or both"
+      model: claude-sonnet-4-6
+      auto_mode: true
+      extra_skills:
+        - skills/gru-agent.md
+
+    backend:
+      description: "Go backend work: gRPC service, store, adapters, supervisor"
+      model: claude-sonnet-4-6
+      auto_mode: true
+      extra_skills:
+        - skills/gru-agent.md
+
+    frontend:
+      description: "React web dashboard work"
+      model: claude-sonnet-4-6
+      auto_mode: true
+      extra_skills:
+        - skills/gru-agent.md
+
+    bugfix:
+      description: "Investigate and fix bugs"
+      model: claude-opus-4-6
+      auto_mode: true
+      extra_skills:
+        - skills/gru-agent.md
+
+    docs:
+      description: "Write specs, designs, or documentation"
+      model: claude-sonnet-4-6
+      auto_mode: true
+      extra_skills:
+        - skills/gru-agent.md
