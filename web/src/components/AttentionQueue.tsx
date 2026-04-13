@@ -12,10 +12,18 @@ interface AttentionQueueProps {
   connected: boolean;
 }
 
-/** Extract seconds from a protobuf Timestamp, returning null if missing. */
-function tsSeconds(ts: { seconds: bigint } | undefined): number | null {
+/** Extract epoch seconds from a protobuf Timestamp or RFC3339 string, returning null if missing. */
+function tsSeconds(ts: unknown): number | null {
   if (!ts) return null;
-  return Number(ts.seconds);
+  if (typeof ts === 'object' && ts !== null && 'seconds' in ts) {
+    const secs = Number((ts as { seconds: unknown }).seconds);
+    if (!isNaN(secs) && secs > 0) return secs;
+  }
+  if (typeof ts === 'string') {
+    const ms = Date.parse(ts);
+    if (!isNaN(ms)) return ms / 1000;
+  }
+  return null;
 }
 
 const STATUS_PRIORITY: Record<number, number> = {

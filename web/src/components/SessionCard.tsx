@@ -14,11 +14,24 @@ interface SessionCardProps {
   projectName?: string;
 }
 
+function tsToEpoch(ts: unknown): number | null {
+  if (!ts) return null;
+  // Proto Timestamp object with seconds field (bigint or number)
+  if (typeof ts === 'object' && ts !== null && 'seconds' in ts) {
+    const secs = Number((ts as { seconds: unknown }).seconds);
+    if (!isNaN(secs) && secs > 0) return secs;
+  }
+  // Protojson serializes Timestamp as an RFC3339 string
+  if (typeof ts === 'string') {
+    const ms = Date.parse(ts);
+    if (!isNaN(ms)) return ms / 1000;
+  }
+  return null;
+}
+
 function getTimeInState(session: Session): string {
-  const ts = session.lastEventAt;
-  if (!ts) return '';
-  const secs = Number(ts.seconds);
-  if (secs === 0) return '';
+  const secs = tsToEpoch(session.lastEventAt);
+  if (secs === null) return '';
   return formatDuration(uptimeSeconds(secs));
 }
 
@@ -41,8 +54,8 @@ function getContextPreview(session: Session, events: SessionEvent[]): string {
       return 'Working...';
     }
     case SessionStatus.IDLE: {
-      const secs = session.lastEventAt ? Number(session.lastEventAt.seconds) : 0;
-      if (secs > 0) {
+      const secs = tsToEpoch(session.lastEventAt);
+      if (secs !== null) {
         const mins = Math.floor(uptimeSeconds(secs) / 60);
         return `Idle for ${mins < 1 ? 'less than a minute' : `${mins} minute${mins !== 1 ? 's' : ''}`}`;
       }
@@ -62,10 +75,9 @@ function findLastEventOfType(events: SessionEvent[], type: string): SessionEvent
   return undefined;
 }
 
-function relativeTime(ts: { seconds: bigint } | undefined): string {
-  if (!ts) return '';
-  const secs = Number(ts.seconds);
-  if (secs === 0) return '';
+function relativeTime(ts: unknown): string {
+  const secs = tsToEpoch(ts);
+  if (secs === null) return '';
   return formatDuration(uptimeSeconds(secs)) + ' ago';
 }
 
