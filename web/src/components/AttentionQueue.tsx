@@ -70,7 +70,8 @@ function sortSessions(sessions: Session[]): Session[] {
       return bStarted - aStarted;
     }
 
-    return 0;
+    // Stable tiebreaker: sort by ID so equal sessions don't shuffle.
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 }
 

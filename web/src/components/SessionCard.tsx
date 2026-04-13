@@ -119,6 +119,8 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
       tabIndex={0}
       aria-expanded={expanded}
       onKeyDown={(e) => {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         if (e.key === 'Enter' || e.key === ' ') setExpanded((prev) => !prev);
       }}
     >
