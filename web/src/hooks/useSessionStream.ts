@@ -17,6 +17,9 @@ type Action =
   | { type: 'DISCONNECTED'; error?: string }
   | { type: 'RESET' };
 
+// Derive session status from event type, mirroring the backend logic in
+// internal/ingestion/handler.go so the frontend updates in real time without
+// needing the server to echo the new status back.
 function applyEvent(sessions: Map<string, Session>, event: SessionEvent): Map<string, Session> {
   const next = new Map(sessions);
   const existing = next.get(event.sessionId);
@@ -27,30 +30,39 @@ function applyEvent(sessions: Map<string, Session>, event: SessionEvent): Map<st
     lastEventAt: event.timestamp,
   };
 
-  if (event.payload) {
-    try {
-      const raw = event.payload;
-      const payloadStr = raw instanceof Uint8Array
-        ? new TextDecoder().decode(raw)
-        : String(raw);
-      const payload = JSON.parse(payloadStr) as { status?: string };
-      if (payload.status) {
-        const statusMap: Record<string, SessionStatus> = {
-          starting: SessionStatus.STARTING,
-          running: SessionStatus.RUNNING,
-          idle: SessionStatus.IDLE,
-          needs_attention: SessionStatus.NEEDS_ATTENTION,
-          completed: SessionStatus.COMPLETED,
-          errored: SessionStatus.ERRORED,
-          killed: SessionStatus.KILLED,
-        };
-        if (payload.status in statusMap) {
-          updated.status = statusMap[payload.status];
-        }
+  switch (event.type) {
+    case 'session.start':
+      updated.status = SessionStatus.RUNNING;
+      break;
+    case 'session.idle':
+      updated.status = SessionStatus.IDLE;
+      break;
+    case 'session.end':
+      updated.status = SessionStatus.COMPLETED;
+      break;
+    case 'session.crash':
+      updated.status = SessionStatus.ERRORED;
+      break;
+    case 'notification.needs_attention':
+      updated.status = SessionStatus.NEEDS_ATTENTION;
+      break;
+    case 'tool.pre':
+    case 'subagent.start':
+      if (
+        existing.status === SessionStatus.STARTING ||
+        existing.status === SessionStatus.IDLE ||
+        existing.status === SessionStatus.NEEDS_ATTENTION
+      ) {
+        updated.status = SessionStatus.RUNNING;
       }
-    } catch {
-      // Ignore unparseable payloads.
-    }
+      break;
+    case 'tool.post':
+    case 'tool.error':
+    case 'subagent.end':
+      if (existing.status === SessionStatus.STARTING) {
+        updated.status = SessionStatus.RUNNING;
+      }
+      break;
   }
 
   next.set(event.sessionId, updated);
@@ -135,18 +147,17 @@ export function useSessionStream(projectId?: string): UseSessionStreamResult {
   const prevStatusRef = useRef<Map<string, SessionStatus>>(new Map());
 
   const connect = useCallback(async () => {
-    dispatch({ type: 'RESET' });
     abortRef.current?.abort();
     const abort = new AbortController();
     abortRef.current = abort;
 
     try {
-      dispatch({ type: 'CONNECTED' });
       const stream = gruClient.subscribeEvents(
         { projectIds: projectId ? [projectId] : [], minAttention: 0 },
         { signal: abort.signal }
       );
 
+      dispatch({ type: 'CONNECTED' });
       for await (const event of stream) {
         dispatch({ type: 'EVENT', event });
       }

@@ -94,6 +94,10 @@ SERVER_LOG_PID=$!
 echo "starting web dashboard..."
 cd "$ROOT/web"
 NPM="${NPM:-$(command -v npm)}"
+if [[ ! -d node_modules ]]; then
+  echo "installing web dependencies..."
+  "$NPM" install --no-fund --no-audit >/dev/null 2>&1
+fi
 "$NPM" run dev > "$WEB_PIPE" 2>&1 &
 WEB_PID=$!
 prefix_log "web   " "\033[0;32m" "$LOG_DIR/web.log" "$WEB_PIPE" &

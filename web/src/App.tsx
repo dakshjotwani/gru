@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { SessionGrid } from './components/SessionGrid';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
+import { SessionStatus } from './types';
 import styles from './App.module.css';
 
 export function App() {
@@ -19,9 +20,9 @@ export function App() {
 
   const activeCount = Array.from(sessions.values()).filter(
     (s) =>
-      s.status !== 3 && // SESSION_STATUS_COMPLETED
-      s.status !== 6 && // SESSION_STATUS_ERRORED
-      s.status !== 7    // SESSION_STATUS_KILLED
+      s.status !== SessionStatus.COMPLETED &&
+      s.status !== SessionStatus.ERRORED &&
+      s.status !== SessionStatus.KILLED
   ).length;
 
   return (
