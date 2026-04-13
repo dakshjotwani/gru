@@ -26,9 +26,6 @@ type SessionHandle struct {
 	SessionID   string
 	TmuxSession string
 	TmuxWindow  string
-	Kill        func(ctx context.Context) error
-	Done        <-chan struct{}
-	ExitCode    func() int
 }
 
 type SessionController interface {

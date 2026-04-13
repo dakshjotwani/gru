@@ -12,11 +12,12 @@ import (
 
 // hookPayload is the raw shape of a Claude Code hook event.
 type hookPayload struct {
-	HookEventName string          `json:"hook_event_name"`
-	ToolName      string          `json:"tool_name,omitempty"`
-	ToolInput     json.RawMessage `json:"tool_input,omitempty"`
-	ToolResponse  json.RawMessage `json:"tool_response,omitempty"`
-	Message       string          `json:"message,omitempty"`
+	HookEventName    string          `json:"hook_event_name"`
+	ToolName         string          `json:"tool_name,omitempty"`
+	ToolInput        json.RawMessage `json:"tool_input,omitempty"`
+	ToolResponse     json.RawMessage `json:"tool_response,omitempty"`
+	Message          string          `json:"message,omitempty"`
+	NotificationType string          `json:"notification_type,omitempty"` // Notification hook
 }
 
 // Normalizer converts Claude Code hook payloads into GruEvents.
@@ -38,7 +39,7 @@ func (n *Normalizer) Normalize(_ context.Context, raw json.RawMessage) (*adapter
 		return nil, fmt.Errorf("claude normalizer: unmarshal: %w", err)
 	}
 
-	eventType, err := mapEventType(p.HookEventName)
+	eventType, err := mapEventType(p)
 	if err != nil {
 		return nil, err
 	}
@@ -52,9 +53,24 @@ func (n *Normalizer) Normalize(_ context.Context, raw json.RawMessage) (*adapter
 	}, nil
 }
 
-// mapEventType converts a Claude Code hook_event_name to a GruEvent EventType.
-func mapEventType(name string) (adapter.EventType, error) {
-	switch name {
+// mapEventType converts a Claude Code hook payload to a GruEvent EventType.
+//
+// Hook → event type → intended session status:
+//
+//	SessionStart        → session.start              → running
+//	PreToolUse          → tool.pre                   → running
+//	PostToolUse         → tool.post                  (stay running)
+//	PostToolUseFailure  → tool.error                 (stay running)
+//	SubagentStart       → subagent.start             (stay running)
+//	SubagentStop        → subagent.end               (stay running)
+//	Stop                → session.idle               → idle   (turn done, waiting for input)
+//	StopFailure         → session.crash              → errored
+//	Notification (permission_prompt, elicitation_dialog) → notification.needs_attention → needs_attention
+//	Notification (other) → notification              (informational)
+func mapEventType(p hookPayload) (adapter.EventType, error) {
+	switch p.HookEventName {
+	case "SessionStart":
+		return adapter.EventSessionStart, nil
 	case "PreToolUse":
 		return adapter.EventToolPre, nil
 	case "PostToolUse":
@@ -62,14 +78,27 @@ func mapEventType(name string) (adapter.EventType, error) {
 	case "PostToolUseFailure":
 		return adapter.EventToolError, nil
 	case "Stop":
-		return adapter.EventSessionEnd, nil
+		// Stop fires when a turn completes and Claude is back at the prompt
+		// waiting for the next instruction — this is idle, not session end.
+		return adapter.EventSessionIdle, nil
+	case "StopFailure":
+		// StopFailure fires when a turn ends due to an API error (rate limit,
+		// auth failure, server error, etc.) — treat as a crash.
+		return adapter.EventSessionCrash, nil
 	case "Notification":
-		return adapter.EventNotification, nil
+		// Discriminate by notification_type: permission requests and MCP
+		// elicitations block the session and require user action.
+		switch p.NotificationType {
+		case "permission_prompt", "elicitation_dialog":
+			return adapter.EventNeedsAttention, nil
+		default:
+			return adapter.EventNotification, nil
+		}
 	case "SubagentStart":
 		return adapter.EventSubagentStart, nil
 	case "SubagentStop":
 		return adapter.EventSubagentEnd, nil
 	default:
-		return "", fmt.Errorf("claude normalizer: unknown hook_event_name %q", name)
+		return "", fmt.Errorf("claude normalizer: unknown hook_event_name %q", p.HookEventName)
 	}
 }

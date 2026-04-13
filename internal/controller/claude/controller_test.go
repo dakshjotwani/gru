@@ -72,11 +72,8 @@ func TestClaudeController_Launch_SessionAndWindowCreated(t *testing.T) {
 	if handle.TmuxWindow == "" {
 		t.Error("TmuxWindow is empty")
 	}
-	if handle.Done == nil {
-		t.Error("Done channel is nil")
-	}
-	if handle.Kill == nil {
-		t.Error("Kill func is nil")
+	if handle.SessionID == "" {
+		t.Error("SessionID is empty")
 	}
 
 	var foundSession bool
@@ -123,32 +120,3 @@ func TestClaudeController_Launch_WindowNameFormat(t *testing.T) {
 	}
 }
 
-func TestClaudeController_Launch_Kill(t *testing.T) {
-	ft := newFakeTmux()
-	c := claudectrl.NewClaudeControllerWithRunner("key", "localhost", "7070", ft)
-	projectDir := t.TempDir()
-
-	handle, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  "abcd1234-0000-0000-0000-000000000001",
-		ProjectDir: projectDir,
-		Prompt:     "long running",
-		Profile:    "feat-dev",
-	})
-	if err != nil {
-		t.Fatalf("Launch: %v", err)
-	}
-
-	if err := handle.Kill(context.Background()); err != nil {
-		t.Fatalf("Kill: unexpected error: %v", err)
-	}
-
-	var foundKill bool
-	for _, call := range ft.runs {
-		if len(call) > 0 && call[0] == "kill-window" {
-			foundKill = true
-		}
-	}
-	if !foundKill {
-		t.Error("tmux kill-window was not called")
-	}
-}

@@ -30,7 +30,7 @@ func newRootCmd() *cobra.Command {
 		Long:         "Gru monitors, launches, and manages AI coding agent sessions across projects.",
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Name() == "server" {
+			if cmd.Name() == "server" || cmd.Name() == "prune" {
 				return nil
 			}
 			if state.serverURL == "" {
@@ -57,6 +57,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newServerCmd(),
 		newInitCmd(),
+		newPruneCmd(),
 		newStatusCmd(state),
 		newKillCmd(state),
 		newLaunchCmd(state),

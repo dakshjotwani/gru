@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os/exec"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,8 +27,6 @@ type Service struct {
 	store         *store.Store
 	pub           *ingestion.Publisher
 	controllerReg *controller.Registry
-	handlesMu     sync.Mutex
-	handles       map[string]*controller.SessionHandle
 }
 
 var _ gruv1connect.GruServiceHandler = (*Service)(nil)
@@ -38,7 +36,6 @@ func NewService(s *store.Store, pub *ingestion.Publisher) *Service {
 		store:         s,
 		pub:           pub,
 		controllerReg: controller.NewRegistry(),
-		handles:       make(map[string]*controller.SessionHandle),
 	}
 }
 
@@ -129,17 +126,6 @@ func (s *Service) LaunchSession(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create session row: %w", err))
 	}
 
-	s.handlesMu.Lock()
-	s.handles[sessionID] = handle
-	s.handlesMu.Unlock()
-
-	go func() {
-		<-handle.Done
-		s.handlesMu.Lock()
-		delete(s.handles, sessionID)
-		s.handlesMu.Unlock()
-	}()
-
 	return connect.NewResponse(&gruv1.LaunchSessionResponse{
 		Session: rowToSession(row),
 	}), nil
@@ -150,23 +136,17 @@ func (s *Service) KillSession(
 	req *connect.Request[gruv1.KillSessionRequest],
 ) (*connect.Response[gruv1.KillSessionResponse], error) {
 	sessionID := req.Msg.Id
-	_, err := s.store.Queries().GetSession(ctx, sessionID)
+	row, err := s.store.Queries().GetSession(ctx, sessionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("session %q not found", sessionID))
 	} else if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	s.handlesMu.Lock()
-	handle, ok := s.handles[sessionID]
-	s.handlesMu.Unlock()
-
-	if ok && handle.Kill != nil {
-		killCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		defer cancel()
-		if err := handle.Kill(killCtx); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("kill: %w", err))
-		}
+	// Kill the tmux window using DB coordinates — works across server restarts.
+	if row.TmuxSession != nil && row.TmuxWindow != nil {
+		target := *row.TmuxSession + ":" + *row.TmuxWindow
+		_ = exec.Command("tmux", "kill-window", "-t", target).Run()
 	}
 
 	_, err = s.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
@@ -347,5 +327,8 @@ func rowToSession(r db.Session) *gruv1.Session {
 }
 
 func sessionToJSON(sess *gruv1.Session) ([]byte, error) {
-	return protojson.Marshal(sess)
+	// UseEnumNumbers emits numeric values (e.g. 1) rather than string names
+	// (e.g. "SESSION_STATUS_STARTING") so the frontend's numeric TypeScript
+	// enum comparisons work correctly.
+	return protojson.MarshalOptions{UseEnumNumbers: true}.Marshal(sess)
 }

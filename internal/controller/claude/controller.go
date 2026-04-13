@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/google/uuid"
@@ -94,73 +93,50 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		windowName = shortID
 	}
 
-	logDir := filepath.Join(os.Getenv("HOME"), ".gru", "sessions")
-	if err := os.MkdirAll(logDir, 0700); err != nil {
-		return nil, fmt.Errorf("claude: create session log dir: %w", err)
+	// Launch claude interactively. Passing the prompt as a positional argument
+	// starts the session with that task; claude remains interactive afterward.
+	// --worktree <shortID> tells Claude Code to create/reuse a worktree at
+	// <projectDir>/.claude/worktrees/<shortID>, preserving memories across sessions.
+	claudeArgs := []string{"--worktree", shortID}
+	if opts.Prompt != "" {
+		// Shell-quote the prompt using single quotes so spaces and special
+		// characters are passed through to claude verbatim.
+		escaped := "'" + strings.ReplaceAll(opts.Prompt, "'", "'\\''") + "'"
+		claudeArgs = append(claudeArgs, escaped)
 	}
-	logFile := filepath.Join(logDir, sessionID+".log")
-
-	// Tee output to a log file so it survives after the window closes.
-	// remain-on-exit keeps the pane visible for inspection with gru attach.
-	claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions -p '%s' 2>&1 | tee %s",
-		c.claudeBin, opts.Prompt, logFile)
+	// Inline env vars in the command string — tmux 3.0a does not support -e on new-window.
+	claudeCmd := fmt.Sprintf("GRU_SESSION_ID=%s GRU_API_KEY=%s GRU_HOST=%s GRU_PORT=%s %s %s",
+		sessionID, c.apiKey, c.host, c.port,
+		c.claudeBin, strings.Join(claudeArgs, " "))
 
 	newWindowArgs := []string{
 		"new-window",
 		"-t", tmuxSession,
 		"-n", windowName,
 		"-c", opts.ProjectDir,
-		"-e", "GRU_SESSION_ID=" + sessionID,
-		"-e", "GRU_API_KEY=" + c.apiKey,
-		"-e", "GRU_HOST=" + c.host,
-		"-e", "GRU_PORT=" + c.port,
 		claudeCmd,
 	}
 	if err := c.tmux.Run(newWindowArgs...); err != nil {
 		return nil, fmt.Errorf("claude: tmux new-window: %w", err)
 	}
+
+	// Write a lookup file so the hook script can resolve the GRU session ID
+	// from the worktree CWD without relying on environment variables (Claude
+	// Code sanitizes the hook subprocess environment).
+	sessionLookupDir := filepath.Join(opts.ProjectDir, ".gru", "sessions")
+	if err := os.MkdirAll(sessionLookupDir, 0o755); err == nil {
+		_ = os.WriteFile(filepath.Join(sessionLookupDir, shortID), []byte(sessionID), 0o644)
+	}
+
 	// Set remain-on-exit on the specific window so the pane stays visible
 	// after the command finishes. Must target the window directly — setting
 	// this at the session level does not propagate to new windows in tmux.
 	windowTarget := tmuxSession + ":" + windowName
 	_ = c.tmux.Run("set-window-option", "-t", windowTarget, "remain-on-exit", "on")
 
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				out, err := c.tmux.Output("list-windows", "-t", tmuxSession, "-F", "#{window_name}")
-				if err != nil {
-					return
-				}
-				if !strings.Contains(string(out), windowName) {
-					return
-				}
-			}
-		}
-	}()
-
-	killFn := func(killCtx context.Context) error {
-		target := tmuxSession + ":" + windowName
-		if err := c.tmux.Run("kill-window", "-t", target); err != nil {
-			return fmt.Errorf("claude: kill-window %s: %w", target, err)
-		}
-		return nil
-	}
-
 	return &controller.SessionHandle{
 		SessionID:   sessionID,
 		TmuxSession: tmuxSession,
 		TmuxWindow:  windowName,
-		Kill:        killFn,
-		Done:        done,
-		ExitCode:    func() int { return 0 },
 	}, nil
 }

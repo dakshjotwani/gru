@@ -10,16 +10,22 @@ import (
 type EventType string
 
 const (
-	// Required — every runtime adapter must emit these.
-	EventSessionStart EventType = "session.start"
-	EventSessionEnd   EventType = "session.end"
-	EventSessionCrash EventType = "session.crash"
-	EventToolPre      EventType = "tool.pre"
-	EventToolPost     EventType = "tool.post"
-	EventToolError    EventType = "tool.error"
-	EventNotification EventType = "notification"
+	// Session lifecycle.
+	EventSessionStart EventType = "session.start"  // Claude Code started a session
+	EventSessionIdle  EventType = "session.idle"   // Turn complete; Claude waiting for next input (Stop hook)
+	EventSessionEnd   EventType = "session.end"    // Session terminated (process exited)
+	EventSessionCrash EventType = "session.crash"  // Fatal error ended the session (StopFailure hook)
 
-	// Optional — pass through if the runtime emits them.
+	// Tool execution.
+	EventToolPre   EventType = "tool.pre"   // PreToolUse
+	EventToolPost  EventType = "tool.post"  // PostToolUse
+	EventToolError EventType = "tool.error" // PostToolUseFailure
+
+	// Notifications.
+	EventNotification    EventType = "notification"             // Informational (Notification hook, generic types)
+	EventNeedsAttention  EventType = "notification.needs_attention" // Claude blocked on permission or MCP elicitation
+
+	// Subagents.
 	EventSubagentStart EventType = "subagent.start"
 	EventSubagentEnd   EventType = "subagent.end"
 )

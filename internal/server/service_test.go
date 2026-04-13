@@ -135,9 +135,6 @@ func TestService_LaunchSession(t *testing.T) {
 				SessionID:   opts.SessionID,
 				TmuxSession: "gru-testproject",
 				TmuxWindow:  "feat-dev·abcd1234",
-				Kill:        func(ctx context.Context) error { return nil },
-				Done:        done,
-				ExitCode:    func() int { return 0 },
 			}, nil
 		},
 	})
@@ -199,19 +196,13 @@ func TestService_KillSession(t *testing.T) {
 	svc, s := newTestService(t)
 
 	reg := controller.NewRegistry()
-	killCalled := make(chan struct{}, 1)
 	reg.Register(&fakeSessionController{
 		runtimeID: "claude-code",
 		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
-			done := make(chan struct{})
-			close(done)
 			return &controller.SessionHandle{
 				SessionID:   opts.SessionID,
 				TmuxSession: "gru-testproject",
 				TmuxWindow:  "feat-dev·kill1234",
-				Kill:        func(ctx context.Context) error { killCalled <- struct{}{}; return nil },
-				Done:        done,
-				ExitCode:    func() int { return 0 },
 			}, nil
 		},
 	})
@@ -233,12 +224,6 @@ func TestService_KillSession(t *testing.T) {
 	}
 	if !killResp.Msg.Success {
 		t.Error("KillSession: Success = false, want true")
-	}
-
-	select {
-	case <-killCalled:
-	default:
-		t.Error("handle.Kill was not called")
 	}
 
 	stored, err := s.Queries().GetSession(context.Background(), sessionID)

@@ -135,13 +135,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	newStatus := sess.Status
 	switch evt.Type {
 	case adapter.EventSessionStart:
+		// Claude Code started — session is now active.
 		newStatus = "running"
+	case adapter.EventSessionIdle:
+		// Turn complete; Claude is at the prompt waiting for next input.
+		newStatus = "idle"
 	case adapter.EventSessionEnd:
+		// Process exited normally.
 		newStatus = "completed"
 	case adapter.EventSessionCrash:
+		// Fatal API error (StopFailure) or process crash.
 		newStatus = "errored"
-	case adapter.EventToolPre, adapter.EventToolPost, adapter.EventToolError,
-		adapter.EventSubagentStart, adapter.EventSubagentEnd:
+	case adapter.EventNeedsAttention:
+		// Claude blocked on a permission prompt or MCP elicitation.
+		newStatus = "needs_attention"
+	case adapter.EventToolPre, adapter.EventSubagentStart:
+		// Claude started doing work — transition from any pre-active state.
+		if sess.Status == "starting" || sess.Status == "idle" || sess.Status == "needs_attention" {
+			newStatus = "running"
+		}
+	case adapter.EventToolPost, adapter.EventToolError, adapter.EventSubagentEnd:
+		// Tool/subagent finished — promote starting→running but don't
+		// override idle/needs_attention (Stop fires separately for those).
 		if sess.Status == "starting" {
 			newStatus = "running"
 		}

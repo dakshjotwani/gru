@@ -26,14 +26,17 @@ var hookScriptSrc = func() string {
 }()
 
 // hookTypes lists every Claude Code hook event that Gru intercepts.
+// Keep this in sync with the mapEventType function in internal/adapter/claude/normalizer.go.
 var hookTypes = []string{
-	"PreToolUse",
-	"PostToolUse",
-	"PostToolUseFailure",
-	"Notification",
-	"Stop",
-	"SubagentStart",
-	"SubagentStop",
+	"SessionStart",        // Claude Code session started → running
+	"PreToolUse",          // Tool about to run → running
+	"PostToolUse",         // Tool completed successfully
+	"PostToolUseFailure",  // Tool failed
+	"Notification",        // permission_prompt/elicitation_dialog → needs_attention; others informational
+	"Stop",                // Turn complete, Claude waiting for input → idle
+	"StopFailure",         // API error ended the turn → errored
+	"SubagentStart",       // Subagent spawned
+	"SubagentStop",        // Subagent finished
 }
 
 // runInit implements the `gru init <project-dir>` subcommand.
@@ -43,30 +46,62 @@ func runInit(args []string) error {
 	}
 	projectDir := args[0]
 
-	// 1. Copy hook script to <project-dir>/.gru/hooks/gru-hook.sh
-	hookDst := filepath.Join(projectDir, ".gru", "hooks", "gru-hook.sh")
-	if err := os.MkdirAll(filepath.Dir(hookDst), 0o755); err != nil {
-		return fmt.Errorf("create .gru/hooks dir: %w", err)
+	// 1. Install hook script to ~/.gru/hooks/gru-hook.sh (global location).
+	//    Claude Code runs hooks in a sanitized environment, so the script reads
+	//    connection config from ~/.gru/server.yaml and the session ID from
+	//    <project>/.gru/sessions/<shortID> (written at launch time).
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
 	}
-	if err := copyFile(hookScriptSrc, hookDst, 0o755); err != nil {
+	globalHookDst := filepath.Join(homeDir, ".gru", "hooks", "gru-hook.sh")
+	if err := os.MkdirAll(filepath.Dir(globalHookDst), 0o755); err != nil {
+		return fmt.Errorf("create ~/.gru/hooks dir: %w", err)
+	}
+	if err := copyFile(hookScriptSrc, globalHookDst, 0o755); err != nil {
 		return fmt.Errorf("copy hook script: %w", err)
 	}
 
-	// 2. Read or initialise .claude/settings.json
-	settingsDir := filepath.Join(projectDir, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
-		return fmt.Errorf("create .claude dir: %w", err)
+	// 2. Install hooks into ~/.claude/settings.json (user-level).
+	//    This fires for ALL Claude Code sessions, including worktree sessions
+	//    that have their own .claude/ directory (which bypasses project-level settings).
+	userSettingsDir := filepath.Join(homeDir, ".claude")
+	if err := os.MkdirAll(userSettingsDir, 0o755); err != nil {
+		return fmt.Errorf("create ~/.claude dir: %w", err)
 	}
-	settingsPath := filepath.Join(settingsDir, "settings.json")
+	userSettingsPath := filepath.Join(userSettingsDir, "settings.json")
+	if err := mergeHookSettings(userSettingsPath, globalHookDst); err != nil {
+		return fmt.Errorf("update user settings: %w", err)
+	}
 
+	// 3. Also install into <project-dir>/.claude/settings.json for non-worktree sessions.
+	projectSettingsDir := filepath.Join(projectDir, ".claude")
+	if err := os.MkdirAll(projectSettingsDir, 0o755); err != nil {
+		return fmt.Errorf("create project .claude dir: %w", err)
+	}
+	projectSettingsPath := filepath.Join(projectSettingsDir, "settings.json")
+	if err := mergeHookSettings(projectSettingsPath, globalHookDst); err != nil {
+		return fmt.Errorf("update project settings: %w", err)
+	}
+
+	fmt.Printf("Gru hooks installed\n\n")
+	fmt.Printf("Hook script:      %s\n", globalHookDst)
+	fmt.Printf("User settings:    %s\n", userSettingsPath)
+	fmt.Printf("Project settings: %s\n\n", projectSettingsPath)
+	fmt.Printf("Monitoring project: %s\n", projectDir)
+
+	return nil
+}
+
+// mergeHookSettings reads (or creates) a settings.json at path and merges in the Gru hook entries.
+func mergeHookSettings(settingsPath, hookScript string) error {
 	settings := map[string]interface{}{}
 	if data, err := os.ReadFile(settingsPath); err == nil {
 		if err2 := json.Unmarshal(data, &settings); err2 != nil {
-			return fmt.Errorf("parse existing settings.json: %w", err2)
+			return fmt.Errorf("parse %s: %w", settingsPath, err2)
 		}
 	}
 
-	// 3. Merge hook entries — one entry per hook type, matcher "" catches all tools.
 	hooks, _ := settings["hooks"].(map[string]interface{})
 	if hooks == nil {
 		hooks = map[string]interface{}{}
@@ -74,7 +109,7 @@ func runInit(args []string) error {
 
 	hookEntry := map[string]interface{}{
 		"type":    "command",
-		"command": hookDst,
+		"command": hookScript,
 	}
 	hookBlock := []interface{}{
 		map[string]interface{}{
@@ -82,29 +117,31 @@ func runInit(args []string) error {
 			"hooks":   []interface{}{hookEntry},
 		},
 	}
+	// SessionStart requires a specific source matcher.
+	sessionStartBlock := []interface{}{
+		map[string]interface{}{
+			"matcher": "startup",
+			"hooks":   []interface{}{hookEntry},
+		},
+		map[string]interface{}{
+			"matcher": "resume",
+			"hooks":   []interface{}{hookEntry},
+		},
+	}
 	for _, ht := range hookTypes {
-		hooks[ht] = hookBlock
+		if ht == "SessionStart" {
+			hooks[ht] = sessionStartBlock
+		} else {
+			hooks[ht] = hookBlock
+		}
 	}
 	settings["hooks"] = hooks
 
-	// 4. Write back settings.json
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal settings: %w", err)
+		return fmt.Errorf("marshal: %w", err)
 	}
-	if err := os.WriteFile(settingsPath, out, 0o644); err != nil {
-		return fmt.Errorf("write settings.json: %w", err)
-	}
-
-	// 5. Print instructions.
-	fmt.Printf("Gru hooks installed for %s\n\n", projectDir)
-	fmt.Printf("Hook script: %s\n", hookDst)
-	fmt.Printf("Settings:    %s\n\n", settingsPath)
-	fmt.Println("Next step: set GRU_API_KEY in your shell environment:")
-	fmt.Println("  export GRU_API_KEY=<your-key>")
-	fmt.Println("  # Optionally: export GRU_HOST=<host>  GRU_PORT=<port>")
-
-	return nil
+	return os.WriteFile(settingsPath, out, 0o644)
 }
 
 // copyFile copies src to dst with the given permission bits.

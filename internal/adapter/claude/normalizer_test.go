@@ -74,8 +74,69 @@ func TestClaudeNormalizer_Stop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ev.Type != adapter.EventSessionEnd {
-		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventSessionEnd)
+	// Stop means the turn is complete and Claude is waiting for input — idle, not ended.
+	if ev.Type != adapter.EventSessionIdle {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventSessionIdle)
+	}
+}
+
+func TestClaudeNormalizer_SessionStart(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"SessionStart","session_id":"s1","cwd":"/p"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventSessionStart {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventSessionStart)
+	}
+}
+
+func TestClaudeNormalizer_StopFailure(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"StopFailure","session_id":"s1","cwd":"/p"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventSessionCrash {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventSessionCrash)
+	}
+}
+
+func TestClaudeNormalizer_NotificationPermissionPrompt(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"Notification","session_id":"s1","cwd":"/p","notification_type":"permission_prompt"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventNeedsAttention {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventNeedsAttention)
+	}
+}
+
+func TestClaudeNormalizer_NotificationElicitation(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"Notification","session_id":"s1","cwd":"/p","notification_type":"elicitation_dialog"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventNeedsAttention {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventNeedsAttention)
+	}
+}
+
+func TestClaudeNormalizer_NotificationGeneric(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"Notification","session_id":"s1","cwd":"/p","notification_type":"auth_success"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventNotification {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventNotification)
 	}
 }
 
