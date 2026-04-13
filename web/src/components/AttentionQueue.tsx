@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Project, Session, SessionEvent } from '../types';
 import { SessionStatus } from '../types';
 import { isTerminalStatus } from '../utils/status';
@@ -28,9 +28,9 @@ function tsSeconds(ts: unknown): number | null {
 
 const STATUS_PRIORITY: Record<number, number> = {
   [SessionStatus.NEEDS_ATTENTION]: 0,
-  [SessionStatus.RUNNING]: 1,
-  [SessionStatus.IDLE]: 2,
-  [SessionStatus.STARTING]: 3,
+  [SessionStatus.IDLE]: 1,
+  [SessionStatus.STARTING]: 2,
+  [SessionStatus.RUNNING]: 3,
 };
 
 function sortSessions(sessions: Session[]): Session[] {
@@ -84,6 +84,8 @@ function sortSessions(sessions: Session[]): Session[] {
 }
 
 export function AttentionQueue({ sessions, events, projects, connected }: AttentionQueueProps) {
+  const [hideRunning, setHideRunning] = useState(false);
+
   const projectMap = useMemo(() => {
     const m = new Map<string, Project>();
     for (const p of projects) {
@@ -92,15 +94,19 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
     return m;
   }, [projects]);
 
-  const sortedSessions = useMemo(() => {
+  const { sortedSessions, runningCount } = useMemo(() => {
     const active: Session[] = [];
+    let running = 0;
     for (const session of sessions.values()) {
-      if (!isTerminalStatus(session.status)) {
-        active.push(session);
+      if (isTerminalStatus(session.status)) continue;
+      if (session.status === SessionStatus.RUNNING) {
+        running++;
+        if (hideRunning) continue;
       }
+      active.push(session);
     }
-    return sortSessions(active);
-  }, [sessions]);
+    return { sortedSessions: sortSessions(active), runningCount: running };
+  }, [sessions, hideRunning]);
 
   if (sortedSessions.length === 0 && connected) {
     return (
@@ -120,6 +126,16 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
 
   return (
     <div className={styles.queue}>
+      {runningCount > 0 && (
+        <button
+          className={styles.toggleRunning}
+          onClick={() => setHideRunning((h) => !h)}
+        >
+          {hideRunning
+            ? `Show ${runningCount} running session${runningCount !== 1 ? 's' : ''}`
+            : `Hide ${runningCount} running session${runningCount !== 1 ? 's' : ''}`}
+        </button>
+      )}
       {sortedSessions.map((session) => (
         <SessionCard
           key={session.id}

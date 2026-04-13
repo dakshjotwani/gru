@@ -17,3 +17,19 @@
   margin: 0;
   text-align: center;
 }
+
+.toggleRunning {
+  align-self: flex-end;
+  background: none;
+  border: 1px solid #444;
+  color: #aaa;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toggleRunning:hover {
+  color: #ddd;
+  border-color: #666;
+}
