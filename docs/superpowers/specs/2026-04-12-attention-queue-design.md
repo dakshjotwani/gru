@@ -53,7 +53,8 @@ message SendInputRequest {
 }
 
 message SendInputResponse {
-  bool success = 1;
+  bool   success       = 1;
+  string error_message = 2;  // set when success is false
 }
 ```
 
@@ -84,11 +85,13 @@ Update sqlc queries to read/write these fields.
 New handler in `service.go`:
 
 1. Look up session by ID (404 if not found)
-2. Verify session has `tmux_session` and `tmux_window` set (return FailedPrecondition if not)
-3. Execute `tmux send-keys -t <tmux_session>:<tmux_window> -- <text> Enter`
-4. Return success
+2. Verify session status is `running`, `idle`, or `needs_attention` (return FailedPrecondition with message if in a terminal state — prevents sending input to dead panes)
+3. Verify session has `tmux_session` and `tmux_window` set (return FailedPrecondition if not)
+4. Send text literally: `tmux send-keys -t <target> -l -- <text>` (the `-l` flag prevents tmux from interpreting key names like "Enter" or "Escape" in the text)
+5. Send the Enter keystroke separately: `tmux send-keys -t <target> Enter`
+6. Return success
 
-The text is sent literally — no escaping beyond what `tmux send-keys` does natively. The frontend is responsible for sending appropriate text (e.g., "y" for approve, "n" for deny, or a full prompt for idle agents).
+The frontend is responsible for sending appropriate text (e.g., "y" for approve, "n" for deny, or a full prompt for idle agents). Session names are not required to be unique. Name and description are stored in the DB only — they are not passed to the session controller.
 
 ### CLI changes
 
@@ -106,7 +109,7 @@ The positional `prompt` argument and `--name` flag are both required. `--descrip
 
 ### Remove
 
-- The red "Reconnecting to server..." banner
+- The red "Reconnecting to server..." full-width banner — replace with a subtle indicator (e.g., the existing connection dot in the header already handles this)
 - Project-grouped session grid layout
 
 ### Attention Queue (replaces SessionGrid)
@@ -119,6 +122,8 @@ A single sorted list of session cards. Sort order:
 4. **starting** — by started_at descending
 
 Terminal sessions (completed, errored, killed) are hidden. A "show completed" toggle can be added later.
+
+Sessions with a NULL/undefined `last_event_at` sort to the top of their status group (most urgent).
 
 ### Session Card (collapsed)
 
@@ -134,7 +139,7 @@ Each card shows:
 
 **Context preview** (one line, below the name):
 
-- **needs_attention**: Tool name from the last `notification.needs_attention` event payload (e.g., "Wants to run: Bash")
+- **needs_attention**: Tool name from the event that caused the status transition (e.g., "Wants to run: Bash")
 - **running**: Tool name from the last `tool.pre` event (e.g., "Using: Edit")
 - **idle**: "Idle for X minutes"
 - **starting**: "Starting..."
@@ -173,7 +178,7 @@ Clicking a card expands it inline to show:
 
 ### Event payload parsing
 
-The frontend needs to extract useful context from event payloads. The Claude Code hook payload JSON contains:
+The frontend needs to extract useful context from event payloads. The `payload` field in `SessionEvent` is the **raw Claude Code hook JSON** (stored and published as-is by the ingestion handler). An example payload for a permission prompt:
 
 ```json
 {
@@ -205,4 +210,4 @@ The `SubscribeEvents` snapshot must include the new `name`, `description`, and `
 - Project configuration, agent profiles, environment setup (Spec 2: launch chat + project config)
 - Filtering/search in the attention queue
 - "Show completed sessions" toggle
-- Desktop notification improvements
+- Desktop notifications using session name (currently uses truncated ID — natural follow-on)
