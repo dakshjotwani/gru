@@ -12,6 +12,7 @@ service GruService {
   rpc GetSession(GetSessionRequest)     returns (Session);
   rpc LaunchSession(LaunchSessionRequest) returns (LaunchSessionResponse);
   rpc KillSession(KillSessionRequest)   returns (KillSessionResponse);
+  rpc SendInput(SendInputRequest)       returns (SendInputResponse);
 
   // Projects
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
@@ -44,6 +45,9 @@ message Session {
   int32          pid             = 10;
   string         tmux_session    = 11;
   string         tmux_window     = 12;
+  string         name            = 13;  // human-readable, e.g. "auth-frontend-bugfix"
+  string         description     = 14;  // what problem is being solved
+  string         prompt          = 15;  // the initial prompt given to the agent
 }
 
 message Project {
@@ -78,9 +82,11 @@ message GetSessionRequest {
 }
 
 message LaunchSessionRequest {
-  string project_dir = 1;
-  string prompt      = 2;
-  string profile     = 3;
+  string project_dir  = 1;
+  string prompt       = 2;
+  string profile      = 3;
+  string name         = 4;  // required, human-readable session name
+  string description  = 5;  // optional, what problem is being solved
 }
 
 message LaunchSessionResponse {
@@ -99,6 +105,16 @@ message ListProjectsRequest {}
 
 message ListProjectsResponse {
   repeated Project projects = 1;
+}
+
+message SendInputRequest {
+  string session_id = 1;
+  string text       = 2;  // text to send via tmux send-keys
+}
+
+message SendInputResponse {
+  bool   success       = 1;
+  string error_message = 2;
 }
 
 message SubscribeEventsRequest {

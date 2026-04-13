@@ -42,4 +42,7 @@ type Session struct {
 	LastEventAt    *string
 	TmuxSession    *string
 	TmuxWindow     *string
+	Name           string
+	Description    string
+	Prompt         string
 }

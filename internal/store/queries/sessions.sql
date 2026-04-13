@@ -1,6 +1,6 @@
 -- name: CreateSession :one
-INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window, name, description, prompt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetSession :one

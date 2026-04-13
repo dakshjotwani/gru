@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
-import { SessionGrid } from './components/SessionGrid';
+import { AttentionQueue } from './components/AttentionQueue';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
 import styles from './App.module.css';
 
 export function App() {
-  const { projects, loading: projectsLoading } = useProjects();
-  const { sessions, events, connected, sessionsSortedByAttention } = useSessionStream();
+  const { projects } = useProjects();
+  const { sessions, events, connected } = useSessionStream();
 
   // Register the service worker.
   useEffect(() => {
@@ -46,12 +46,10 @@ export function App() {
       </header>
 
       <main className={styles.main}>
-        <SessionGrid
-          projects={projects}
+        <AttentionQueue
           sessions={sessions}
           events={events}
-          sessionsSortedByAttention={sessionsSortedByAttention}
-          loading={projectsLoading}
+          projects={projects}
           connected={connected}
         />
       </main>

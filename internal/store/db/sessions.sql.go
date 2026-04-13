@@ -10,9 +10,9 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window
+INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window, name, description, prompt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt
 `
 
 type CreateSessionParams struct {
@@ -25,6 +25,9 @@ type CreateSessionParams struct {
 	Pgid        *int64
 	TmuxSession *string
 	TmuxWindow  *string
+	Name        string
+	Description string
+	Prompt      string
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -38,6 +41,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.Pgid,
 		arg.TmuxSession,
 		arg.TmuxWindow,
+		arg.Name,
+		arg.Description,
+		arg.Prompt,
 	)
 	var i Session
 	err := row.Scan(
@@ -54,12 +60,15 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.LastEventAt,
 		&i.TmuxSession,
 		&i.TmuxWindow,
+		&i.Name,
+		&i.Description,
+		&i.Prompt,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window FROM sessions WHERE id = ? LIMIT 1
+SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt FROM sessions WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -79,12 +88,15 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.LastEventAt,
 		&i.TmuxSession,
 		&i.TmuxWindow,
+		&i.Name,
+		&i.Description,
+		&i.Prompt,
 	)
 	return i, err
 }
 
 const listSessions = `-- name: ListSessions :many
-SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window FROM sessions
+SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt FROM sessions
 WHERE project_id = COALESCE(NULLIF(?1, ''), project_id)
   AND status = COALESCE(NULLIF(?2, ''), status)
 ORDER BY started_at DESC
@@ -118,6 +130,9 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 			&i.LastEventAt,
 			&i.TmuxSession,
 			&i.TmuxWindow,
+			&i.Name,
+			&i.Description,
+			&i.Prompt,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +192,7 @@ UPDATE sessions
 SET status   = ?1,
     ended_at = COALESCE(ended_at, ?2)
 WHERE id = ?3
-RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window
+RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt
 `
 
 type UpdateSessionStatusParams struct {
@@ -203,6 +218,9 @@ func (q *Queries) UpdateSessionStatus(ctx context.Context, arg UpdateSessionStat
 		&i.LastEventAt,
 		&i.TmuxSession,
 		&i.TmuxWindow,
+		&i.Name,
+		&i.Description,
+		&i.Prompt,
 	)
 	return i, err
 }

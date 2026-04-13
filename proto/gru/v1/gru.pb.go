@@ -100,6 +100,9 @@ type Session struct {
 	Pid            int32                  `protobuf:"varint,10,opt,name=pid,proto3" json:"pid,omitempty"`
 	TmuxSession    string                 `protobuf:"bytes,11,opt,name=tmux_session,json=tmuxSession,proto3" json:"tmux_session,omitempty"`
 	TmuxWindow     string                 `protobuf:"bytes,12,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	Name           string                 `protobuf:"bytes,13,opt,name=name,proto3" json:"name,omitempty"`               // human-readable, e.g. "auth-frontend-bugfix"
+	Description    string                 `protobuf:"bytes,14,opt,name=description,proto3" json:"description,omitempty"` // what problem is being solved
+	Prompt         string                 `protobuf:"bytes,15,opt,name=prompt,proto3" json:"prompt,omitempty"`           // the initial prompt given to the agent
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -214,6 +217,27 @@ func (x *Session) GetTmuxSession() string {
 func (x *Session) GetTmuxWindow() string {
 	if x != nil {
 		return x.TmuxWindow
+	}
+	return ""
+}
+
+func (x *Session) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Session) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Session) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
 	}
 	return ""
 }
@@ -531,6 +555,8 @@ type LaunchSessionRequest struct {
 	ProjectDir    string                 `protobuf:"bytes,1,opt,name=project_dir,json=projectDir,proto3" json:"project_dir,omitempty"`
 	Prompt        string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
 	Profile       string                 `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`               // required, human-readable session name
+	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"` // optional, what problem is being solved
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -582,6 +608,20 @@ func (x *LaunchSessionRequest) GetPrompt() string {
 func (x *LaunchSessionRequest) GetProfile() string {
 	if x != nil {
 		return x.Profile
+	}
+	return ""
+}
+
+func (x *LaunchSessionRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LaunchSessionRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
 	}
 	return ""
 }
@@ -798,6 +838,110 @@ func (x *ListProjectsResponse) GetProjects() []*Project {
 	return nil
 }
 
+type SendInputRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"` // text to send via tmux send-keys
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SendInputRequest) Reset() {
+	*x = SendInputRequest{}
+	mi := &file_proto_gru_v1_gru_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SendInputRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SendInputRequest) ProtoMessage() {}
+
+func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gru_v1_gru_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SendInputRequest.ProtoReflect.Descriptor instead.
+func (*SendInputRequest) Descriptor() ([]byte, []int) {
+	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SendInputRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SendInputRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type SendInputResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SendInputResponse) Reset() {
+	*x = SendInputResponse{}
+	mi := &file_proto_gru_v1_gru_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SendInputResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SendInputResponse) ProtoMessage() {}
+
+func (x *SendInputResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gru_v1_gru_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SendInputResponse.ProtoReflect.Descriptor instead.
+func (*SendInputResponse) Descriptor() ([]byte, []int) {
+	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *SendInputResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *SendInputResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 type SubscribeEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectIds    []string               `protobuf:"bytes,1,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
@@ -808,7 +952,7 @@ type SubscribeEventsRequest struct {
 
 func (x *SubscribeEventsRequest) Reset() {
 	*x = SubscribeEventsRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[12]
+	mi := &file_proto_gru_v1_gru_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -820,7 +964,7 @@ func (x *SubscribeEventsRequest) String() string {
 func (*SubscribeEventsRequest) ProtoMessage() {}
 
 func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[12]
+	mi := &file_proto_gru_v1_gru_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -833,7 +977,7 @@ func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeEventsRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{12}
+	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SubscribeEventsRequest) GetProjectIds() []string {
@@ -854,7 +998,7 @@ var File_proto_gru_v1_gru_proto protoreflect.FileDescriptor
 
 const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	"\n" +
-	"\x16proto/gru/v1/gru.proto\x12\x06gru.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x03\n" +
+	"\x16proto/gru/v1/gru.proto\x12\x06gru.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9a\x04\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -871,7 +1015,10 @@ const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	" \x01(\x05R\x03pid\x12!\n" +
 	"\ftmux_session\x18\v \x01(\tR\vtmuxSession\x12\x1f\n" +
 	"\vtmux_window\x18\f \x01(\tR\n" +
-	"tmuxWindow\"\x96\x01\n" +
+	"tmuxWindow\x12\x12\n" +
+	"\x04name\x18\r \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x0e \x01(\tR\vdescription\x12\x16\n" +
+	"\x06prompt\x18\x0f \x01(\tR\x06prompt\"\x96\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -896,12 +1043,14 @@ const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	"\x14ListSessionsResponse\x12+\n" +
 	"\bsessions\x18\x01 \x03(\v2\x0f.gru.v1.SessionR\bsessions\"#\n" +
 	"\x11GetSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"i\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x9f\x01\n" +
 	"\x14LaunchSessionRequest\x12\x1f\n" +
 	"\vproject_dir\x18\x01 \x01(\tR\n" +
 	"projectDir\x12\x16\n" +
 	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x18\n" +
-	"\aprofile\x18\x03 \x01(\tR\aprofile\"B\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\"B\n" +
 	"\x15LaunchSessionResponse\x12)\n" +
 	"\asession\x18\x01 \x01(\v2\x0f.gru.v1.SessionR\asession\"$\n" +
 	"\x12KillSessionRequest\x12\x0e\n" +
@@ -910,7 +1059,14 @@ const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x15\n" +
 	"\x13ListProjectsRequest\"C\n" +
 	"\x14ListProjectsResponse\x12+\n" +
-	"\bprojects\x18\x01 \x03(\v2\x0f.gru.v1.ProjectR\bprojects\"^\n" +
+	"\bprojects\x18\x01 \x03(\v2\x0f.gru.v1.ProjectR\bprojects\"E\n" +
+	"\x10SendInputRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\"R\n" +
+	"\x11SendInputResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"^\n" +
 	"\x16SubscribeEventsRequest\x12\x1f\n" +
 	"\vproject_ids\x18\x01 \x03(\tR\n" +
 	"projectIds\x12#\n" +
@@ -923,14 +1079,15 @@ const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	"\x1eSESSION_STATUS_NEEDS_ATTENTION\x10\x04\x12\x1c\n" +
 	"\x18SESSION_STATUS_COMPLETED\x10\x05\x12\x1a\n" +
 	"\x16SESSION_STATUS_ERRORED\x10\x06\x12\x19\n" +
-	"\x15SESSION_STATUS_KILLED\x10\a2\xbd\x03\n" +
+	"\x15SESSION_STATUS_KILLED\x10\a2\xff\x03\n" +
 	"\n" +
 	"GruService\x12I\n" +
 	"\fListSessions\x12\x1b.gru.v1.ListSessionsRequest\x1a\x1c.gru.v1.ListSessionsResponse\x128\n" +
 	"\n" +
 	"GetSession\x12\x19.gru.v1.GetSessionRequest\x1a\x0f.gru.v1.Session\x12L\n" +
 	"\rLaunchSession\x12\x1c.gru.v1.LaunchSessionRequest\x1a\x1d.gru.v1.LaunchSessionResponse\x12F\n" +
-	"\vKillSession\x12\x1a.gru.v1.KillSessionRequest\x1a\x1b.gru.v1.KillSessionResponse\x12I\n" +
+	"\vKillSession\x12\x1a.gru.v1.KillSessionRequest\x1a\x1b.gru.v1.KillSessionResponse\x12@\n" +
+	"\tSendInput\x12\x18.gru.v1.SendInputRequest\x1a\x19.gru.v1.SendInputResponse\x12I\n" +
 	"\fListProjects\x12\x1b.gru.v1.ListProjectsRequest\x1a\x1c.gru.v1.ListProjectsResponse\x12I\n" +
 	"\x0fSubscribeEvents\x12\x1e.gru.v1.SubscribeEventsRequest\x1a\x14.gru.v1.SessionEvent0\x01B\x7f\n" +
 	"\n" +
@@ -949,7 +1106,7 @@ func file_proto_gru_v1_gru_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_gru_v1_gru_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_gru_v1_gru_proto_goTypes = []any{
 	(SessionStatus)(0),             // 0: gru.v1.SessionStatus
 	(*Session)(nil),                // 1: gru.v1.Session
@@ -964,16 +1121,18 @@ var file_proto_gru_v1_gru_proto_goTypes = []any{
 	(*KillSessionResponse)(nil),    // 10: gru.v1.KillSessionResponse
 	(*ListProjectsRequest)(nil),    // 11: gru.v1.ListProjectsRequest
 	(*ListProjectsResponse)(nil),   // 12: gru.v1.ListProjectsResponse
-	(*SubscribeEventsRequest)(nil), // 13: gru.v1.SubscribeEventsRequest
-	(*timestamppb.Timestamp)(nil),  // 14: google.protobuf.Timestamp
+	(*SendInputRequest)(nil),       // 13: gru.v1.SendInputRequest
+	(*SendInputResponse)(nil),      // 14: gru.v1.SendInputResponse
+	(*SubscribeEventsRequest)(nil), // 15: gru.v1.SubscribeEventsRequest
+	(*timestamppb.Timestamp)(nil),  // 16: google.protobuf.Timestamp
 }
 var file_proto_gru_v1_gru_proto_depIdxs = []int32{
 	0,  // 0: gru.v1.Session.status:type_name -> gru.v1.SessionStatus
-	14, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
-	14, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
-	14, // 3: gru.v1.Session.last_event_at:type_name -> google.protobuf.Timestamp
-	14, // 4: gru.v1.Project.created_at:type_name -> google.protobuf.Timestamp
-	14, // 5: gru.v1.SessionEvent.timestamp:type_name -> google.protobuf.Timestamp
+	16, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
+	16, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
+	16, // 3: gru.v1.Session.last_event_at:type_name -> google.protobuf.Timestamp
+	16, // 4: gru.v1.Project.created_at:type_name -> google.protobuf.Timestamp
+	16, // 5: gru.v1.SessionEvent.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 6: gru.v1.ListSessionsRequest.status:type_name -> gru.v1.SessionStatus
 	1,  // 7: gru.v1.ListSessionsResponse.sessions:type_name -> gru.v1.Session
 	1,  // 8: gru.v1.LaunchSessionResponse.session:type_name -> gru.v1.Session
@@ -982,16 +1141,18 @@ var file_proto_gru_v1_gru_proto_depIdxs = []int32{
 	6,  // 11: gru.v1.GruService.GetSession:input_type -> gru.v1.GetSessionRequest
 	7,  // 12: gru.v1.GruService.LaunchSession:input_type -> gru.v1.LaunchSessionRequest
 	9,  // 13: gru.v1.GruService.KillSession:input_type -> gru.v1.KillSessionRequest
-	11, // 14: gru.v1.GruService.ListProjects:input_type -> gru.v1.ListProjectsRequest
-	13, // 15: gru.v1.GruService.SubscribeEvents:input_type -> gru.v1.SubscribeEventsRequest
-	5,  // 16: gru.v1.GruService.ListSessions:output_type -> gru.v1.ListSessionsResponse
-	1,  // 17: gru.v1.GruService.GetSession:output_type -> gru.v1.Session
-	8,  // 18: gru.v1.GruService.LaunchSession:output_type -> gru.v1.LaunchSessionResponse
-	10, // 19: gru.v1.GruService.KillSession:output_type -> gru.v1.KillSessionResponse
-	12, // 20: gru.v1.GruService.ListProjects:output_type -> gru.v1.ListProjectsResponse
-	3,  // 21: gru.v1.GruService.SubscribeEvents:output_type -> gru.v1.SessionEvent
-	16, // [16:22] is the sub-list for method output_type
-	10, // [10:16] is the sub-list for method input_type
+	13, // 14: gru.v1.GruService.SendInput:input_type -> gru.v1.SendInputRequest
+	11, // 15: gru.v1.GruService.ListProjects:input_type -> gru.v1.ListProjectsRequest
+	15, // 16: gru.v1.GruService.SubscribeEvents:input_type -> gru.v1.SubscribeEventsRequest
+	5,  // 17: gru.v1.GruService.ListSessions:output_type -> gru.v1.ListSessionsResponse
+	1,  // 18: gru.v1.GruService.GetSession:output_type -> gru.v1.Session
+	8,  // 19: gru.v1.GruService.LaunchSession:output_type -> gru.v1.LaunchSessionResponse
+	10, // 20: gru.v1.GruService.KillSession:output_type -> gru.v1.KillSessionResponse
+	14, // 21: gru.v1.GruService.SendInput:output_type -> gru.v1.SendInputResponse
+	12, // 22: gru.v1.GruService.ListProjects:output_type -> gru.v1.ListProjectsResponse
+	3,  // 23: gru.v1.GruService.SubscribeEvents:output_type -> gru.v1.SessionEvent
+	17, // [17:24] is the sub-list for method output_type
+	10, // [10:17] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -1008,7 +1169,7 @@ func file_proto_gru_v1_gru_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_gru_v1_gru_proto_rawDesc), len(file_proto_gru_v1_gru_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

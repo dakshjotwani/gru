@@ -42,6 +42,8 @@ const (
 	GruServiceLaunchSessionProcedure = "/gru.v1.GruService/LaunchSession"
 	// GruServiceKillSessionProcedure is the fully-qualified name of the GruService's KillSession RPC.
 	GruServiceKillSessionProcedure = "/gru.v1.GruService/KillSession"
+	// GruServiceSendInputProcedure is the fully-qualified name of the GruService's SendInput RPC.
+	GruServiceSendInputProcedure = "/gru.v1.GruService/SendInput"
 	// GruServiceListProjectsProcedure is the fully-qualified name of the GruService's ListProjects RPC.
 	GruServiceListProjectsProcedure = "/gru.v1.GruService/ListProjects"
 	// GruServiceSubscribeEventsProcedure is the fully-qualified name of the GruService's
@@ -56,6 +58,7 @@ type GruServiceClient interface {
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error)
 	LaunchSession(context.Context, *connect.Request[v1.LaunchSessionRequest]) (*connect.Response[v1.LaunchSessionResponse], error)
 	KillSession(context.Context, *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error)
+	SendInput(context.Context, *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error)
 	// Projects
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	// Real-time event stream
@@ -97,6 +100,12 @@ func NewGruServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(gruServiceMethods.ByName("KillSession")),
 			connect.WithClientOptions(opts...),
 		),
+		sendInput: connect.NewClient[v1.SendInputRequest, v1.SendInputResponse](
+			httpClient,
+			baseURL+GruServiceSendInputProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("SendInput")),
+			connect.WithClientOptions(opts...),
+		),
 		listProjects: connect.NewClient[v1.ListProjectsRequest, v1.ListProjectsResponse](
 			httpClient,
 			baseURL+GruServiceListProjectsProcedure,
@@ -118,6 +127,7 @@ type gruServiceClient struct {
 	getSession      *connect.Client[v1.GetSessionRequest, v1.Session]
 	launchSession   *connect.Client[v1.LaunchSessionRequest, v1.LaunchSessionResponse]
 	killSession     *connect.Client[v1.KillSessionRequest, v1.KillSessionResponse]
+	sendInput       *connect.Client[v1.SendInputRequest, v1.SendInputResponse]
 	listProjects    *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
 	subscribeEvents *connect.Client[v1.SubscribeEventsRequest, v1.SessionEvent]
 }
@@ -142,6 +152,11 @@ func (c *gruServiceClient) KillSession(ctx context.Context, req *connect.Request
 	return c.killSession.CallUnary(ctx, req)
 }
 
+// SendInput calls gru.v1.GruService.SendInput.
+func (c *gruServiceClient) SendInput(ctx context.Context, req *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error) {
+	return c.sendInput.CallUnary(ctx, req)
+}
+
 // ListProjects calls gru.v1.GruService.ListProjects.
 func (c *gruServiceClient) ListProjects(ctx context.Context, req *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {
 	return c.listProjects.CallUnary(ctx, req)
@@ -159,6 +174,7 @@ type GruServiceHandler interface {
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error)
 	LaunchSession(context.Context, *connect.Request[v1.LaunchSessionRequest]) (*connect.Response[v1.LaunchSessionResponse], error)
 	KillSession(context.Context, *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error)
+	SendInput(context.Context, *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error)
 	// Projects
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	// Real-time event stream
@@ -196,6 +212,12 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(gruServiceMethods.ByName("KillSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gruServiceSendInputHandler := connect.NewUnaryHandler(
+		GruServiceSendInputProcedure,
+		svc.SendInput,
+		connect.WithSchema(gruServiceMethods.ByName("SendInput")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gruServiceListProjectsHandler := connect.NewUnaryHandler(
 		GruServiceListProjectsProcedure,
 		svc.ListProjects,
@@ -218,6 +240,8 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 			gruServiceLaunchSessionHandler.ServeHTTP(w, r)
 		case GruServiceKillSessionProcedure:
 			gruServiceKillSessionHandler.ServeHTTP(w, r)
+		case GruServiceSendInputProcedure:
+			gruServiceSendInputHandler.ServeHTTP(w, r)
 		case GruServiceListProjectsProcedure:
 			gruServiceListProjectsHandler.ServeHTTP(w, r)
 		case GruServiceSubscribeEventsProcedure:
@@ -245,6 +269,10 @@ func (UnimplementedGruServiceHandler) LaunchSession(context.Context, *connect.Re
 
 func (UnimplementedGruServiceHandler) KillSession(context.Context, *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.KillSession is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) SendInput(context.Context, *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.SendInput is not implemented"))
 }
 
 func (UnimplementedGruServiceHandler) ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {

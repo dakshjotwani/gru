@@ -145,6 +145,7 @@ func TestService_LaunchSession(t *testing.T) {
 		ProjectDir: projectDir,
 		Prompt:     "write tests",
 		Profile:    "default",
+		Name:       "test-session",
 	})
 
 	resp, err := svc.LaunchSession(context.Background(), req)
@@ -212,6 +213,7 @@ func TestService_KillSession(t *testing.T) {
 	launchResp, err := svc.LaunchSession(context.Background(), connect.NewRequest(&gruv1.LaunchSessionRequest{
 		ProjectDir: projectDir,
 		Prompt:     "do work",
+		Name:       "kill-test",
 	}))
 	if err != nil {
 		t.Fatalf("LaunchSession: %v", err)

@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     ended_at        TEXT,         -- NULL while running
     last_event_at   TEXT,         -- NULL until first event
     tmux_session    TEXT,    -- NULL for externally detected sessions
-    tmux_window     TEXT     -- tmux window name within the project session
+    tmux_window     TEXT,    -- tmux window name within the project session
+    name            TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL DEFAULT '',
+    prompt          TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);

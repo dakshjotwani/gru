@@ -42,13 +42,14 @@ func (f *fakeSrv) KillSession(_ context.Context, req *connect.Request[gruv1.Kill
 	return nil, connect.NewError(connect.CodeNotFound, nil)
 }
 
-func (f *fakeSrv) LaunchSession(_ context.Context, _ *connect.Request[gruv1.LaunchSessionRequest]) (*connect.Response[gruv1.LaunchSessionResponse], error) {
+func (f *fakeSrv) LaunchSession(_ context.Context, req *connect.Request[gruv1.LaunchSessionRequest]) (*connect.Response[gruv1.LaunchSessionResponse], error) {
 	sess := &gruv1.Session{
 		Id:        "new-session-abc",
 		ProjectId: "proj-1",
 		Runtime:   "claude-code",
 		Status:    gruv1.SessionStatus_SESSION_STATUS_STARTING,
 		StartedAt: timestamppb.Now(),
+		Name:      req.Msg.Name,
 	}
 	return connect.NewResponse(&gruv1.LaunchSessionResponse{Session: sess}), nil
 }
@@ -145,9 +146,9 @@ func TestCLI_Kill(t *testing.T) {
 
 func TestCLI_Launch(t *testing.T) {
 	srv := &fakeSrv{}
-	out := runCLI(t, startFakeServer(t, srv), "launch", "/tmp", "do something")
-	if !strings.Contains(out, "new-session-abc") {
-		t.Errorf("output missing new session ID: %q", out)
+	out := runCLI(t, startFakeServer(t, srv), "launch", "--name", "test-session", "/tmp", "do something")
+	if !strings.Contains(out, "test-session") {
+		t.Errorf("output missing session name: %q", out)
 	}
 }
 

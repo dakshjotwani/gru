@@ -79,6 +79,10 @@ func (s *Service) LaunchSession(
 	ctx context.Context,
 	req *connect.Request[gruv1.LaunchSessionRequest],
 ) (*connect.Response[gruv1.LaunchSessionResponse], error) {
+	if req.Msg.Name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name is required"))
+	}
+
 	projectDir := filepath.Clean(req.Msg.ProjectDir)
 	prompt := req.Msg.Prompt
 	profile := req.Msg.Profile
@@ -121,6 +125,9 @@ func (s *Service) LaunchSession(
 		Profile:     nilStr(profile),
 		TmuxSession: nilStr(handle.TmuxSession),
 		TmuxWindow:  nilStr(handle.TmuxWindow),
+		Name:        req.Msg.Name,
+		Description: req.Msg.Description,
+		Prompt:      prompt,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create session row: %w", err))
@@ -166,6 +173,54 @@ func (s *Service) KillSession(
 	})
 
 	return connect.NewResponse(&gruv1.KillSessionResponse{Success: true}), nil
+}
+
+func (s *Service) SendInput(
+	ctx context.Context,
+	req *connect.Request[gruv1.SendInputRequest],
+) (*connect.Response[gruv1.SendInputResponse], error) {
+	sessionID := req.Msg.SessionId
+	row, err := s.store.Queries().GetSession(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("session %q not found", sessionID))
+	} else if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// Only allow input to active sessions.
+	switch row.Status {
+	case "running", "idle", "needs_attention":
+		// OK
+	default:
+		return connect.NewResponse(&gruv1.SendInputResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("session is %s, cannot send input", row.Status),
+		}), nil
+	}
+
+	if row.TmuxSession == nil || row.TmuxWindow == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session has no tmux pane"))
+	}
+
+	target := *row.TmuxSession + ":" + *row.TmuxWindow
+
+	// Use -l for literal text (prevents tmux from interpreting key names).
+	if err := exec.Command("tmux", "send-keys", "-t", target, "-l", "--", req.Msg.Text).Run(); err != nil {
+		return connect.NewResponse(&gruv1.SendInputResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("send-keys failed: %v", err),
+		}), nil
+	}
+
+	// Send Enter separately.
+	if err := exec.Command("tmux", "send-keys", "-t", target, "Enter").Run(); err != nil {
+		return connect.NewResponse(&gruv1.SendInputResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("send Enter failed: %v", err),
+		}), nil
+	}
+
+	return connect.NewResponse(&gruv1.SendInputResponse{Success: true}), nil
 }
 
 func (s *Service) ListProjects(
@@ -331,6 +386,9 @@ func rowToSession(r db.Session) *gruv1.Session {
 	if r.TmuxWindow != nil {
 		sess.TmuxWindow = *r.TmuxWindow
 	}
+	sess.Name = r.Name
+	sess.Description = r.Description
+	sess.Prompt = r.Prompt
 	return sess
 }
 
