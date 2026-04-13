@@ -126,16 +126,18 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
 
   return (
     <div className={styles.queue}>
-      {runningCount > 0 && (
-        <button
-          className={styles.toggleRunning}
-          onClick={() => setHideRunning((h) => !h)}
-        >
-          {hideRunning
-            ? `Show ${runningCount} running session${runningCount !== 1 ? 's' : ''}`
-            : `Hide ${runningCount} running session${runningCount !== 1 ? 's' : ''}`}
-        </button>
-      )}
+      <div className={styles.toolbar}>
+        <label className={styles.toggle}>
+          <input
+            type="checkbox"
+            checked={hideRunning}
+            onChange={() => setHideRunning((h) => !h)}
+          />
+          <span className={styles.toggleLabel}>
+            Hide running{runningCount > 0 ? ` (${runningCount})` : ''}
+          </span>
+        </label>
+      </div>
       {sortedSessions.map((session) => (
         <SessionCard
           key={session.id}

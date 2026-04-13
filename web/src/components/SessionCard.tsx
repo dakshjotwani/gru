@@ -4,7 +4,7 @@ import { SessionStatus } from '../types';
 import { gruClient } from '../client';
 import { StatusBadge } from './StatusBadge';
 import { KillButton } from './KillButton';
-import { formatDuration, uptimeSeconds } from '../utils/time';
+import { uptimeSeconds, timeAgo } from '../utils/time';
 import { parseEventPayload } from '../utils/payload';
 import styles from './SessionCard.module.css';
 
@@ -32,7 +32,7 @@ function tsToEpoch(ts: unknown): number | null {
 function getTimeInState(session: Session): string {
   const secs = tsToEpoch(session.lastEventAt);
   if (secs === null) return '';
-  return formatDuration(uptimeSeconds(secs));
+  return timeAgo(uptimeSeconds(secs));
 }
 
 function getContextPreview(session: Session, events: SessionEvent[]): string {
@@ -56,8 +56,7 @@ function getContextPreview(session: Session, events: SessionEvent[]): string {
     case SessionStatus.IDLE: {
       const secs = tsToEpoch(session.lastEventAt);
       if (secs !== null) {
-        const mins = Math.floor(uptimeSeconds(secs) / 60);
-        return `Idle for ${mins < 1 ? 'less than a minute' : `${mins} minute${mins !== 1 ? 's' : ''}`}`;
+        return `Idle since ${timeAgo(uptimeSeconds(secs))}`;
       }
       return 'Idle';
     }
@@ -78,7 +77,7 @@ function findLastEventOfType(events: SessionEvent[], type: string): SessionEvent
 function relativeTime(ts: unknown): string {
   const secs = tsToEpoch(ts);
   if (secs === null) return '';
-  return formatDuration(uptimeSeconds(secs)) + ' ago';
+  return timeAgo(uptimeSeconds(secs));
 }
 
 export function SessionCard({ session, events, projectName }: SessionCardProps) {

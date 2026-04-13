@@ -18,18 +18,25 @@
   text-align: center;
 }
 
-.toggleRunning {
-  align-self: flex-end;
-  background: none;
-  border: 1px solid #444;
-  color: #aaa;
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: 4px;
-  cursor: pointer;
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 4px;
 }
 
-.toggleRunning:hover {
-  color: #ddd;
-  border-color: #666;
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  accent-color: #666;
+}
+
+.toggleLabel {
+  font-size: 0.75rem;
+  color: #888;
 }

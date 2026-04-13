@@ -32,3 +32,17 @@ export function uptimeSeconds(startedAtSecs: bigint | number, nowMs?: number): n
   const nowSecs = (nowMs ?? Date.now()) / 1000;
   return Math.max(0, nowSecs - Number(startedAtSecs));
 }
+
+/**
+ * Format a duration as a human-friendly relative string.
+ * Examples: "just now", "2 minutes ago", "1 hour ago", "3 days ago"
+ */
+export function timeAgo(seconds: number): string {
+  if (seconds < 30) return 'just now';
+  if (seconds < 90) return '1 minute ago';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 5400) return '1 hour ago';
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  if (seconds < 172800) return '1 day ago';
+  return `${Math.floor(seconds / 86400)} days ago`;
+}
