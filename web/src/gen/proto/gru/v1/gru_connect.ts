@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest } from "./gru_pb.js";
+import { GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest, SuggestSessionNameRequest, SuggestSessionNameResponse } from "./gru_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -57,6 +57,17 @@ export const GruService = {
       name: "SendInput",
       I: SendInputRequest,
       O: SendInputResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * AI-powered session name suggestion
+     *
+     * @generated from rpc gru.v1.GruService.SuggestSessionName
+     */
+    suggestSessionName: {
+      name: "SuggestSessionName",
+      I: SuggestSessionNameRequest,
+      O: SuggestSessionNameResponse,
       kind: MethodKind.Unary,
     },
     /**

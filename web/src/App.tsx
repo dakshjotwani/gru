@@ -60,7 +60,7 @@ export function App() {
           <button
             className={styles.launchBtn}
             onClick={() => setShowLaunch(true)}
-            title="Launch a new agent session"
+            title="Launch a new agent session (n)"
           >
             Launch
           </button>

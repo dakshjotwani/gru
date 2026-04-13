@@ -79,6 +79,7 @@
   font-weight: 600;
   cursor: pointer;
   letter-spacing: 0.01em;
+  transition: background 0.15s;
 }
 
 .launchBtn:hover {

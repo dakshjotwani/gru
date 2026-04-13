@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -23,11 +25,72 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// nameSuggester is an interface for AI-powered session name suggestion.
+// It is a single-method interface so it can be mocked in tests.
+type nameSuggester interface {
+	suggest(ctx context.Context, prompt, projectDir string) (name, description string, err error)
+}
+
+// claudeCLISuggester calls `claude -p` to produce a session name + description.
+// It requires no API key — it uses the Claude Code CLI's existing auth.
+type claudeCLISuggester struct{}
+
+const claudeCLIPromptTemplate = `You generate concise session names and descriptions for coding agent sessions.
+Output a JSON object only, with no other text before or after it.
+
+Task: %s%s
+
+JSON format: {"name": "kebab-case-name", "description": "one sentence"}
+Name rules: kebab-case, 2-5 words, descriptive not imperative (e.g. auth-token-expiry not fix-auth-token-expiry)`
+
+func (c *claudeCLISuggester) suggest(ctx context.Context, prompt, projectDir string) (string, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	projectSuffix := ""
+	if projectDir != "" {
+		projectSuffix = "\nProject directory: " + projectDir
+	}
+	cliPrompt := fmt.Sprintf(claudeCLIPromptTemplate, prompt, projectSuffix)
+
+	//nolint:gosec // prompt is internal server-side content, not user-controlled shell input
+	cmd := exec.CommandContext(ctx, "claude", "-p", cliPrompt)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("claude -p: %w", err)
+	}
+
+	outStr := strings.TrimSpace(string(out))
+
+	var result struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(outStr), &result); err != nil {
+		// Claude sometimes wraps JSON in a code fence or adds a preamble — extract it.
+		start := strings.Index(outStr, "{")
+		end := strings.LastIndex(outStr, "}")
+		if start >= 0 && end > start {
+			if err2 := json.Unmarshal([]byte(outStr[start:end+1]), &result); err2 != nil {
+				return "", "", fmt.Errorf("parse claude output: %w", err2)
+			}
+		} else {
+			return "", "", fmt.Errorf("no JSON in claude output: %q", outStr)
+		}
+	}
+
+	if result.Name == "" {
+		return "", "", errors.New("empty name in claude output")
+	}
+	return result.Name, result.Description, nil
+}
+
 // Service implements gruv1connect.GruServiceHandler.
 type Service struct {
 	store         *store.Store
 	pub           *ingestion.Publisher
 	controllerReg *controller.Registry
+	suggester     nameSuggester // nil means feature disabled
 }
 
 var _ gruv1connect.GruServiceHandler = (*Service)(nil)
@@ -37,7 +100,13 @@ func NewService(s *store.Store, pub *ingestion.Publisher) *Service {
 		store:         s,
 		pub:           pub,
 		controllerReg: controller.NewRegistry(),
+		suggester:     &claudeCLISuggester{},
 	}
+}
+
+// setSuggester replaces the suggester — used in tests.
+func (s *Service) setSuggester(sg nameSuggester) {
+	s.suggester = sg
 }
 
 func (s *Service) SetControllerRegistry(reg *controller.Registry) {
@@ -260,6 +329,24 @@ func (s *Service) ListProfiles(
 		})
 	}
 	return connect.NewResponse(&gruv1.ListProfilesResponse{Profiles: profiles}), nil
+}
+
+func (s *Service) SuggestSessionName(
+	ctx context.Context,
+	req *connect.Request[gruv1.SuggestSessionNameRequest],
+) (*connect.Response[gruv1.SuggestSessionNameResponse], error) {
+	if s.suggester == nil {
+		return connect.NewResponse(&gruv1.SuggestSessionNameResponse{}), nil
+	}
+	name, desc, err := s.suggester.suggest(ctx, req.Msg.Prompt, req.Msg.ProjectDir)
+	if err != nil {
+		log.Printf("SuggestSessionName: %v", err)
+		return connect.NewResponse(&gruv1.SuggestSessionNameResponse{}), nil
+	}
+	return connect.NewResponse(&gruv1.SuggestSessionNameResponse{
+		Name:        name,
+		Description: desc,
+	}), nil
 }
 
 func (s *Service) ListProjects(

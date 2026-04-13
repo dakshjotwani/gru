@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { gruClient } from '../client';
 import type { AgentProfile, Project } from '../types';
 import styles from './LaunchModal.module.css';
@@ -14,6 +14,8 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
   const [useCustomDir, setUseCustomDir] = useState(false);
   const [name, setName] = useState('');
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
+  const [suggestedName, setSuggestedName] = useState('');
+  const [suggestedDesc, setSuggestedDesc] = useState('');
   const [prompt, setPrompt] = useState('');
   const [description, setDescription] = useState('');
   const [profile, setProfile] = useState('');
@@ -23,25 +25,48 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
 
   const nameRef = useRef<HTMLInputElement>(null);
   const customDirRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-suggest name from prompt (first ~4 words → kebab-case), unless manually edited.
-  function promptToName(text: string): string {
-    return text
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .split(/\s+/)
-      .slice(0, 4)
-      .join('-')
-      .replace(/-+/g, '-')
-      .slice(0, 40);
-  }
-
-  function handlePromptChange(text: string) {
-    setPrompt(text);
-    if (!nameManuallyEdited) {
-      setName(promptToName(text));
+  // Fetch AI-powered name suggestion (debounced 300ms).
+  const fetchSuggestion = useCallback(async (p: string, dir: string) => {
+    if (!p.trim()) {
+      setSuggestedName('');
+      setSuggestedDesc('');
+      return;
     }
+    try {
+      const resp = await gruClient.suggestSessionName({ prompt: p, projectDir: dir });
+      if (resp.name) {
+        setSuggestedName(resp.name);
+        setSuggestedDesc(resp.description);
+        if (!nameManuallyEdited) {
+          setName(resp.name);
+        }
+      } else {
+        setSuggestedName('');
+        setSuggestedDesc('');
+      }
+    } catch {
+      // Suggestion is optional — ignore errors silently.
+    }
+  }, [nameManuallyEdited]);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchSuggestion(prompt, projectDir);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [prompt, projectDir, fetchSuggestion]);
+
+  function handleAcceptSuggestion() {
+    setName(suggestedName);
+    if (suggestedDesc && !description) {
+      setDescription(suggestedDesc);
+    }
+    setNameManuallyEdited(false);
   }
 
   // Fetch agent profiles when a project dir is selected.
@@ -95,7 +120,6 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
       setError('Prompt is required');
       return;
     }
-
     setLaunching(true);
     setError(null);
     try {
@@ -116,6 +140,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
 
   const selectedProject = !useCustomDir ? projects.find((p) => p.path === projectDir) : null;
   const selectedProfileInfo = profiles.find((p) => p.name === profile);
+  const showSuggestionHint = suggestedName && suggestedName !== name && nameManuallyEdited;
 
   return (
     <div className={styles.backdrop} onClick={onClose}>
@@ -203,6 +228,19 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
             </div>
           )}
 
+          {/* Prompt */}
+          <div className={styles.field}>
+            <label className={styles.label}>Prompt <span className={styles.required}>*</span></label>
+            <textarea
+              className={styles.textarea}
+              placeholder="What should the agent do?"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              disabled={launching}
+              rows={4}
+            />
+          </div>
+
           {/* Session name */}
           <div className={styles.field}>
             <label className={styles.label}>Session name <span className={styles.required}>*</span></label>
@@ -217,19 +255,18 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
               disabled={launching}
               spellCheck={false}
             />
-          </div>
-
-          {/* Prompt */}
-          <div className={styles.field}>
-            <label className={styles.label}>Prompt <span className={styles.required}>*</span></label>
-            <textarea
-              className={styles.textarea}
-              placeholder="What should the agent do?"
-              value={prompt}
-              onChange={(e) => handlePromptChange(e.target.value)}
-              disabled={launching}
-              rows={4}
-            />
+            {showSuggestionHint && (
+              <span className={styles.suggestion}>
+                Suggested: <em>{suggestedName}</em>{' '}
+                <button
+                  type="button"
+                  className={styles.acceptBtn}
+                  onClick={handleAcceptSuggestion}
+                >
+                  Accept
+                </button>
+              </span>
+            )}
           </div>
 
           {/* Description (optional) */}

@@ -16,6 +16,8 @@ export type {
   ListProfilesRequest,
   ListProfilesResponse,
   SubscribeEventsRequest,
+  SuggestSessionNameRequest,
+  SuggestSessionNameResponse,
 } from './gen/proto/gru/v1/gru_pb';
 
 export { SessionStatus, GruService } from './gen/proto/gru/v1/gru_pb';

@@ -188,6 +188,31 @@
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+.suggestion {
+  font-size: 0.75rem;
+  color: #8c8c8c;
+  margin-top: 2px;
+}
+
+.suggestion em {
+  font-style: normal;
+  color: #595959;
+}
+
+.acceptBtn {
+  background: transparent;
+  border: none;
+  color: #1677ff;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.acceptBtn:hover {
+  color: #0958d9;
+}
+
 .error {
   font-size: 0.78rem;
   color: #ff4d4f;
@@ -234,9 +259,10 @@
   font-weight: 600;
   color: #fff;
   cursor: pointer;
+  transition: background 0.15s;
 }
 
-.launchBtn:hover {
+.launchBtn:hover:not(:disabled) {
   background: #1060d9;
   border-color: #1060d9;
 }
