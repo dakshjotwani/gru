@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Session, SessionEvent } from '../types';
 import { SessionStatus } from '../types';
 import { gruClient } from '../client';
@@ -86,6 +86,13 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+
+  // Tick every 15s to keep relative times fresh.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   const displayName = session.name || session.id.slice(0, 8);
   const timeInState = getTimeInState(session);
