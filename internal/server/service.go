@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -157,9 +158,14 @@ func (s *Service) LaunchSession(
 	prompt := req.Msg.Prompt
 	profile := req.Msg.Profile
 
-	projectID, err := s.upsertProject(ctx, projectDir)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("upsert project: %w", err))
+	// Validate the project directory exists before persisting anything.
+	if info, err := os.Stat(projectDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project directory does not exist: %s", projectDir))
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cannot access project directory: %w", err))
+	} else if !info.IsDir() {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project path is not a directory: %s", projectDir))
 	}
 
 	runtimeID := "claude-code"
@@ -196,6 +202,13 @@ func (s *Service) LaunchSession(
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("launch: %w", err))
+	}
+
+	// Only persist the project after a successful launch — this prevents
+	// invalid or nonexistent paths from polluting the project list.
+	projectID, err := s.upsertProject(ctx, projectDir)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("upsert project: %w", err))
 	}
 
 	nilStr := func(v string) *string {

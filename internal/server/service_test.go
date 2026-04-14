@@ -2,8 +2,11 @@ package server_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -191,6 +194,15 @@ func TestService_LaunchSession(t *testing.T) {
 	if stored.TmuxSession == nil || *stored.TmuxSession != "gru-testproject" {
 		t.Errorf("stored TmuxSession = %v, want gru-testproject", stored.TmuxSession)
 	}
+
+	// Verify the project was persisted on successful launch.
+	projects, err := s.Queries().ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Errorf("projects = %d, want 1 — project should be persisted on success", len(projects))
+	}
 }
 
 func TestService_KillSession(t *testing.T) {
@@ -245,6 +257,119 @@ func TestService_KillSession_NotFound(t *testing.T) {
 	_, err := svc.KillSession(context.Background(), connect.NewRequest(&gruv1.KillSessionRequest{Id: "nonexistent-id"}))
 	if err == nil {
 		t.Fatal("expected error for nonexistent session, got nil")
+	}
+}
+
+func TestService_LaunchSession_InvalidDir_DoesNotPersistProject(t *testing.T) {
+	svc, s := newTestService(t)
+
+	reg := controller.NewRegistry()
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			t.Fatal("Launch should not be called for an invalid directory")
+			return nil, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir: "/nonexistent/path/that/does/not/exist",
+		Prompt:     "do something",
+		Name:       "bad-dir-test",
+	})
+
+	_, err := svc.LaunchSession(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory, got nil")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("error code = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+
+	// The project should NOT have been persisted.
+	projects, err := s.Queries().ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("projects = %d, want 0 — invalid project was persisted", len(projects))
+	}
+}
+
+func TestService_LaunchSession_FileNotDir_DoesNotPersistProject(t *testing.T) {
+	svc, s := newTestService(t)
+
+	reg := controller.NewRegistry()
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			t.Fatal("Launch should not be called for a file path")
+			return nil, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	// Create a file, not a directory.
+	filePath := filepath.Join(t.TempDir(), "not-a-dir.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir: filePath,
+		Prompt:     "do something",
+		Name:       "file-not-dir-test",
+	})
+
+	_, err := svc.LaunchSession(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for file-that-is-not-a-directory, got nil")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("error code = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+
+	projects, err := s.Queries().ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("projects = %d, want 0 — file path was persisted as project", len(projects))
+	}
+}
+
+func TestService_LaunchSession_ControllerError_DoesNotPersistProject(t *testing.T) {
+	svc, s := newTestService(t)
+
+	reg := controller.NewRegistry()
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			return nil, fmt.Errorf("tmux not available")
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	projectDir := t.TempDir()
+	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir: projectDir,
+		Prompt:     "do something",
+		Name:       "fail-launch-test",
+	})
+
+	_, err := svc.LaunchSession(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error when controller fails, got nil")
+	}
+
+	// The project should NOT have been persisted since launch failed.
+	projects, err := s.Queries().ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("projects = %d, want 0 — project was persisted despite failed launch", len(projects))
 	}
 }
 
