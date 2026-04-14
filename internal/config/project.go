@@ -22,6 +22,7 @@ type ProjectConfig struct {
 type AgentProfile struct {
 	Description string   `yaml:"description"`
 	Model       string   `yaml:"model"`
+	Agent       string   `yaml:"agent"`        // Claude Code agent name (--agent flag)
 	ExtraSkills []string `yaml:"extra_skills"` // paths relative to .gru/ dir
 	AutoMode    bool     `yaml:"auto_mode"`    // pass --enable-auto-mode to reduce permission prompts
 }

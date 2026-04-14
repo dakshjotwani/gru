@@ -20,6 +20,7 @@ type LaunchOptions struct {
 	Prompt          string
 	Profile         string
 	Model           string            // optional; passed as --model to the agent runtime
+	Agent           string            // optional; passed as --agent to select a Claude Code agent
 	ExtraPrompt     string            // optional extra system prompt content (skills, etc.)
 	AutoMode        bool              // pass --enable-auto-mode to use classifier-based auto-approval
 	Env             map[string]string

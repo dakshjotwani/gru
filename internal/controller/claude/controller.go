@@ -104,6 +104,9 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	if opts.Model != "" {
 		claudeArgs = append(claudeArgs, "--model", opts.Model)
 	}
+	if opts.Agent != "" {
+		claudeArgs = append(claudeArgs, "--agent", opts.Agent)
+	}
 	if opts.ExtraPrompt != "" {
 		escaped := "'" + strings.ReplaceAll(opts.ExtraPrompt, "'", "'\\''") + "'"
 		claudeArgs = append(claudeArgs, "--append-system-prompt", escaped)

@@ -197,6 +197,7 @@ func (s *Service) LaunchSession(
 		Prompt:          prompt,
 		Profile:         profile,
 		Model:           agentProfile.Model,
+		Agent:           agentProfile.Agent,
 		ExtraPrompt:     skillContent,
 		AutoMode:        agentProfile.AutoMode,
 	})
