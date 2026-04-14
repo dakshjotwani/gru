@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Project, Session, SessionEvent } from '../types';
 import { SessionStatus } from '../types';
 import { isTerminalStatus } from '../utils/status';
@@ -10,6 +10,10 @@ interface AttentionQueueProps {
   events: Map<string, SessionEvent[]>;
   projects: Project[];
   connected: boolean;
+  onSessionSelect?: (id: string) => void;
+  selectedSessionId?: string;
+  /** Called whenever the visible sorted session list changes, so the parent can drive keyboard navigation. */
+  onSortedSessions?: (ids: string[]) => void;
 }
 
 /** Extract epoch seconds from a protobuf Timestamp or RFC3339 string, returning null if missing. */
@@ -83,7 +87,7 @@ function sortSessions(sessions: Session[]): Session[] {
   });
 }
 
-export function AttentionQueue({ sessions, events, projects, connected }: AttentionQueueProps) {
+export function AttentionQueue({ sessions, events, projects, connected, onSessionSelect, selectedSessionId, onSortedSessions }: AttentionQueueProps) {
   const [hideRunning, setHideRunning] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
 
@@ -113,6 +117,10 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
     }
     return { sortedSessions: sortSessions(visible), runningCount: running, completedCount: completed };
   }, [sessions, hideRunning, showCompleted]);
+
+  useEffect(() => {
+    onSortedSessions?.(sortedSessions.map((s) => s.id));
+  }, [sortedSessions, onSortedSessions]);
 
   if (sortedSessions.length === 0 && connected) {
     return (
@@ -160,6 +168,8 @@ export function AttentionQueue({ sessions, events, projects, connected }: Attent
           session={session}
           events={events.get(session.id) ?? []}
           projectName={projectMap.get(session.projectId)?.name}
+          onSelect={onSessionSelect}
+          isSelected={selectedSessionId === session.id}
         />
       ))}
     </div>

@@ -1,43 +1,47 @@
 .queue {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 1px;
+  padding: 8px 0;
 }
 
 .empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
+  padding: 48px 16px;
 }
 
 .emptyText {
-  font-size: 0.9rem;
-  color: #8c8c8c;
+  font-size: 0.82rem;
+  color: #484f58;
   margin: 0;
   text-align: center;
+  line-height: 1.5;
 }
 
 .toolbar {
   display: flex;
   justify-content: flex-end;
-  gap: 16px;
-  padding: 0 4px;
+  gap: 12px;
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid #21262d;
+  margin-bottom: 4px;
 }
 
 .toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   cursor: pointer;
   user-select: none;
 }
 
 .toggle input {
-  accent-color: #666;
+  accent-color: #58a6ff;
 }
 
 .toggleLabel {
-  font-size: 0.75rem;
-  color: #888;
+  font-size: 0.72rem;
+  color: #6e7681;
 }

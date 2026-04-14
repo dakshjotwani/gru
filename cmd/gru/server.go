@@ -77,6 +77,10 @@ func runServer() error {
 	// Hook event ingestion (plain HTTP POST).
 	mux.Handle("POST /events", server.BearerAuth(cfg.APIKey, ingestionHandler))
 
+	// WebSocket terminal: streams a tmux pane over a PTY.
+	// Auth via ?token= query param (browsers can't set headers on WS upgrades).
+	mux.Handle("GET /terminal/{session_id}", server.NewTerminalHandler(cfg.APIKey, s))
+
 	// h2c enables HTTP/2 cleartext (required for gRPC without TLS).
 	// CORS wraps the mux so OPTIONS preflights are answered before BearerAuth runs.
 	httpServer := &http.Server{

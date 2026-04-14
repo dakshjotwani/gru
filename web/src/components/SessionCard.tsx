@@ -12,6 +12,9 @@ interface SessionCardProps {
   session: Session;
   events: SessionEvent[];
   projectName?: string;
+  /** When provided, card click fires onSelect instead of toggling expand. */
+  onSelect?: (id: string) => void;
+  isSelected?: boolean;
 }
 
 function tsToEpoch(ts: unknown): number | null {
@@ -83,7 +86,7 @@ function relativeTime(ts: unknown): string {
   return timeAgo(uptimeSeconds(secs));
 }
 
-export function SessionCard({ session, events, projectName }: SessionCardProps) {
+export function SessionCard({ session, events, projectName, onSelect, isSelected }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
@@ -128,21 +131,30 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
 
   const recentEvents = events.slice(-5).reverse();
 
+  const handleClick = () => {
+    if (onSelect) {
+      onSelect(session.id);
+    } else {
+      setExpanded((e) => !e);
+    }
+  };
+
   return (
     <div
       className={[
         styles.card,
-        expanded ? styles.expanded : '',
+        onSelect ? '' : expanded ? styles.expanded : '',
         session.status === SessionStatus.NEEDS_ATTENTION ? styles.attention : '',
+        isSelected ? styles.selected : '',
       ].filter(Boolean).join(' ')}
-      onClick={() => setExpanded((e) => !e)}
+      onClick={handleClick}
       role="button"
       tabIndex={0}
-      aria-expanded={expanded}
+      aria-expanded={onSelect ? undefined : expanded}
       onKeyDown={(e) => {
         const tag = (e.target as HTMLElement).tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-        if (e.key === 'Enter' || e.key === ' ') setExpanded((prev) => !prev);
+        if (e.key === 'Enter' || e.key === ' ') handleClick();
       }}
     >
       {/* Collapsed view */}
@@ -158,8 +170,8 @@ export function SessionCard({ session, events, projectName }: SessionCardProps) 
       </div>
       <div className={styles.preview}>{contextPreview}</div>
 
-      {/* Expanded view */}
-      {expanded && (
+      {/* Expanded view — only shown in full (non-sidebar) mode */}
+      {expanded && !onSelect && (
         <div className={styles.details} onClick={(e) => e.stopPropagation()}>
           {session.description && (
             <div className={styles.section}>

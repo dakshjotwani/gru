@@ -9,7 +9,9 @@ tool (
 
 require (
 	connectrpc.com/connect v1.19.1
+	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.53.0
 	google.golang.org/protobuf v1.36.11
