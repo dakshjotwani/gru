@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { gruClient } from '../client';
 import type { AgentProfile, Project } from '../types';
 import styles from './LaunchModal.module.css';
@@ -25,41 +25,35 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
 
   const nameRef = useRef<HTMLInputElement>(null);
   const customDirRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch AI-powered name suggestion (debounced 300ms).
-  const fetchSuggestion = useCallback(async (p: string, dir: string) => {
-    if (!p.trim()) {
+  // Fetch AI-powered name suggestion (debounced 300ms, with cancellation).
+  useEffect(() => {
+    if (!prompt.trim()) {
       setSuggestedName('');
       setSuggestedDesc('');
       return;
     }
-    try {
-      const resp = await gruClient.suggestSessionName({ prompt: p, projectDir: dir });
-      if (resp.name) {
-        setSuggestedName(resp.name);
-        setSuggestedDesc(resp.description);
-        if (!nameManuallyEdited) {
-          setName(resp.name);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const resp = await gruClient.suggestSessionName({ prompt, projectDir });
+        if (cancelled) return;
+        if (resp.name) {
+          setSuggestedName(resp.name);
+          setSuggestedDesc(resp.description);
+          if (!nameManuallyEdited) {
+            setName(resp.name);
+          }
+        } else {
+          setSuggestedName('');
+          setSuggestedDesc('');
         }
-      } else {
-        setSuggestedName('');
-        setSuggestedDesc('');
+      } catch {
+        // Suggestion is optional — ignore errors silently.
       }
-    } catch {
-      // Suggestion is optional — ignore errors silently.
-    }
-  }, [nameManuallyEdited]);
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      fetchSuggestion(prompt, projectDir);
     }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [prompt, projectDir, fetchSuggestion]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [prompt, projectDir, nameManuallyEdited]);
 
   function handleAcceptSuggestion() {
     setName(suggestedName);
@@ -69,23 +63,31 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
     setNameManuallyEdited(false);
   }
 
-  // Fetch agent profiles when a project dir is selected.
+  // Fetch agent profiles when a project dir is selected (debounced + cancelled).
   useEffect(() => {
     if (!projectDir) {
       setProfiles([]);
       setProfile('');
       return;
     }
-    gruClient
-      .listProfiles({ projectDir })
-      .then((res) => {
-        setProfiles(res.profiles);
-        setProfile('');
-      })
-      .catch(() => {
-        setProfiles([]);
-        setProfile('');
-      });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      gruClient
+        .listProfiles({ projectDir })
+        .then((res) => {
+          if (!cancelled) {
+            setProfiles(res.profiles);
+            setProfile('');
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setProfiles([]);
+            setProfile('');
+          }
+        });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [projectDir]);
 
   // Focus the first input on open.
@@ -105,6 +107,19 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Clear error when the user modifies any field.
+  function clearError() {
+    if (error) setError(null);
+  }
+
+  // Strip connect-rpc noise from error messages for cleaner display.
+  function formatError(err: unknown): string {
+    const raw = err instanceof Error ? err.message : String(err);
+    // connect-rpc errors look like "[invalid_argument] message" — strip the code prefix.
+    const cleaned = raw.replace(/^\[[\w_]+\]\s*/, '');
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,7 +148,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
       onLaunched();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatError(err));
       setLaunching(false);
     }
   }
@@ -159,7 +174,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
                 <select
                   className={styles.select}
                   value={projectDir}
-                  onChange={(e) => setProjectDir(e.target.value)}
+                  onChange={(e) => { setProjectDir(e.target.value); clearError(); }}
                   disabled={launching}
                 >
                   <option value="">— select a project —</option>
@@ -185,7 +200,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
                   type="text"
                   placeholder="/path/to/project"
                   value={projectDir}
-                  onChange={(e) => setProjectDir(e.target.value)}
+                  onChange={(e) => { setProjectDir(e.target.value); clearError(); }}
                   disabled={launching}
                   spellCheck={false}
                 />
@@ -212,7 +227,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
               <select
                 className={styles.select}
                 value={profile}
-                onChange={(e) => setProfile(e.target.value)}
+                onChange={(e) => { setProfile(e.target.value); clearError(); }}
                 disabled={launching}
               >
                 <option value="">— no profile —</option>
@@ -235,7 +250,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
               className={styles.textarea}
               placeholder="What should the agent do?"
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => { setPrompt(e.target.value); clearError(); }}
               disabled={launching}
               rows={4}
             />
@@ -250,7 +265,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
               type="text"
               placeholder="e.g. auth-bugfix"
               value={name}
-              onChange={(e) => { setName(e.target.value); setNameManuallyEdited(true); }}
+              onChange={(e) => { setName(e.target.value); setNameManuallyEdited(true); clearError(); }}
               onBlur={() => { if (!name.trim()) setNameManuallyEdited(false); }}
               disabled={launching}
               spellCheck={false}
@@ -277,7 +292,7 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
               type="text"
               placeholder="Brief context about the problem"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => { setDescription(e.target.value); clearError(); }}
               disabled={launching}
             />
           </div>
