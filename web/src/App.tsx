@@ -151,6 +151,7 @@ export function App() {
         <main className={styles.main}>
           {selectedSession ? (
             <TerminalPanel
+              key={selectedSession.id}
               session={selectedSession}
               focusRef={focusTerminalRef}
             />
