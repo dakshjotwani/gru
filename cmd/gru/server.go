@@ -16,6 +16,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
 	"github.com/dakshjotwani/gru/internal/ingestion"
+	"github.com/dakshjotwani/gru/internal/journal"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/supervisor"
@@ -59,11 +60,20 @@ func runServer() error {
 	// Start process liveness supervisor in the background.
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
+
+	// Ensure the journal singleton is up before the supervisor begins reconciling.
+	// A failure here is logged but non-fatal — the supervisor will retry with
+	// backoff on the next reconcile tick.
+	if err := journal.Ensure(serverCtx, s, ctrlReg, cfg); err != nil {
+		log.Printf("journal: ensure failed at startup: %v (supervisor will retry)", err)
+	}
+
 	sv := supervisor.New(
 		&supervisorStoreAdapter{store: s},
 		&supervisorPublisherAdapter{pub: pub},
 		10*time.Second,
 	)
+	sv.SetJournalRespawner(&journalRespawner{store: s, reg: ctrlReg, cfg: cfg})
 	go sv.Run(serverCtx)
 
 	mux := http.NewServeMux()
@@ -114,6 +124,7 @@ func (a *supervisorStoreAdapter) ListLiveSessions(ctx context.Context) ([]superv
 		ls := supervisor.LiveSession{
 			ID:     r.ID,
 			Status: r.Status,
+			Role:   r.Role,
 		}
 		if r.TmuxSession != nil {
 			ls.TmuxSession = *r.TmuxSession
@@ -137,6 +148,21 @@ func (a *supervisorStoreAdapter) UpdateSessionStatus(ctx context.Context, sessio
 // supervisorPublisherAdapter adapts *ingestion.Publisher to supervisor.EventPublisher.
 type supervisorPublisherAdapter struct {
 	pub *ingestion.Publisher
+}
+
+// journalRespawner adapts the journal package to supervisor.JournalRespawner.
+type journalRespawner struct {
+	store *store.Store
+	reg   *controller.Registry
+	cfg   *config.Config
+}
+
+func (r *journalRespawner) RespawnJournal(ctx context.Context) error {
+	_, err := journal.Spawn(ctx, r.store, r.reg, r.cfg)
+	if err != nil {
+		log.Printf("journal: respawn failed: %v", err)
+	}
+	return err
 }
 
 func (a *supervisorPublisherAdapter) PublishExit(_ context.Context, e supervisor.ExitEvent) {

@@ -45,4 +45,5 @@ type Session struct {
 	Name           string
 	Description    string
 	Prompt         string
+	Role           string
 }

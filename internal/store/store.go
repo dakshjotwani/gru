@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/dakshjotwani/gru/internal/store/db"
 	_ "modernc.org/sqlite"
@@ -58,21 +60,74 @@ func (s *Store) DB() *sql.DB          { return s.conn }
 func (s *Store) Close() error { return s.conn.Close() }
 
 func (s *Store) migrate() error {
+	// The first migration bootstraps the schema_migrations table itself and is
+	// idempotent on re-run (all CREATE TABLE statements use IF NOT EXISTS), so
+	// it's always safe to exec. Subsequent migrations are versioned: parse the
+	// numeric prefix from each filename, skip any version already recorded, and
+	// record the version after a successful apply.
 	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
 	}
+
+	applied, err := s.appliedVersions()
+	if err != nil {
+		return fmt.Errorf("read applied versions: %w", err)
+	}
+
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		sql, err := migrations.ReadFile("migrations/" + e.Name())
+		version, ok := parseMigrationVersion(e.Name())
+		if !ok {
+			return fmt.Errorf("migration %s: filename must begin with a numeric prefix", e.Name())
+		}
+		if version > 1 && applied[version] {
+			continue
+		}
+		body, err := migrations.ReadFile("migrations/" + e.Name())
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", e.Name(), err)
 		}
-		if _, err := s.conn.Exec(string(sql)); err != nil {
+		if _, err := s.conn.Exec(string(body)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", e.Name(), err)
 		}
+		if _, err := s.conn.Exec(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+			return fmt.Errorf("record migration %s: %w", e.Name(), err)
+		}
+		applied[version] = true
 	}
 	return nil
+}
+
+func (s *Store) appliedVersions() (map[int]bool, error) {
+	out := map[int]bool{}
+	// schema_migrations may not exist yet on a cold database; that's fine — return empty.
+	rows, err := s.conn.Query(`SELECT version FROM schema_migrations`)
+	if err != nil {
+		return out, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out[v] = true
+	}
+	return out, rows.Err()
+}
+
+func parseMigrationVersion(name string) (int, bool) {
+	// Filenames look like "002_session_role.sql". Take everything before the first underscore.
+	underscore := strings.IndexByte(name, '_')
+	if underscore <= 0 {
+		return 0, false
+	}
+	v, err := strconv.Atoi(name[:underscore])
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }

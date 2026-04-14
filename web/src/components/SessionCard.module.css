@@ -320,3 +320,23 @@
   color: #f85149;
   width: 100%;
 }
+
+.journal {
+  background: linear-gradient(90deg, #1a1a2e 0%, transparent 60%);
+  border-left-color: #a5a5ff;
+}
+
+.journal:hover {
+  background: linear-gradient(90deg, #22223a 0%, #161b22 60%);
+}
+
+.journalBadge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #c8c8ff;
+  background: #2a2a4a;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}

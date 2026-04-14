@@ -52,6 +52,7 @@ message Session {
   string         name            = 13;  // human-readable, e.g. "auth-frontend-bugfix"
   string         description     = 14;  // what problem is being solved
   string         prompt          = 15;  // the initial prompt given to the agent
+  string         role            = 16;  // "" for normal sessions; "journal" marks the server-managed singleton
 }
 
 message Project {

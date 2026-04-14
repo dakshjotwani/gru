@@ -39,6 +39,11 @@ const STATUS_PRIORITY: Record<number, number> = {
 
 function sortSessions(sessions: Session[]): Session[] {
   return sessions.slice().sort((a, b) => {
+    // Journal role is always pinned to the top.
+    const aj = a.role === 'journal';
+    const bj = b.role === 'journal';
+    if (aj !== bj) return aj ? -1 : 1;
+
     // Primary: status group
     const pa = STATUS_PRIORITY[a.status] ?? 99;
     const pb = STATUS_PRIORITY[b.status] ?? 99;

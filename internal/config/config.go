@@ -12,9 +12,28 @@ import (
 )
 
 type Config struct {
-	Addr   string `yaml:"addr"`
-	APIKey string `yaml:"api_key"`
-	DBPath string `yaml:"db_path"`
+	Addr    string         `yaml:"addr"`
+	APIKey  string         `yaml:"api_key"`
+	DBPath  string         `yaml:"db_path"`
+	Journal JournalConfig  `yaml:"journal"`
+}
+
+// JournalConfig controls the server-managed journal agent singleton.
+// When Enabled is true (the default), the server ensures a journal session is
+// running and respawns it if it dies. WorkspaceRoots are the directories the
+// journal agent may read to resolve project names into repo paths when Gru has
+// no registered project matching a journal entry.
+type JournalConfig struct {
+	Enabled         *bool    `yaml:"enabled"`
+	WorkspaceRoots  []string `yaml:"workspace_roots"`
+}
+
+// IsEnabled returns true unless explicitly set to false. Missing field = enabled.
+func (j JournalConfig) IsEnabled() bool {
+	if j.Enabled == nil {
+		return true
+	}
+	return *j.Enabled
 }
 
 // Load reads server config from path. Missing file returns defaults;
@@ -23,6 +42,9 @@ func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Addr:   ":7777",
 		DBPath: filepath.Join(os.Getenv("HOME"), ".gru", "gru.db"),
+		Journal: JournalConfig{
+			WorkspaceRoots: []string{filepath.Join(os.Getenv("HOME"), "workspace")},
+		},
 	}
 
 	data, err := os.ReadFile(path)

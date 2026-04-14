@@ -3,17 +3,17 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/dakshjotwani/gru
+      value: github.com/dakshjotwani/gru/proto
 plugins:
   - remote: buf.build/protocolbuffers/go
-    out: .
+    out: proto
     opt: paths=source_relative
   - remote: buf.build/connectrpc/go
-    out: .
+    out: proto
     opt: paths=source_relative
   - remote: buf.build/bufbuild/es
-    out: web/src/gen
+    out: web/src/gen/proto
     opt: target=ts
   - remote: buf.build/connectrpc/es
-    out: web/src/gen
+    out: web/src/gen/proto
     opt: target=ts

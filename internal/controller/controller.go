@@ -23,6 +23,7 @@ type LaunchOptions struct {
 	Agent           string            // optional; passed as --agent to select a Claude Code agent
 	ExtraPrompt     string            // optional extra system prompt content (skills, etc.)
 	AutoMode        bool              // pass --enable-auto-mode to use classifier-based auto-approval
+	NoWorktree      bool              // skip --worktree; ProjectDir is used as-is (non-git dirs like the journal)
 	Env             map[string]string
 }
 

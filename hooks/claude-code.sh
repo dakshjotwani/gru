@@ -4,7 +4,8 @@
 # Claude Code runs hooks in a sanitized environment (no inherited env vars),
 # so we derive everything we need from files:
 #   - ~/.gru/server.yaml  — API key and server address
-#   - <project>/.gru/sessions/<shortID> — GRU session UUID written at launch
+#   - <cwd>/.gru/session-id  — GRU session UUID (flat, CWD-local lookup)
+#   - <project>/.gru/sessions/<shortID>  — legacy worktree-layout lookup
 
 # Claude Code passes the hook event JSON via stdin.
 HOOK_DATA=$(cat)
@@ -13,14 +14,22 @@ HOOK_DATA=$(cat)
 CWD=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null <<< "$HOOK_DATA")
 [ -n "$CWD" ] || exit 0
 
-# The worktree path is <project>/.claude/worktrees/<shortID>.
-SHORT_ID=$(basename "$CWD")
-PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$CWD")")")
-
-# Look up the GRU session ID written by `gru launch`.
-SESSION_FILE="$PROJECT_ROOT/.gru/sessions/$SHORT_ID"
-[ -f "$SESSION_FILE" ] || exit 0
-GRU_SESSION_ID=$(cat "$SESSION_FILE")
+# Resolve the GRU session ID, preferring the CWD-local lookup written by
+# every `gru launch` (works for worktree and non-worktree launches alike).
+# Fall back to the worktree-convention path for older launches that predate
+# the flat file.
+GRU_SESSION_ID=""
+if [ -f "$CWD/.gru/session-id" ]; then
+  GRU_SESSION_ID=$(cat "$CWD/.gru/session-id")
+fi
+if [ -z "$GRU_SESSION_ID" ]; then
+  SHORT_ID=$(basename "$CWD")
+  PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$CWD")")")
+  SESSION_FILE="$PROJECT_ROOT/.gru/sessions/$SHORT_ID"
+  if [ -f "$SESSION_FILE" ]; then
+    GRU_SESSION_ID=$(cat "$SESSION_FILE")
+  fi
+fi
 [ -n "$GRU_SESSION_ID" ] || exit 0
 
 # Read connection config from ~/.gru/server.yaml.

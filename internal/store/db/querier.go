@@ -11,6 +11,7 @@ import (
 type Querier interface {
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	GetJournalSession(ctx context.Context) (Session, error)
 	GetLatestEventForSession(ctx context.Context, sessionID string) (Event, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetProjectByPath(ctx context.Context, path string) (Project, error)

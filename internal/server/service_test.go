@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -257,6 +258,44 @@ func TestService_KillSession_NotFound(t *testing.T) {
 	_, err := svc.KillSession(context.Background(), connect.NewRequest(&gruv1.KillSessionRequest{Id: "nonexistent-id"}))
 	if err == nil {
 		t.Fatal("expected error for nonexistent session, got nil")
+	}
+}
+
+func TestService_KillSession_RejectsJournal(t *testing.T) {
+	svc, s := newTestService(t)
+	svc.SetControllerRegistry(controller.NewRegistry())
+
+	ctx := context.Background()
+	if _, err := s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
+		ID: "journal", Name: "journal", Path: "/tmp/journal", Runtime: "claude-code",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Queries().CreateSession(ctx, store.CreateSessionParams{
+		ID: "j1", ProjectID: "journal", Runtime: "claude-code", Status: "running", Role: "journal",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.KillSession(ctx, connect.NewRequest(&gruv1.KillSessionRequest{Id: "j1"}))
+	if err == nil {
+		t.Fatal("expected KillSession to reject journal role, got nil error")
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected *connect.Error, got %T: %v", err, err)
+	}
+	if connectErr.Code() != connect.CodeFailedPrecondition {
+		t.Errorf("code = %s, want FailedPrecondition", connectErr.Code())
+	}
+
+	// Row must not have been marked killed.
+	stored, err := s.Queries().GetSession(ctx, "j1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "running" {
+		t.Errorf("status after rejected kill = %q, want running", stored.Status)
 	}
 }
 

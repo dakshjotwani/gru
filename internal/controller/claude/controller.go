@@ -97,7 +97,11 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	// starts the session with that task; claude remains interactive afterward.
 	// --worktree <shortID> tells Claude Code to create/reuse a worktree at
 	// <projectDir>/.claude/worktrees/<shortID>, preserving memories across sessions.
-	claudeArgs := []string{"--worktree", shortID}
+	// Skip for non-git launches (e.g. the journal at ~/.gru/journal).
+	var claudeArgs []string
+	if !opts.NoWorktree {
+		claudeArgs = append(claudeArgs, "--worktree", shortID)
+	}
 	if opts.AutoMode {
 		claudeArgs = append(claudeArgs, "--permission-mode", "auto")
 	}
@@ -133,12 +137,33 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		return nil, fmt.Errorf("claude: tmux new-window: %w", err)
 	}
 
-	// Write a lookup file so the hook script can resolve the GRU session ID
-	// from the worktree CWD without relying on environment variables (Claude
-	// Code sanitizes the hook subprocess environment).
+	// Write lookup files so the hook script can resolve the GRU session ID
+	// from the hook's cwd — Claude Code sanitizes the hook subprocess env.
+	//
+	// Two paths are written so both worktree and non-worktree launches work:
+	//
+	//   1. <projectDir>/.gru/sessions/<shortID>
+	//      Used when Claude runs in a worktree at <projectDir>/.claude/worktrees/<shortID>.
+	//      The hook derives shortID from basename(cwd) and projectDir from three
+	//      levels up.
+	//
+	//   2. <worktreeOrProjectDir>/.gru/session-id
+	//      A flat, CWD-local lookup that works regardless of worktree layout —
+	//      the hook falls back to this when the worktree-convention path misses
+	//      (e.g. the journal, which runs in ~/.gru/journal with no worktree).
 	sessionLookupDir := filepath.Join(opts.ProjectDir, ".gru", "sessions")
 	if err := os.MkdirAll(sessionLookupDir, 0o755); err == nil {
 		_ = os.WriteFile(filepath.Join(sessionLookupDir, shortID), []byte(sessionID), 0o644)
+	}
+	// The session's actual working directory: worktree for normal launches,
+	// the project dir itself when NoWorktree is set.
+	cwd := opts.ProjectDir
+	if !opts.NoWorktree {
+		cwd = filepath.Join(opts.ProjectDir, ".claude", "worktrees", shortID)
+	}
+	cwdLookupDir := filepath.Join(cwd, ".gru")
+	if err := os.MkdirAll(cwdLookupDir, 0o755); err == nil {
+		_ = os.WriteFile(filepath.Join(cwdLookupDir, "session-id"), []byte(sessionID), 0o644)
 	}
 
 	// Set remain-on-exit on the specific window so the pane stays visible

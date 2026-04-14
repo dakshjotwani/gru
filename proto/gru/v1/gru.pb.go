@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: proto/gru/v1/gru.proto
+// source: gru/v1/gru.proto
 
 package gruv1
 
@@ -70,11 +70,11 @@ func (x SessionStatus) String() string {
 }
 
 func (SessionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_gru_v1_gru_proto_enumTypes[0].Descriptor()
+	return file_gru_v1_gru_proto_enumTypes[0].Descriptor()
 }
 
 func (SessionStatus) Type() protoreflect.EnumType {
-	return &file_proto_gru_v1_gru_proto_enumTypes[0]
+	return &file_gru_v1_gru_proto_enumTypes[0]
 }
 
 func (x SessionStatus) Number() protoreflect.EnumNumber {
@@ -83,7 +83,7 @@ func (x SessionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SessionStatus.Descriptor instead.
 func (SessionStatus) EnumDescriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{0}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{0}
 }
 
 type Session struct {
@@ -103,13 +103,14 @@ type Session struct {
 	Name           string                 `protobuf:"bytes,13,opt,name=name,proto3" json:"name,omitempty"`               // human-readable, e.g. "auth-frontend-bugfix"
 	Description    string                 `protobuf:"bytes,14,opt,name=description,proto3" json:"description,omitempty"` // what problem is being solved
 	Prompt         string                 `protobuf:"bytes,15,opt,name=prompt,proto3" json:"prompt,omitempty"`           // the initial prompt given to the agent
+	Role           string                 `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`               // "" for normal sessions; "journal" marks the server-managed singleton
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
 	*x = Session{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[0]
+	mi := &file_gru_v1_gru_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -121,7 +122,7 @@ func (x *Session) String() string {
 func (*Session) ProtoMessage() {}
 
 func (x *Session) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[0]
+	mi := &file_gru_v1_gru_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -134,7 +135,7 @@ func (x *Session) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Session.ProtoReflect.Descriptor instead.
 func (*Session) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{0}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Session) GetId() string {
@@ -242,6 +243,13 @@ func (x *Session) GetPrompt() string {
 	return ""
 }
 
+func (x *Session) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
 type Project struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -255,7 +263,7 @@ type Project struct {
 
 func (x *Project) Reset() {
 	*x = Project{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[1]
+	mi := &file_gru_v1_gru_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -267,7 +275,7 @@ func (x *Project) String() string {
 func (*Project) ProtoMessage() {}
 
 func (x *Project) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[1]
+	mi := &file_gru_v1_gru_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -280,7 +288,7 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{1}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Project) GetId() string {
@@ -333,7 +341,7 @@ type SessionEvent struct {
 
 func (x *SessionEvent) Reset() {
 	*x = SessionEvent{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[2]
+	mi := &file_gru_v1_gru_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -345,7 +353,7 @@ func (x *SessionEvent) String() string {
 func (*SessionEvent) ProtoMessage() {}
 
 func (x *SessionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[2]
+	mi := &file_gru_v1_gru_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -358,7 +366,7 @@ func (x *SessionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEvent.ProtoReflect.Descriptor instead.
 func (*SessionEvent) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{2}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SessionEvent) GetId() string {
@@ -420,7 +428,7 @@ type ListSessionsRequest struct {
 
 func (x *ListSessionsRequest) Reset() {
 	*x = ListSessionsRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[3]
+	mi := &file_gru_v1_gru_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +440,7 @@ func (x *ListSessionsRequest) String() string {
 func (*ListSessionsRequest) ProtoMessage() {}
 
 func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[3]
+	mi := &file_gru_v1_gru_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +453,7 @@ func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{3}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListSessionsRequest) GetProjectId() string {
@@ -471,7 +479,7 @@ type ListSessionsResponse struct {
 
 func (x *ListSessionsResponse) Reset() {
 	*x = ListSessionsResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[4]
+	mi := &file_gru_v1_gru_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -483,7 +491,7 @@ func (x *ListSessionsResponse) String() string {
 func (*ListSessionsResponse) ProtoMessage() {}
 
 func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[4]
+	mi := &file_gru_v1_gru_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -496,7 +504,7 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{4}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListSessionsResponse) GetSessions() []*Session {
@@ -515,7 +523,7 @@ type GetSessionRequest struct {
 
 func (x *GetSessionRequest) Reset() {
 	*x = GetSessionRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[5]
+	mi := &file_gru_v1_gru_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -527,7 +535,7 @@ func (x *GetSessionRequest) String() string {
 func (*GetSessionRequest) ProtoMessage() {}
 
 func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[5]
+	mi := &file_gru_v1_gru_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -540,7 +548,7 @@ func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{5}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetSessionRequest) GetId() string {
@@ -563,7 +571,7 @@ type LaunchSessionRequest struct {
 
 func (x *LaunchSessionRequest) Reset() {
 	*x = LaunchSessionRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[6]
+	mi := &file_gru_v1_gru_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +583,7 @@ func (x *LaunchSessionRequest) String() string {
 func (*LaunchSessionRequest) ProtoMessage() {}
 
 func (x *LaunchSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[6]
+	mi := &file_gru_v1_gru_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +596,7 @@ func (x *LaunchSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LaunchSessionRequest.ProtoReflect.Descriptor instead.
 func (*LaunchSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{6}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LaunchSessionRequest) GetProjectDir() string {
@@ -635,7 +643,7 @@ type LaunchSessionResponse struct {
 
 func (x *LaunchSessionResponse) Reset() {
 	*x = LaunchSessionResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[7]
+	mi := &file_gru_v1_gru_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -647,7 +655,7 @@ func (x *LaunchSessionResponse) String() string {
 func (*LaunchSessionResponse) ProtoMessage() {}
 
 func (x *LaunchSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[7]
+	mi := &file_gru_v1_gru_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -660,7 +668,7 @@ func (x *LaunchSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LaunchSessionResponse.ProtoReflect.Descriptor instead.
 func (*LaunchSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{7}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LaunchSessionResponse) GetSession() *Session {
@@ -679,7 +687,7 @@ type KillSessionRequest struct {
 
 func (x *KillSessionRequest) Reset() {
 	*x = KillSessionRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[8]
+	mi := &file_gru_v1_gru_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +699,7 @@ func (x *KillSessionRequest) String() string {
 func (*KillSessionRequest) ProtoMessage() {}
 
 func (x *KillSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[8]
+	mi := &file_gru_v1_gru_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +712,7 @@ func (x *KillSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KillSessionRequest.ProtoReflect.Descriptor instead.
 func (*KillSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{8}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *KillSessionRequest) GetId() string {
@@ -723,7 +731,7 @@ type KillSessionResponse struct {
 
 func (x *KillSessionResponse) Reset() {
 	*x = KillSessionResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[9]
+	mi := &file_gru_v1_gru_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -735,7 +743,7 @@ func (x *KillSessionResponse) String() string {
 func (*KillSessionResponse) ProtoMessage() {}
 
 func (x *KillSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[9]
+	mi := &file_gru_v1_gru_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -748,7 +756,7 @@ func (x *KillSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KillSessionResponse.ProtoReflect.Descriptor instead.
 func (*KillSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{9}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *KillSessionResponse) GetSuccess() bool {
@@ -766,7 +774,7 @@ type ListProjectsRequest struct {
 
 func (x *ListProjectsRequest) Reset() {
 	*x = ListProjectsRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[10]
+	mi := &file_gru_v1_gru_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -778,7 +786,7 @@ func (x *ListProjectsRequest) String() string {
 func (*ListProjectsRequest) ProtoMessage() {}
 
 func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[10]
+	mi := &file_gru_v1_gru_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -791,7 +799,7 @@ func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{10}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{10}
 }
 
 type ListProjectsResponse struct {
@@ -803,7 +811,7 @@ type ListProjectsResponse struct {
 
 func (x *ListProjectsResponse) Reset() {
 	*x = ListProjectsResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[11]
+	mi := &file_gru_v1_gru_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -815,7 +823,7 @@ func (x *ListProjectsResponse) String() string {
 func (*ListProjectsResponse) ProtoMessage() {}
 
 func (x *ListProjectsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[11]
+	mi := &file_gru_v1_gru_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -828,7 +836,7 @@ func (x *ListProjectsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectsResponse.ProtoReflect.Descriptor instead.
 func (*ListProjectsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{11}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListProjectsResponse) GetProjects() []*Project {
@@ -849,7 +857,7 @@ type AgentProfile struct {
 
 func (x *AgentProfile) Reset() {
 	*x = AgentProfile{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[12]
+	mi := &file_gru_v1_gru_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -861,7 +869,7 @@ func (x *AgentProfile) String() string {
 func (*AgentProfile) ProtoMessage() {}
 
 func (x *AgentProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[12]
+	mi := &file_gru_v1_gru_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -874,7 +882,7 @@ func (x *AgentProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentProfile.ProtoReflect.Descriptor instead.
 func (*AgentProfile) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{12}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AgentProfile) GetName() string {
@@ -907,7 +915,7 @@ type ListProfilesRequest struct {
 
 func (x *ListProfilesRequest) Reset() {
 	*x = ListProfilesRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[13]
+	mi := &file_gru_v1_gru_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -919,7 +927,7 @@ func (x *ListProfilesRequest) String() string {
 func (*ListProfilesRequest) ProtoMessage() {}
 
 func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[13]
+	mi := &file_gru_v1_gru_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -932,7 +940,7 @@ func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{13}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListProfilesRequest) GetProjectDir() string {
@@ -951,7 +959,7 @@ type ListProfilesResponse struct {
 
 func (x *ListProfilesResponse) Reset() {
 	*x = ListProfilesResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[14]
+	mi := &file_gru_v1_gru_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +971,7 @@ func (x *ListProfilesResponse) String() string {
 func (*ListProfilesResponse) ProtoMessage() {}
 
 func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[14]
+	mi := &file_gru_v1_gru_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +984,7 @@ func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesResponse.ProtoReflect.Descriptor instead.
 func (*ListProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{14}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListProfilesResponse) GetProfiles() []*AgentProfile {
@@ -996,7 +1004,7 @@ type SendInputRequest struct {
 
 func (x *SendInputRequest) Reset() {
 	*x = SendInputRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[15]
+	mi := &file_gru_v1_gru_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1008,7 +1016,7 @@ func (x *SendInputRequest) String() string {
 func (*SendInputRequest) ProtoMessage() {}
 
 func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[15]
+	mi := &file_gru_v1_gru_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1021,7 +1029,7 @@ func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendInputRequest.ProtoReflect.Descriptor instead.
 func (*SendInputRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{15}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SendInputRequest) GetSessionId() string {
@@ -1048,7 +1056,7 @@ type SendInputResponse struct {
 
 func (x *SendInputResponse) Reset() {
 	*x = SendInputResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[16]
+	mi := &file_gru_v1_gru_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1068,7 @@ func (x *SendInputResponse) String() string {
 func (*SendInputResponse) ProtoMessage() {}
 
 func (x *SendInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[16]
+	mi := &file_gru_v1_gru_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1081,7 @@ func (x *SendInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendInputResponse.ProtoReflect.Descriptor instead.
 func (*SendInputResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{16}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SendInputResponse) GetSuccess() bool {
@@ -1100,7 +1108,7 @@ type SubscribeEventsRequest struct {
 
 func (x *SubscribeEventsRequest) Reset() {
 	*x = SubscribeEventsRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[17]
+	mi := &file_gru_v1_gru_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1112,7 +1120,7 @@ func (x *SubscribeEventsRequest) String() string {
 func (*SubscribeEventsRequest) ProtoMessage() {}
 
 func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[17]
+	mi := &file_gru_v1_gru_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1125,7 +1133,7 @@ func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeEventsRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{17}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SubscribeEventsRequest) GetProjectIds() []string {
@@ -1152,7 +1160,7 @@ type SuggestSessionNameRequest struct {
 
 func (x *SuggestSessionNameRequest) Reset() {
 	*x = SuggestSessionNameRequest{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[18]
+	mi := &file_gru_v1_gru_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1164,7 +1172,7 @@ func (x *SuggestSessionNameRequest) String() string {
 func (*SuggestSessionNameRequest) ProtoMessage() {}
 
 func (x *SuggestSessionNameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[18]
+	mi := &file_gru_v1_gru_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1177,7 +1185,7 @@ func (x *SuggestSessionNameRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestSessionNameRequest.ProtoReflect.Descriptor instead.
 func (*SuggestSessionNameRequest) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{18}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SuggestSessionNameRequest) GetPrompt() string {
@@ -1204,7 +1212,7 @@ type SuggestSessionNameResponse struct {
 
 func (x *SuggestSessionNameResponse) Reset() {
 	*x = SuggestSessionNameResponse{}
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[19]
+	mi := &file_gru_v1_gru_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1216,7 +1224,7 @@ func (x *SuggestSessionNameResponse) String() string {
 func (*SuggestSessionNameResponse) ProtoMessage() {}
 
 func (x *SuggestSessionNameResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_gru_v1_gru_proto_msgTypes[19]
+	mi := &file_gru_v1_gru_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1229,7 +1237,7 @@ func (x *SuggestSessionNameResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestSessionNameResponse.ProtoReflect.Descriptor instead.
 func (*SuggestSessionNameResponse) Descriptor() ([]byte, []int) {
-	return file_proto_gru_v1_gru_proto_rawDescGZIP(), []int{19}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SuggestSessionNameResponse) GetName() string {
@@ -1246,11 +1254,11 @@ func (x *SuggestSessionNameResponse) GetDescription() string {
 	return ""
 }
 
-var File_proto_gru_v1_gru_proto protoreflect.FileDescriptor
+var File_gru_v1_gru_proto protoreflect.FileDescriptor
 
-const file_proto_gru_v1_gru_proto_rawDesc = "" +
+const file_gru_v1_gru_proto_rawDesc = "" +
 	"\n" +
-	"\x16proto/gru/v1/gru.proto\x12\x06gru.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9a\x04\n" +
+	"\x10gru/v1/gru.proto\x12\x06gru.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xae\x04\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1270,7 +1278,8 @@ const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	"tmuxWindow\x12\x12\n" +
 	"\x04name\x18\r \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x0e \x01(\tR\vdescription\x12\x16\n" +
-	"\x06prompt\x18\x0f \x01(\tR\x06prompt\"\x96\x01\n" +
+	"\x06prompt\x18\x0f \x01(\tR\x06prompt\x12\x12\n" +
+	"\x04role\x18\x10 \x01(\tR\x04role\"\x96\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -1364,20 +1373,20 @@ const file_proto_gru_v1_gru_proto_rawDesc = "" +
 	"com.gru.v1B\bGruProtoP\x01Z.github.com/dakshjotwani/gru/proto/gru/v1;gruv1\xa2\x02\x03GXX\xaa\x02\x06Gru.V1\xca\x02\x06Gru\\V1\xe2\x02\x12Gru\\V1\\GPBMetadata\xea\x02\aGru::V1b\x06proto3"
 
 var (
-	file_proto_gru_v1_gru_proto_rawDescOnce sync.Once
-	file_proto_gru_v1_gru_proto_rawDescData []byte
+	file_gru_v1_gru_proto_rawDescOnce sync.Once
+	file_gru_v1_gru_proto_rawDescData []byte
 )
 
-func file_proto_gru_v1_gru_proto_rawDescGZIP() []byte {
-	file_proto_gru_v1_gru_proto_rawDescOnce.Do(func() {
-		file_proto_gru_v1_gru_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_gru_v1_gru_proto_rawDesc), len(file_proto_gru_v1_gru_proto_rawDesc)))
+func file_gru_v1_gru_proto_rawDescGZIP() []byte {
+	file_gru_v1_gru_proto_rawDescOnce.Do(func() {
+		file_gru_v1_gru_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gru_v1_gru_proto_rawDesc), len(file_gru_v1_gru_proto_rawDesc)))
 	})
-	return file_proto_gru_v1_gru_proto_rawDescData
+	return file_gru_v1_gru_proto_rawDescData
 }
 
-var file_proto_gru_v1_gru_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
-var file_proto_gru_v1_gru_proto_goTypes = []any{
+var file_gru_v1_gru_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_gru_v1_gru_proto_goTypes = []any{
 	(SessionStatus)(0),                 // 0: gru.v1.SessionStatus
 	(*Session)(nil),                    // 1: gru.v1.Session
 	(*Project)(nil),                    // 2: gru.v1.Project
@@ -1401,7 +1410,7 @@ var file_proto_gru_v1_gru_proto_goTypes = []any{
 	(*SuggestSessionNameResponse)(nil), // 20: gru.v1.SuggestSessionNameResponse
 	(*timestamppb.Timestamp)(nil),      // 21: google.protobuf.Timestamp
 }
-var file_proto_gru_v1_gru_proto_depIdxs = []int32{
+var file_gru_v1_gru_proto_depIdxs = []int32{
 	0,  // 0: gru.v1.Session.status:type_name -> gru.v1.SessionStatus
 	21, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
 	21, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
@@ -1438,27 +1447,27 @@ var file_proto_gru_v1_gru_proto_depIdxs = []int32{
 	0,  // [0:11] is the sub-list for field type_name
 }
 
-func init() { file_proto_gru_v1_gru_proto_init() }
-func file_proto_gru_v1_gru_proto_init() {
-	if File_proto_gru_v1_gru_proto != nil {
+func init() { file_gru_v1_gru_proto_init() }
+func file_gru_v1_gru_proto_init() {
+	if File_gru_v1_gru_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_gru_v1_gru_proto_rawDesc), len(file_proto_gru_v1_gru_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gru_v1_gru_proto_rawDesc), len(file_gru_v1_gru_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_gru_v1_gru_proto_goTypes,
-		DependencyIndexes: file_proto_gru_v1_gru_proto_depIdxs,
-		EnumInfos:         file_proto_gru_v1_gru_proto_enumTypes,
-		MessageInfos:      file_proto_gru_v1_gru_proto_msgTypes,
+		GoTypes:           file_gru_v1_gru_proto_goTypes,
+		DependencyIndexes: file_gru_v1_gru_proto_depIdxs,
+		EnumInfos:         file_gru_v1_gru_proto_enumTypes,
+		MessageInfos:      file_gru_v1_gru_proto_msgTypes,
 	}.Build()
-	File_proto_gru_v1_gru_proto = out.File
-	file_proto_gru_v1_gru_proto_goTypes = nil
-	file_proto_gru_v1_gru_proto_depIdxs = nil
+	File_gru_v1_gru_proto = out.File
+	file_gru_v1_gru_proto_goTypes = nil
+	file_gru_v1_gru_proto_depIdxs = nil
 }

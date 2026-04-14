@@ -139,6 +139,8 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
     }
   };
 
+  const isJournal = session.role === 'journal';
+
   return (
     <div
       className={[
@@ -146,6 +148,7 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
         onSelect ? '' : expanded ? styles.expanded : '',
         session.status === SessionStatus.NEEDS_ATTENTION ? styles.attention : '',
         isSelected ? styles.selected : '',
+        isJournal ? styles.journal : '',
       ].filter(Boolean).join(' ')}
       onClick={handleClick}
       role="button"
@@ -160,11 +163,12 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
       {/* Collapsed view */}
       <div className={styles.header}>
         <div className={styles.titleRow}>
+          {isJournal && <span className={styles.journalBadge} title="Gru journal agent — server-managed singleton">📓 Journal</span>}
           <span className={styles.name}>{displayName}</span>
           <StatusBadge status={session.status} />
         </div>
         <div className={styles.meta}>
-          {projectName && <span className={styles.project}>{projectName}</span>}
+          {projectName && !isJournal && <span className={styles.project}>{projectName}</span>}
           {timeInState && <span className={styles.time}>{timeInState}</span>}
         </div>
       </div>
@@ -301,7 +305,7 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
               </button>
             )}
 
-            <KillButton sessionId={session.id} />
+            {!isJournal && <KillButton sessionId={session.id} />}
 
             {sendError && <span className={styles.error}>{sendError}</span>}
           </div>

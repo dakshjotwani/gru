@@ -230,6 +230,7 @@ func (s *Service) LaunchSession(
 		Name:        req.Msg.Name,
 		Description: req.Msg.Description,
 		Prompt:      prompt,
+		Role:        "",
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create session row: %w", err))
@@ -250,6 +251,11 @@ func (s *Service) KillSession(
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("session %q not found", sessionID))
 	} else if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	if row.Role == "journal" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("journal session is server-managed; disable via `journal.enabled: false` in ~/.gru/server.yaml and restart the server"))
 	}
 
 	// Kill the tmux window using DB coordinates — works across server restarts.
@@ -529,6 +535,7 @@ func rowToSession(r db.Session) *gruv1.Session {
 	sess.Name = r.Name
 	sess.Description = r.Description
 	sess.Prompt = r.Prompt
+	sess.Role = r.Role
 	return sess
 }
 

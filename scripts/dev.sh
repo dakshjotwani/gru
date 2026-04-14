@@ -105,7 +105,11 @@ GO="${GO:-$(command -v go 2>/dev/null)}"
 "$GO" build -o /tmp/gru-dev ./cmd/gru
 
 echo "starting gru server..."
-/tmp/gru-dev server > "$SERVER_PIPE" 2>&1 &
+# Strip TMUX/TMUX_PANE so the server's tmux subcommands (for agent sessions)
+# don't inherit a $TMUX from the shell that ran this script. Gru's agent
+# sessions are siblings, not nested — without this, tmux warns about nesting
+# when make dev is launched from inside a tmux pane.
+env -u TMUX -u TMUX_PANE /tmp/gru-dev server > "$SERVER_PIPE" 2>&1 &
 SERVER_PID=$!
 prefix_log "server" "\033[0;34m" "$LOG_DIR/server.log" "$SERVER_PIPE" &
 SERVER_LOG_PID=$!

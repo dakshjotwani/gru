@@ -1,10 +1,17 @@
 -- name: CreateSession :one
-INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window, name, description, prompt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window, name, description, prompt, role)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetSession :one
 SELECT * FROM sessions WHERE id = ? LIMIT 1;
+
+-- name: GetJournalSession :one
+SELECT * FROM sessions
+WHERE role = 'journal'
+  AND status IN ('starting','running','idle','needs_attention')
+ORDER BY started_at DESC
+LIMIT 1;
 
 -- name: ListSessions :many
 SELECT * FROM sessions
