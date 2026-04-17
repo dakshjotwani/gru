@@ -128,6 +128,18 @@ func TestClaudeNormalizer_NotificationElicitation(t *testing.T) {
 	}
 }
 
+func TestClaudeNormalizer_NotificationIdlePrompt(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"Notification","session_id":"s1","cwd":"/p","notification_type":"idle_prompt","message":"Claude is waiting for your input"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventNeedsAttention {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventNeedsAttention)
+	}
+}
+
 func TestClaudeNormalizer_NotificationGeneric(t *testing.T) {
 	n := claude.NewNormalizer()
 	raw := json.RawMessage(`{"hook_event_name":"Notification","session_id":"s1","cwd":"/p","notification_type":"auth_success"}`)

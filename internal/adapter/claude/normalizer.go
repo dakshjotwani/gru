@@ -65,7 +65,7 @@ func (n *Normalizer) Normalize(_ context.Context, raw json.RawMessage) (*adapter
 //	SubagentStop        → subagent.end               (stay running)
 //	Stop                → session.idle               → idle   (turn done, waiting for input)
 //	StopFailure         → session.crash              → errored
-//	Notification (permission_prompt, elicitation_dialog) → notification.needs_attention → needs_attention
+//	Notification (permission_prompt, elicitation_dialog, idle_prompt) → notification.needs_attention → needs_attention
 //	Notification (other) → notification              (informational)
 func mapEventType(p hookPayload) (adapter.EventType, error) {
 	switch p.HookEventName {
@@ -86,10 +86,14 @@ func mapEventType(p hookPayload) (adapter.EventType, error) {
 		// auth failure, server error, etc.) — treat as a crash.
 		return adapter.EventSessionCrash, nil
 	case "Notification":
-		// Discriminate by notification_type: permission requests and MCP
-		// elicitations block the session and require user action.
+		// Discriminate by notification_type: permission requests, MCP
+		// elicitations, and Claude's "idle waiting for input" prompt all
+		// block the session and require user action. idle_prompt fires
+		// ~60s after the Stop hook and is our reliable signal that the
+		// agent is stuck at the prompt (and the Stop hook may itself have
+		// failed to deliver).
 		switch p.NotificationType {
-		case "permission_prompt", "elicitation_dialog":
+		case "permission_prompt", "elicitation_dialog", "idle_prompt":
 			return adapter.EventNeedsAttention, nil
 		default:
 			return adapter.EventNotification, nil

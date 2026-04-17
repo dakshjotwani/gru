@@ -132,6 +132,20 @@ func (a *supervisorStoreAdapter) ListLiveSessions(ctx context.Context) ([]superv
 		if r.TmuxWindow != nil {
 			ls.TmuxWindow = *r.TmuxWindow
 		}
+		if r.LastEventAt != nil {
+			if t, err := time.Parse(time.RFC3339, *r.LastEventAt); err == nil {
+				ls.LastEventAt = &t
+			}
+		}
+		// Look up the latest event type only for running sessions — the
+		// staleness heuristic is the only consumer and it only fires on
+		// running. Skipping this query for other statuses keeps reconcile
+		// cheap.
+		if r.Status == "running" {
+			if ev, err := a.store.Queries().GetLatestEventForSession(ctx, r.ID); err == nil {
+				ls.LastEventType = ev.Type
+			}
+		}
 		live = append(live, ls)
 	}
 	return live, nil
@@ -171,6 +185,21 @@ func (a *supervisorPublisherAdapter) PublishExit(_ context.Context, e supervisor
 		eventType = "session.end"
 	} else if e.NewStatus == "killed" {
 		eventType = "session.killed"
+	}
+	a.pub.Publish(&gruv1.SessionEvent{
+		Type:      eventType,
+		SessionId: e.SessionID,
+		Timestamp: timestamppb.Now(),
+	})
+}
+
+func (a *supervisorPublisherAdapter) PublishStatusChange(_ context.Context, e supervisor.StatusChangeEvent) {
+	eventType := ""
+	switch e.NewStatus {
+	case "needs_attention":
+		eventType = "notification.needs_attention"
+	default:
+		return
 	}
 	a.pub.Publish(&gruv1.SessionEvent{
 		Type:      eventType,

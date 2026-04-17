@@ -24,11 +24,16 @@ func (f *fakeSessionStore) UpdateSessionStatus(ctx context.Context, sessionID, s
 }
 
 type fakePublisher struct {
-	events []supervisor.ExitEvent
+	events        []supervisor.ExitEvent
+	statusChanges []supervisor.StatusChangeEvent
 }
 
 func (f *fakePublisher) PublishExit(ctx context.Context, e supervisor.ExitEvent) {
 	f.events = append(f.events, e)
+}
+
+func (f *fakePublisher) PublishStatusChange(ctx context.Context, e supervisor.StatusChangeEvent) {
+	f.statusChanges = append(f.statusChanges, e)
 }
 
 // fakeTmuxRunner models `tmux list-panes -t session:window -F #{pane_dead}`.
@@ -139,6 +144,127 @@ func TestSupervisor_DoesNotMarkAliveWindow(t *testing.T) {
 	}
 	if len(pub.events) != 0 {
 		t.Errorf("expected no exit events, got %v", pub.events)
+	}
+}
+
+// Staleness heuristic tests: the supervisor should flip long-silent `running`
+// sessions to `needs_attention` as a safety net for dropped hooks, but must
+// never interrupt legitimate long-running tool calls.
+
+func staleTime(ago time.Duration) *time.Time {
+	t := time.Now().Add(-ago)
+	return &t
+}
+
+func TestSupervisor_FlipsStaleRunningToNeedsAttention(t *testing.T) {
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-p": {"feat·11111111"}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
+		ID:            "sess-stale",
+		TmuxSession:   "gru-p",
+		TmuxWindow:    "feat·11111111",
+		Status:        "running",
+		LastEventAt:   staleTime(30 * time.Minute),
+		LastEventType: "tool.post", // not inside a tool call
+	}}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 1 || store.updated[0].Status != "needs_attention" {
+		t.Fatalf("expected needs_attention flip, got %v", store.updated)
+	}
+	if len(pub.statusChanges) != 1 || pub.statusChanges[0].NewStatus != "needs_attention" {
+		t.Errorf("expected status-change event, got %v", pub.statusChanges)
+	}
+}
+
+func TestSupervisor_LeavesToolCallAlone(t *testing.T) {
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-p": {"feat·11111111"}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
+		ID:            "sess-longtool",
+		TmuxSession:   "gru-p",
+		TmuxWindow:    "feat·11111111",
+		Status:        "running",
+		LastEventAt:   staleTime(45 * time.Minute), // way past threshold
+		LastEventType: "tool.pre",                  // inside a tool call
+	}}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 0 {
+		t.Errorf("expected no updates for tool.pre in-flight, got %v", store.updated)
+	}
+	if len(pub.statusChanges) != 0 {
+		t.Errorf("expected no status-change events, got %v", pub.statusChanges)
+	}
+}
+
+func TestSupervisor_LeavesSubagentRunAlone(t *testing.T) {
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-p": {"feat·11111111"}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
+		ID:            "sess-subagent",
+		TmuxSession:   "gru-p",
+		TmuxWindow:    "feat·11111111",
+		Status:        "running",
+		LastEventAt:   staleTime(30 * time.Minute),
+		LastEventType: "subagent.start",
+	}}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 0 {
+		t.Errorf("expected no updates for in-flight subagent, got %v", store.updated)
+	}
+}
+
+func TestSupervisor_LeavesFreshRunningAlone(t *testing.T) {
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-p": {"feat·11111111"}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
+		ID:            "sess-fresh",
+		TmuxSession:   "gru-p",
+		TmuxWindow:    "feat·11111111",
+		Status:        "running",
+		LastEventAt:   staleTime(2 * time.Minute), // well under threshold
+		LastEventType: "tool.post",
+	}}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 0 {
+		t.Errorf("expected no updates for fresh session, got %v", store.updated)
+	}
+}
+
+func TestSupervisor_SkipsNonRunningStatuses(t *testing.T) {
+	// idle and needs_attention sessions with stale last_event_at must not be
+	// flipped — idle means the turn is genuinely done, and needs_attention
+	// is already the target state.
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-p": {"w1", "w2"}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{
+		{ID: "sess-idle", TmuxSession: "gru-p", TmuxWindow: "w1", Status: "idle",
+			LastEventAt: staleTime(1 * time.Hour), LastEventType: "session.idle"},
+		{ID: "sess-attn", TmuxSession: "gru-p", TmuxWindow: "w2", Status: "needs_attention",
+			LastEventAt: staleTime(1 * time.Hour), LastEventType: "notification.needs_attention"},
+	}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 0 {
+		t.Errorf("expected no updates, got %v", store.updated)
+	}
+}
+
+func TestSupervisor_DisabledThresholdSkipsHeuristic(t *testing.T) {
+	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-p": {"w1"}}}
+	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
+		ID: "sess-stale", TmuxSession: "gru-p", TmuxWindow: "w1", Status: "running",
+		LastEventAt: staleTime(2 * time.Hour), LastEventType: "tool.post",
+	}}}
+	pub := &fakePublisher{}
+	sv := supervisor.NewWithRunner(store, pub, 50*time.Millisecond, tmux)
+	sv.SetIdleThreshold(0) // disabled
+	sv.ReconcileOnce(context.Background())
+	if len(store.updated) != 0 {
+		t.Errorf("expected heuristic disabled, got updates %v", store.updated)
 	}
 }
 

@@ -13,6 +13,15 @@ type LiveSession struct {
 	TmuxWindow  string
 	Status      string
 	Role        string
+	// LastEventAt is the time of the most recent event for this session.
+	// Nil if no events have been recorded yet.
+	LastEventAt *time.Time
+	// LastEventType is the adapter.EventType string of the most recent event
+	// (e.g. "tool.pre", "tool.post", "session.start"). Empty if unknown.
+	// Used by the staleness heuristic to distinguish "inside a long-running
+	// tool call" (last event was tool.pre) from "should have made progress
+	// by now" (last event was tool.post, session.start, etc.).
+	LastEventType string
 }
 
 type StatusUpdate struct {
@@ -27,6 +36,14 @@ type ExitEvent struct {
 	NewStatus   string // "errored" or "completed"
 }
 
+// StatusChangeEvent signals an in-place status transition on a live session
+// (e.g. running → needs_attention via the staleness heuristic). Unlike
+// ExitEvent, the tmux window is still alive.
+type StatusChangeEvent struct {
+	SessionID string
+	NewStatus string
+}
+
 type SessionStore interface {
 	ListLiveSessions(ctx context.Context) ([]LiveSession, error)
 	UpdateSessionStatus(ctx context.Context, sessionID, status string) error
@@ -34,6 +51,7 @@ type SessionStore interface {
 
 type EventPublisher interface {
 	PublishExit(ctx context.Context, e ExitEvent)
+	PublishStatusChange(ctx context.Context, e StatusChangeEvent)
 }
 
 type tmuxOutputRunner interface {
@@ -53,11 +71,19 @@ type JournalRespawner interface {
 	RespawnJournal(ctx context.Context) error
 }
 
+// DefaultIdleThreshold is the age beyond which a running session with no new
+// events is treated as stuck and flipped to needs_attention. Chosen to leave
+// comfortable headroom above typical long tool calls (test suites, builds)
+// while still surfacing genuinely stuck sessions within a reasonable window.
+const DefaultIdleThreshold = 15 * time.Minute
+
 type Supervisor struct {
-	store    SessionStore
-	pub      EventPublisher
-	interval time.Duration
-	tmux     tmuxOutputRunner
+	store         SessionStore
+	pub           EventPublisher
+	interval      time.Duration
+	tmux          tmuxOutputRunner
+	idleThreshold time.Duration
+	now           func() time.Time // injectable for tests
 
 	journal        JournalRespawner
 	nextJournalTry time.Time // minimum wall time for the next respawn attempt
@@ -65,12 +91,33 @@ type Supervisor struct {
 }
 
 func New(store SessionStore, pub EventPublisher, interval time.Duration) *Supervisor {
-	return &Supervisor{store: store, pub: pub, interval: interval, tmux: &realTmuxRunner{}}
+	return &Supervisor{
+		store:         store,
+		pub:           pub,
+		interval:      interval,
+		tmux:          &realTmuxRunner{},
+		idleThreshold: DefaultIdleThreshold,
+		now:           time.Now,
+	}
 }
 
 func NewWithRunner(store SessionStore, pub EventPublisher, interval time.Duration, tmux tmuxOutputRunner) *Supervisor {
-	return &Supervisor{store: store, pub: pub, interval: interval, tmux: tmux}
+	return &Supervisor{
+		store:         store,
+		pub:           pub,
+		interval:      interval,
+		tmux:          tmux,
+		idleThreshold: DefaultIdleThreshold,
+		now:           time.Now,
+	}
 }
+
+// SetIdleThreshold overrides the default staleness threshold. Set to 0 to
+// disable the heuristic entirely.
+func (s *Supervisor) SetIdleThreshold(d time.Duration) { s.idleThreshold = d }
+
+// SetNowFunc overrides the wall-clock source; used by tests.
+func (s *Supervisor) SetNowFunc(fn func() time.Time) { s.now = fn }
 
 // SetJournalRespawner wires the journal-respawn hook. If nil, journal sessions
 // are treated like any other session (marked errored when their tmux window
@@ -110,6 +157,7 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 			if sess.Role == "journal" {
 				journalAlive = true
 			}
+			s.checkStale(ctx, sess)
 			continue
 		}
 		// Sessions that were idle/needs_attention completed normally;
@@ -132,6 +180,40 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 	if s.journal != nil && !journalAlive {
 		s.tryRespawnJournal(ctx)
 	}
+}
+
+// checkStale flips a live `running` session to `needs_attention` when no
+// event has arrived within the idle threshold, unless the session is
+// currently inside a tool call (last event was tool.pre) — in which case
+// silence is legitimate and we leave it alone. Only `running` is considered;
+// `idle`, `needs_attention`, and `starting` are left untouched. This is the
+// safety net for dropped hook deliveries, because once hooks resume flowing
+// Claude Code's own idle_prompt notification will re-flag correctly.
+func (s *Supervisor) checkStale(ctx context.Context, sess LiveSession) {
+	if s.idleThreshold <= 0 {
+		return
+	}
+	if sess.Status != "running" {
+		return
+	}
+	if sess.LastEventAt == nil {
+		return
+	}
+	if s.now().Sub(*sess.LastEventAt) < s.idleThreshold {
+		return
+	}
+	// tool.pre with no matching tool.post means Claude is inside a tool
+	// call (e.g. a long test run). Don't interrupt legitimate long work.
+	if sess.LastEventType == "tool.pre" || sess.LastEventType == "subagent.start" {
+		return
+	}
+	if err := s.store.UpdateSessionStatus(ctx, sess.ID, "needs_attention"); err != nil {
+		return
+	}
+	s.pub.PublishStatusChange(ctx, StatusChangeEvent{
+		SessionID: sess.ID,
+		NewStatus: "needs_attention",
+	})
 }
 
 // tryRespawnJournal respawns the journal session if backoff has elapsed. It
