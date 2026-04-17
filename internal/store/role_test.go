@@ -8,7 +8,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/store"
 )
 
-func TestStore_GetJournalSession(t *testing.T) {
+func TestStore_GetAssistantSession(t *testing.T) {
 	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestStore_GetJournalSession(t *testing.T) {
 	}
 
 	// No journal session yet → query returns sql.ErrNoRows.
-	_, err = q.GetJournalSession(ctx)
+	_, err = q.GetAssistantSession(ctx)
 	if err == nil {
 		t.Fatal("expected error when no journal session exists, got nil")
 	}
@@ -38,7 +38,7 @@ func TestStore_GetJournalSession(t *testing.T) {
 		ProjectID: "journal",
 		Runtime:   "claude-code",
 		Status:    "errored",
-		Role:      "journal",
+		Role:      "assistant",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestStore_GetJournalSession(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = q.GetJournalSession(ctx)
+	_, err = q.GetAssistantSession(ctx)
 	if err == nil {
 		t.Fatal("expected error when only dead journal sessions exist, got nil")
 	}
@@ -60,19 +60,19 @@ func TestStore_GetJournalSession(t *testing.T) {
 		ProjectID: "journal",
 		Runtime:   "claude-code",
 		Status:    "running",
-		Role:      "journal",
+		Role:      "assistant",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := q.GetJournalSession(ctx)
+	got, err := q.GetAssistantSession(ctx)
 	if err != nil {
-		t.Fatalf("GetJournalSession: %v", err)
+		t.Fatalf("GetAssistantSession: %v", err)
 	}
 	if got.ID != "j-live" {
 		t.Errorf("returned journal id = %q, want %q", got.ID, "j-live")
 	}
-	if got.Role != "journal" {
-		t.Errorf("returned role = %q, want %q", got.Role, "journal")
+	if got.Role != "assistant" {
+		t.Errorf("returned role = %q, want %q", got.Role, "assistant")
 	}
 }
 

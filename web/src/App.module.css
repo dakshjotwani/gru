@@ -40,10 +40,27 @@
   letter-spacing: -0.02em;
 }
 
-.subtitle {
-  font-size: 0.75rem;
-  color: #6e7681;
-  font-weight: 400;
+/* Header title doubles as a "return to Gru" button. Keep it looking like a
+ * title by default — only hint at its buttonness on hover. */
+.titleButton {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.titleButton:hover .title {
+  color: #58a6ff;
+}
+
+.titleButton:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 
 .statusRow {
@@ -153,6 +170,48 @@
   color: #30363d;
   text-align: center;
   margin-top: 8px;
+}
+
+/* "Ask Gru" row at the top of the sidebar — the entry point to the assistant.
+ * Visually separated from the session queue below so it reads as a top-level
+ * destination, not just another minion. */
+.askGruButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #21262d;
+  cursor: pointer;
+  color: #c9d1d9;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.askGruButton:hover {
+  background: #161b22;
+  color: #58a6ff;
+}
+
+.askGruButtonActive {
+  background: #0f1a2a;
+  border-left: 2px solid #58a6ff;
+  padding-left: 12px;
+  color: #58a6ff;
+}
+
+.askGruIcon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.askGruLabel {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 /* Sidebar nav mode hint bar */

@@ -70,16 +70,16 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
-const getJournalSession = `-- name: GetJournalSession :one
+const getAssistantSession = `-- name: GetAssistantSession :one
 SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role FROM sessions
-WHERE role = 'journal'
+WHERE role = 'assistant'
   AND status IN ('starting','running','idle','needs_attention')
 ORDER BY started_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetJournalSession(ctx context.Context) (Session, error) {
-	row := q.db.QueryRowContext(ctx, getJournalSession)
+func (q *Queries) GetAssistantSession(ctx context.Context) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getAssistantSession)
 	var i Session
 	err := row.Scan(
 		&i.ID,

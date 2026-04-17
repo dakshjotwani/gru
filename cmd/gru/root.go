@@ -69,6 +69,7 @@ func newRootCmd() *cobra.Command {
 		newTailCmd(state),
 		newAttachCmd(state),
 		newEnvCmd(),
+		newProjectsCmd(state),
 	)
 
 	return root

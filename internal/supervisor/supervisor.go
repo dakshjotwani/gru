@@ -177,7 +177,7 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 			continue
 		}
 		if s.windowAlive(sess.TmuxSession, sess.TmuxWindow) {
-			if sess.Role == "journal" {
+			if sess.Role == "assistant" {
 				journalAlive = true
 			}
 			s.checkStale(ctx, sess)

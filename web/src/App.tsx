@@ -22,6 +22,19 @@ export function App() {
 
   const selectedSession = selectedSessionId ? sessions.get(selectedSessionId) ?? null : null;
 
+  // The Gru assistant is a singleton session with role="assistant". It owns
+  // the main pane whenever no minion is selected — clicking a minion swaps
+  // the pane to that session's terminal; deselecting (Esc / header / sidebar
+  // button) swaps back to the assistant. Falls back to the old empty state
+  // when the assistant session hasn't spawned yet (first-run or disabled).
+  const assistantSession = Array.from(sessions.values()).find((s) => s.role === 'assistant') ?? null;
+  const mainSession = selectedSession ?? assistantSession;
+
+  const deselect = () => {
+    setSelectedSessionId(null);
+    setTimeout(() => focusTerminalRef.current?.(), 50);
+  };
+
   // Ctrl+\ — toggle between sidebar nav mode and terminal.
   // Ctrl+N / Ctrl+P — navigate sessions while sidebar is focused.
   // Enter — confirm selection and return focus to terminal.
@@ -76,13 +89,23 @@ export function App() {
           if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
           setShowLaunch(true);
         }
+        // Esc deselects the current minion and returns the main pane to Gru.
+        // Guard against stealing Escape from inputs/modals — if focus is in a
+        // form element or the Launch modal is open, let the host component
+        // handle it (e.g. modal closes itself on Escape).
+        if (e.key === 'Escape' && selectedSessionId && !showLaunch) {
+          const tag = (e.target as HTMLElement).tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+          e.preventDefault();
+          deselect();
+        }
       }
     };
 
     // capture: true so we intercept before xterm sees the event.
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [sidebarFocused, selectedSessionId]);
+  }, [sidebarFocused, selectedSessionId, showLaunch]);
 
   // Register service worker.
   useEffect(() => {
@@ -104,8 +127,15 @@ export function App() {
     <div className={styles.app}>
       <header className={styles.header}>
         <div className={styles.brand}>
-          <h1 className={styles.title}>Gru</h1>
-          <span className={styles.subtitle}>Mission Control</span>
+          <button
+            type="button"
+            className={styles.titleButton}
+            onClick={deselect}
+            title="Return to Gru (Esc)"
+            aria-label="Return to Gru assistant"
+          >
+            <h1 className={styles.title}>Gru</h1>
+          </button>
         </div>
         <div className={styles.statusRow}>
           <span
@@ -113,12 +143,12 @@ export function App() {
             title={connected ? 'Connected' : 'Disconnected'}
           />
           <span className={styles.sessionCount}>
-            {activeCount} active session{activeCount !== 1 ? 's' : ''}
+            {activeCount} active minion{activeCount !== 1 ? 's' : ''}
           </span>
           <button
             className={styles.launchBtn}
             onClick={() => setShowLaunch(true)}
-            title="Launch a new agent session (n)"
+            title="Launch a new minion (n)"
           >
             Launch
           </button>
@@ -132,6 +162,15 @@ export function App() {
               <kbd>Ctrl+N</kbd><kbd>Ctrl+P</kbd> navigate &nbsp;·&nbsp; <kbd>Enter</kbd> or <kbd>Ctrl+\</kbd> back to terminal
             </div>
           )}
+          <button
+            type="button"
+            className={[styles.askGruButton, selectedSessionId === null ? styles.askGruButtonActive : ''].filter(Boolean).join(' ')}
+            onClick={deselect}
+            title="Chat with Gru (Esc)"
+          >
+            <span className={styles.askGruIcon}>💬</span>
+            <span className={styles.askGruLabel}>Ask Gru</span>
+          </button>
           <AttentionQueue
             sessions={sessions}
             events={events}
@@ -149,19 +188,19 @@ export function App() {
         </aside>
 
         <main className={styles.main}>
-          {selectedSession ? (
+          {mainSession ? (
             <TerminalPanel
-              key={selectedSession.id}
-              session={selectedSession}
+              key={mainSession.id}
+              session={mainSession}
               focusRef={focusTerminalRef}
             />
           ) : (
             <div className={styles.emptyTerminal}>
               <p className={styles.emptyTerminalText}>
-                Select a session to open its terminal
+                Gru is starting up…
               </p>
               <p className={styles.emptyTerminalHint}>
-                <kbd>Ctrl+\</kbd> to navigate sessions
+                If this persists, the assistant may be disabled (see <code>~/.gru/server.yaml</code>).
               </p>
             </div>
           )}

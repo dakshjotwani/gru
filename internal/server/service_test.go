@@ -272,7 +272,7 @@ func TestService_KillSession_RejectsJournal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.Queries().CreateSession(ctx, store.CreateSessionParams{
-		ID: "j1", ProjectID: "journal", Runtime: "claude-code", Status: "running", Role: "journal",
+		ID: "j1", ProjectID: "journal", Runtime: "claude-code", Status: "running", Role: "assistant",
 	}); err != nil {
 		t.Fatal(err)
 	}

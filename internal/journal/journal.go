@@ -1,7 +1,8 @@
-// Package journal manages the Gru journal-agent singleton: a machine-scoped
-// Claude Code session that captures the operator's thoughts and helps spawn
-// other Gru sessions. The server ensures exactly one live journal session
-// exists (identified by role="journal") and respawns it when it dies.
+// Package journal manages the Gru assistant singleton: a machine-scoped
+// Claude Code session the operator talks to for spawning and triaging
+// minions (other sessions). The server ensures exactly one live assistant
+// session exists (identified by role="assistant") and respawns it when it
+// dies. Package keeps its historic name for continuity with ~/.gru/journal/.
 package journal
 
 import (
@@ -22,7 +23,7 @@ import (
 )
 
 // Role is the constant stored in sessions.role that identifies the singleton.
-const Role = "journal"
+const Role = "assistant"
 
 // RuntimeID matches the ClaudeController runtime; the journal runs on claude-code.
 const RuntimeID = "claude-code"
@@ -38,7 +39,7 @@ func Ensure(ctx context.Context, s *store.Store, reg *controller.Registry, cfg *
 	if !cfg.Journal.IsEnabled() {
 		return nil
 	}
-	existing, err := s.Queries().GetJournalSession(ctx)
+	existing, err := s.Queries().GetAssistantSession(ctx)
 	if err == nil && existing.ID != "" {
 		return nil
 	}

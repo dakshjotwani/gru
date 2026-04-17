@@ -38,11 +38,6 @@ function tsSeconds(ts: unknown): number | null {
  *  a newly-idle one, and score encodes that ranking natively. */
 function sortSessions(sessions: Session[]): Session[] {
   return sessions.slice().sort((a, b) => {
-    // Journal role is always pinned to the top so it's one keystroke away.
-    const aj = a.role === 'journal';
-    const bj = b.role === 'journal';
-    if (aj !== bj) return aj ? -1 : 1;
-
     // Primary: attention_score desc. Proto-json omits zero-valued fields, so
     // a session whose engine score is 0 arrives as `undefined` at runtime,
     // not 0 — coerce so subtraction never yields NaN (which breaks sort).
@@ -80,6 +75,10 @@ export function AttentionQueue({ sessions, events, projects, connected, onSessio
     let running = 0;
     let completed = 0;
     for (const session of sessions.values()) {
+      // The Gru assistant lives outside the queue — it has its own dedicated
+      // entry point ("Ask Gru") at the top of the sidebar. Treating it as a
+      // minion here would confuse the queue's triage purpose.
+      if (session.role === 'assistant') continue;
       if (isTerminalStatus(session.status)) {
         completed++;
         if (showCompleted) visible.push(session);

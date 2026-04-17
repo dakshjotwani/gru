@@ -272,9 +272,9 @@ func (s *Service) KillSession(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	if row.Role == "journal" {
+	if row.Role == "assistant" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("journal session is server-managed; disable via `journal.enabled: false` in ~/.gru/server.yaml and restart the server"))
+			errors.New("Gru assistant is server-managed; disable via `journal.enabled: false` in ~/.gru/server.yaml and restart the server"))
 	}
 
 	// Route through the controller's Killer when supported so it can release

@@ -41,7 +41,7 @@ func TestSupervisor_DoesNotRespawnWhenJournalAlive(t *testing.T) {
 	}}
 	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
 		ID: "journal-1", TmuxSession: "gru-journal", TmuxWindow: "journal·abcd1234",
-		Status: "running", Role: "journal",
+		Status: "running", Role: "assistant",
 	}}}
 	pub := &fakePublisher{}
 	r := &fakeRespawner{}
@@ -93,7 +93,7 @@ func TestSupervisor_DeadJournalRowStillMarkedErrored(t *testing.T) {
 	tmux := &fakeTmuxRunner{windowsBySession: map[string][]string{"gru-journal": {}}}
 	store := &fakeSessionStore{sessions: []supervisor.LiveSession{{
 		ID: "journal-dead", TmuxSession: "gru-journal", TmuxWindow: "journal·zzz",
-		Status: "running", Role: "journal",
+		Status: "running", Role: "assistant",
 	}}}
 	pub := &fakePublisher{}
 	r := &fakeRespawner{}

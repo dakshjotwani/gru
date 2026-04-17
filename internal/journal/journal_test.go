@@ -62,13 +62,13 @@ func TestEnsure_SpawnsWhenNoJournalExists(t *testing.T) {
 		t.Fatalf("expected 1 controller launch, got %d", fc.calls)
 	}
 
-	// The created session row should have role=journal and status=starting.
-	row, err := s.Queries().GetJournalSession(context.Background())
+	// The created session row should have role=assistant and status=starting.
+	row, err := s.Queries().GetAssistantSession(context.Background())
 	if err != nil {
-		t.Fatalf("GetJournalSession: %v", err)
+		t.Fatalf("GetAssistantSession: %v", err)
 	}
-	if row.Role != "journal" {
-		t.Errorf("role = %q, want %q", row.Role, "journal")
+	if row.Role != "assistant" {
+		t.Errorf("role = %q, want %q", row.Role, "assistant")
 	}
 	if row.Status != "starting" {
 		t.Errorf("status = %q, want starting", row.Status)

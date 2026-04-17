@@ -6,9 +6,9 @@ RETURNING *;
 -- name: GetSession :one
 SELECT * FROM sessions WHERE id = ? LIMIT 1;
 
--- name: GetJournalSession :one
+-- name: GetAssistantSession :one
 SELECT * FROM sessions
-WHERE role = 'journal'
+WHERE role = 'assistant'
   AND status IN ('starting','running','idle','needs_attention')
 ORDER BY started_at DESC
 LIMIT 1;
