@@ -166,6 +166,15 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
     session.status === SessionStatus.KILLED;
   const canKill = isSidebarMode && session.role !== 'assistant' && session.role !== 'journal';
 
+  // Cards no longer render the attention_score as a visible pill — ranking is
+  // encoded in sort position + left-border color. Keep the raw value on the
+  // card's title attribute so hovering any minion reveals the exact number for
+  // debugging ("why is this one above that one?"). Sidebar mode only; expanded
+  // mode has the pill still.
+  const cardTitle = isSidebarMode && showScore
+    ? `attention_score: ${session.attentionScore.toFixed(2)}`
+    : undefined;
+
   return (
     <div
       className={[
@@ -178,6 +187,7 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
       role="button"
       tabIndex={0}
       aria-expanded={onSelect ? undefined : expanded}
+      title={cardTitle}
       onKeyDown={(e) => {
         const tag = (e.target as HTMLElement).tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -194,7 +204,10 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
           {!isSidebarMode && <StatusBadge status={session.status} />}
         </div>
         <div className={styles.meta}>
-          {showScore && (
+          {/* Score pill only in expanded mode — sort position + left-border
+              color already convey ranking in the sidebar. Raw number is
+              still surfaced via tooltip on the card for debug inspection. */}
+          {showScore && !isSidebarMode && (
             <span
               className={styles.score}
               title={`attention_score: ${session.attentionScore.toFixed(2)} (engine-computed, higher = triage first)`}
