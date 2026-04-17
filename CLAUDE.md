@@ -54,14 +54,18 @@ React Dashboard (port 3000)
 
 ### Component layout
 
-- `cmd/gru/` — Cobra CLI (server start, session launch/kill/attach/tail/prune)
+- `cmd/gru/` — Cobra CLI (server start, session launch/kill/attach/tail/prune, `env list/show/test`)
 - `proto/gru/v1/gru.proto` — Service and message definitions (source of truth for API)
 - `internal/server/` — gRPC service handlers, auth interceptor, CORS
 - `internal/controller/` — Pluggable session launchers (ClaudeController uses tmux)
 - `internal/adapter/` — Pluggable event normalizers (ClaudeNormalizer maps hook types)
-- `internal/ingestion/` — HTTP handler for `/events` + in-memory Publisher
+- `internal/env/` — Environment abstraction: `host` and `command` adapters, `PersistentPty` layer, 9-case conformance suite. See `docs/superpowers/specs/2026-04-17-gru-v2-design.md`.
+- `internal/attention/` — Hook-driven attention score engine (paused / notification / tool_error / staleness weights, tunable via `~/.gru/server.yaml`)
+- `internal/ingestion/` — HTTP handler for `/events` + in-memory Publisher (calls attention engine on each event)
 - `internal/store/` — SQLite with WAL mode, sqlc-generated queries, migrations
 - `internal/supervisor/` — Process liveness monitor (tmux window inspection)
+- `skills/` — Claude Code skills shipped in the repo (symlink into `.claude/skills/` for discovery)
+- `test/fixtures/command-adapter/` — reference create/exec/destroy scripts; double as `command` adapter conformance targets
 - `web/src/` — React 19 + Vite + connect-web client
 
 ## Code Generation
@@ -74,10 +78,11 @@ Both buf and sqlc are managed as Go tools (declared in `go.mod`), no separate in
 
 ## Design Patterns
 
-- **Registry pattern**: Adapters and controllers are registered by runtime name, making it extensible beyond Claude Code
+- **Registry pattern**: Adapters and controllers are registered by runtime name, making it extensible beyond Claude Code. The `env.Registry` does the same for environment adapters (`host`, `command`).
 - **Pub/Sub streaming**: In-memory Publisher broadcasts events to all active `SubscribeEvents` subscribers
-- **Session status workflow**: `starting` → `running` → `idle`/`errored`/`killed`; `attention_score` tracks blocking events
+- **Session status workflow**: `starting` → `running` → `idle`/`errored`/`killed`; `attention_score` is written by the attention engine on every hook event, `0` on terminal states
 - **Session lookup files**: `.gru/sessions/<short_id>` files let hook scripts resolve session IDs without env var reliance
+- **Environment contract**: Any Environment adapter implements Create/Rehydrate/Exec/ExecPty/Destroy/Events/Status. `PersistentPty` sits on top of an Environment, keeping tmux sessions alive across Gru restarts. See the v2 design spec for the full contract and `internal/env/conformance` for the 9-case test harness
 
 ## Configuration
 
