@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -56,8 +57,22 @@ func runServer() error {
 	// machine for v2. Future adapters (command/container/cloud) plug in here.
 	hostEnv := host.New()
 
+	// Derive the port from cfg.Addr so minions get told where to POST their
+	// hook events. cfg.Addr is ":7777" / ":17777" / "host:port" — strip the
+	// leading colon and any host prefix to land on the port alone.
+	listenPort := "7777"
+	if cfg.Addr != "" {
+		addr := cfg.Addr
+		if idx := strings.LastIndex(addr, ":"); idx >= 0 {
+			addr = addr[idx+1:]
+		}
+		if addr != "" {
+			listenPort = addr
+		}
+	}
+
 	ctrlReg := controller.NewRegistry()
-	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", "7777", hostEnv))
+	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", listenPort, hostEnv))
 
 	svc := server.NewService(s, pub)
 	svc.SetControllerRegistry(ctrlReg)

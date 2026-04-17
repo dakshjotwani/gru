@@ -73,14 +73,21 @@ fi
 GRU_API_KEY="$(grep '^api_key:' "$GRU_CONFIG_FILE" | awk '{print $2}' | tr -d '"'\''[:space:]')"
 export VITE_GRU_API_KEY="${GRU_API_KEY}"
 
+# Honor the port in the config rather than hardcoding 7777 — the operator may
+# have moved the server (e.g. 7777 taken by another process). Strip a leading
+# colon so "addr: :17777" becomes just "17777". Defaults to 7777 if nothing
+# matches so a malformed config still boots the frontend somewhere sane.
+GRU_PORT="$(grep '^addr:' "$GRU_CONFIG_FILE" | awk '{print $2}' | sed 's/^://' | tr -d '[:space:]')"
+GRU_PORT="${GRU_PORT:-7777}"
+
 # Detect the Tailscale IP so the frontend (running in a remote browser) can
 # reach the gRPC server directly.  Falls back to localhost if tailscale isn't
 # running or isn't on PATH.
 TAILSCALE_IP="$(tailscale ip -4 2>/dev/null | head -1 || true)"
 if [[ -n "$TAILSCALE_IP" ]]; then
-  export VITE_GRU_SERVER_URL="http://${TAILSCALE_IP}:7777"
+  export VITE_GRU_SERVER_URL="http://${TAILSCALE_IP}:${GRU_PORT}"
 else
-  export VITE_GRU_SERVER_URL="http://localhost:7777"
+  export VITE_GRU_SERVER_URL="http://localhost:${GRU_PORT}"
 fi
 
 # Build the server binary first so we catch compile errors early.
@@ -127,7 +134,7 @@ prefix_log "web   " "\033[0;32m" "$LOG_DIR/web.log" "$WEB_PIPE" &
 WEB_LOG_PID=$!
 
 echo ""
-echo "gru server:    http://localhost:7777"
+echo "gru server:    http://localhost:${GRU_PORT}"
 if [[ -n "$TAILSCALE_IP" ]]; then
   echo "web dashboard: http://localhost:3000  (local)"
   echo "               http://${TAILSCALE_IP}:3000  (tailnet)"
