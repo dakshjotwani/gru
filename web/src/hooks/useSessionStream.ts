@@ -126,6 +126,10 @@ const MAX_BACKOFF_MS = 30000;
 
 function notifyAttention(session: Session, projectName: string): void {
   if (document.hasFocus()) return;
+  // iOS Safari (and private-mode browsers) don't expose the Notification API
+  // at all — `Notification` is undefined, so .permission throws ReferenceError.
+  // Gate on the property existing on `window` before touching it.
+  if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
   const sessionLabel = session.name || session.id.slice(0, 8);
   const body = projectName
