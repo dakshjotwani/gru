@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,21 +24,49 @@ import (
 
 const adapterID = "host"
 
+// ErrWorkdirSetInUse is returned by Create/Rehydrate when the same ordered
+// set of workdirs is already claimed by a live instance. Host has no
+// isolation, so two concurrent agents on the same workdirs would fight over
+// ports, node_modules, git trees, etc. The spec enforces one session per
+// workdir set; this is the enforcement point.
+var ErrWorkdirSetInUse = fmt.Errorf("host: another instance is already running on the same workdir set")
+
 // Adapter is the host-machine Environment implementation.
 type Adapter struct {
-	mu        sync.Mutex
-	events    map[string]*eventHub // keyed by Instance.ID
-	dropped   map[string]int
-	destroyed map[string]bool
+	mu         sync.Mutex
+	events     map[string]*eventHub // keyed by Instance.ID
+	dropped    map[string]int
+	destroyed  map[string]bool
+	activeSets map[string]string // workdir-set key → instance.ID holding it
 }
 
 // New returns a fresh host adapter.
 func New() *Adapter {
 	return &Adapter{
-		events:    make(map[string]*eventHub),
-		dropped:   make(map[string]int),
-		destroyed: make(map[string]bool),
+		events:     make(map[string]*eventHub),
+		dropped:    make(map[string]int),
+		destroyed:  make(map[string]bool),
+		activeSets: make(map[string]string),
 	}
+}
+
+// workdirSetKey is the canonical string form used to detect duplicates. We
+// don't sort because workdir order matters to Claude Code (primary cwd vs
+// --add-dir) — different orderings are different sessions.
+func workdirSetKey(workdirs []string) string {
+	// Clean paths so /tmp/foo and /tmp/foo/ collide. Preserve order.
+	cleaned := make([]string, len(workdirs))
+	for i, wd := range workdirs {
+		cleaned[i] = strings.TrimRight(wd, "/")
+	}
+	return strings.Join(cleaned, "\x00")
+}
+
+// sortedWorkdirs is a helper for test assertions; not used in production.
+func sortedWorkdirs(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }
 
 func (a *Adapter) RuntimeID() string { return adapterID }
@@ -69,6 +99,18 @@ func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, e
 		return env.Instance{}, fmt.Errorf("host: marshal provider ref: %w", err)
 	}
 
+	key := workdirSetKey(spec.Workdirs)
+	a.mu.Lock()
+	if other, taken := a.activeSets[key]; taken && other != spec.Name {
+		a.mu.Unlock()
+		return env.Instance{}, fmt.Errorf("%w (held by instance %q)", ErrWorkdirSetInUse, other)
+	}
+	a.activeSets[key] = spec.Name
+	// Instances that are Destroy()-ed and then Create()-d again with the
+	// same ID should drop the stale destroyed flag.
+	delete(a.destroyed, spec.Name)
+	a.mu.Unlock()
+
 	inst := env.Instance{
 		ID:          spec.Name,
 		Adapter:     adapterID,
@@ -98,6 +140,19 @@ func (a *Adapter) Rehydrate(ctx context.Context, providerRef string) (env.Instan
 			return env.Instance{}, fmt.Errorf("host: workdir %q missing on rehydrate", wd)
 		}
 	}
+	// Rehydrate must re-claim the workdir set so a post-restart Create
+	// attempting the same paths is rejected. Duplicate claim here is
+	// impossible on a fresh process start; it could only happen if
+	// Rehydrate is called twice with the same ref — treated as idempotent.
+	key := workdirSetKey(payload.Workdirs)
+	a.mu.Lock()
+	if _, taken := a.activeSets[key]; !taken {
+		// Rehydrate does not get a session ID, so the adapter marks the
+		// slot as taken with a sentinel. Destroy() looks up by matching
+		// ProviderRef and clears it.
+		a.activeSets[key] = "rehydrated"
+	}
+	a.mu.Unlock()
 	return env.Instance{
 		Adapter:     adapterID,
 		ProviderRef: providerRef,
@@ -160,6 +215,15 @@ func (a *Adapter) Destroy(ctx context.Context, inst env.Instance) error {
 	if inst.ID != "" {
 		a.destroyed[inst.ID] = true
 	}
+	// Release the workdir-set claim so future Create()s can use it.
+	if inst.ProviderRef != "" {
+		if wds, err := workdirsFromRef(inst.ProviderRef); err == nil {
+			key := workdirSetKey(wds)
+			if holder, held := a.activeSets[key]; held && holder == inst.ID {
+				delete(a.activeSets, key)
+			}
+		}
+	}
 	a.mu.Unlock()
 	if hub != nil {
 		hub.emit(env.Event{Kind: env.EventStopped, Timestamp: time.Now().UTC(), Detail: "host instance destroyed"})
@@ -202,14 +266,22 @@ func (a *Adapter) Status(ctx context.Context, inst env.Instance) (env.Status, er
 }
 
 func primaryWorkdir(inst env.Instance) (string, error) {
-	var payload providerRefPayload
-	if err := json.Unmarshal([]byte(inst.ProviderRef), &payload); err != nil {
-		return "", fmt.Errorf("host: decode provider ref: %w", err)
+	wds, err := workdirsFromRef(inst.ProviderRef)
+	if err != nil {
+		return "", err
 	}
-	if len(payload.Workdirs) == 0 {
+	if len(wds) == 0 {
 		return "", fmt.Errorf("host: no workdirs in instance")
 	}
-	return payload.Workdirs[0], nil
+	return wds[0], nil
+}
+
+func workdirsFromRef(ref string) ([]string, error) {
+	var payload providerRefPayload
+	if err := json.Unmarshal([]byte(ref), &payload); err != nil {
+		return nil, fmt.Errorf("host: decode provider ref: %w", err)
+	}
+	return payload.Workdirs, nil
 }
 
 func (a *Adapter) ensureHub(id string) *eventHub {
