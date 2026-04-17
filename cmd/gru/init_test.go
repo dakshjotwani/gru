@@ -9,6 +9,8 @@ import (
 
 func TestRunInit_CreatesHookScriptAndSettings(t *testing.T) {
 	projectDir := t.TempDir()
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
 
 	// Point hookSrcPath to the actual hook script in the repo root.
 	// In tests we override via the package-level variable hookScriptSrc.
@@ -20,8 +22,10 @@ func TestRunInit_CreatesHookScriptAndSettings(t *testing.T) {
 		t.Fatalf("runInit error: %v", err)
 	}
 
-	// Hook script must be copied.
-	hookDst := filepath.Join(projectDir, ".gru", "hooks", "gru-hook.sh")
+	// Hook script must be copied to the global location under $HOME/.gru/hooks/.
+	// (Worktree sessions create their own .claude/, bypassing project-level settings,
+	// so the hook must live in a stable global location — see init.go.)
+	hookDst := filepath.Join(fakeHome, ".gru", "hooks", "gru-hook.sh")
 	info, err := os.Stat(hookDst)
 	if err != nil {
 		t.Fatalf("hook script not created at %s: %v", hookDst, err)
