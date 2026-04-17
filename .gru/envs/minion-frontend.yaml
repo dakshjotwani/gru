@@ -1,0 +1,15 @@
+name: minion-frontend
+adapter: command
+workdirs:
+  - ../..
+config:
+  # create.sh <session-id> frontend [parent_server_url]
+  # Frontend-only minion: the web dashboard runs on its own ephemeral port
+  # but points at the parent Gru's backend (default http://localhost:7777).
+  # GRU_SKIP_SERVER=1 is baked into minion-env.sh.
+  create:   "scripts/gru-env/minion/create.sh {{.SessionID}} frontend http://localhost:7777"
+  exec:     "scripts/gru-env/minion/exec.sh {{.ProviderRef}}"
+  exec_pty: "scripts/gru-env/minion/exec-pty.sh {{.ProviderRef}}"
+  destroy:  "scripts/gru-env/minion/destroy.sh {{.ProviderRef}}"
+  status:   "scripts/gru-env/minion/status.sh {{.ProviderRef}}"
+  events:   "scripts/gru-env/minion/events.sh {{.ProviderRef}}"
