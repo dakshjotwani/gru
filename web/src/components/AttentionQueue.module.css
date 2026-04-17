@@ -23,10 +23,37 @@
 .toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 12px;
   padding: 4px 12px 8px;
   border-bottom: 1px solid #21262d;
   margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+/* Destructive-but-minor action. Sits in the toolbar alongside the filter
+ * toggles, styled subtly so it doesn't compete with them for attention —
+ * the user only reaches for it when they've accumulated noise. */
+.clearBtn {
+  padding: 2px 8px;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: transparent;
+  color: #8b949e;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+
+.clearBtn:hover:not(:disabled) {
+  border-color: #f85149;
+  color: #f85149;
+  background: #f8514911;
+}
+
+.clearBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toggle {

@@ -11,6 +11,8 @@ import (
 type Querier interface {
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	DeleteEventsForSession(ctx context.Context, id string) error
+	DeleteSession(ctx context.Context, id string) error
 	GetAssistantSession(ctx context.Context) (Session, error)
 	GetLatestEventForSession(ctx context.Context, sessionID string) (Event, error)
 	GetProject(ctx context.Context, id string) (Project, error)
@@ -19,6 +21,10 @@ type Querier interface {
 	ListEventsBySession(ctx context.Context, sessionID string) ([]Event, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error)
+	// Returns IDs of every terminal (completed/errored/killed) session, skipping
+	// assistant-role singletons. Used by PruneSessions to delete in a single
+	// atomic loop without an extra ListSessions round-trip.
+	ListTerminalSessionIDs(ctx context.Context) ([]string, error)
 	UpdateProjectAdditionalWorkdirs(ctx context.Context, arg UpdateProjectAdditionalWorkdirsParams) (Project, error)
 	UpdateSessionAttentionScore(ctx context.Context, arg UpdateSessionAttentionScoreParams) (Session, error)
 	UpdateSessionLastEvent(ctx context.Context, arg UpdateSessionLastEventParams) error

@@ -106,6 +106,17 @@ function reducer(state: SessionState, action: Action): SessionState {
         return { ...state, sessions };
       }
 
+      // session.deleted fires when DeleteSession / PruneSessions runs
+      // server-side. Drop the row (and its event history) so the UI reacts
+      // immediately without waiting for a full ListSessions refetch.
+      if (event.type === 'session.deleted') {
+        const sessions = new Map(state.sessions);
+        sessions.delete(event.sessionId);
+        const events = new Map(state.events);
+        events.delete(event.sessionId);
+        return { ...state, sessions, events };
+      }
+
       const events = new Map(state.events);
       const sessionEvents = events.get(event.sessionId) ?? [];
       const updatedEvents = [...sessionEvents, event].slice(-20);

@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, Project, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest, SuggestSessionNameRequest, SuggestSessionNameResponse, UpdateProjectRequest } from "./gru_pb.js";
+import { DeleteSessionRequest, DeleteSessionResponse, GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, Project, PruneSessionsRequest, PruneSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest, SuggestSessionNameRequest, SuggestSessionNameResponse, UpdateProjectRequest } from "./gru_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -48,6 +48,24 @@ export const GruService = {
       name: "KillSession",
       I: KillSessionRequest,
       O: KillSessionResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc gru.v1.GruService.DeleteSession
+     */
+    deleteSession: {
+      name: "DeleteSession",
+      I: DeleteSessionRequest,
+      O: DeleteSessionResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc gru.v1.GruService.PruneSessions
+     */
+    pruneSessions: {
+      name: "PruneSessions",
+      I: PruneSessionsRequest,
+      O: PruneSessionsResponse,
       kind: MethodKind.Unary,
     },
     /**

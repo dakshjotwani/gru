@@ -12,6 +12,8 @@ service GruService {
   rpc GetSession(GetSessionRequest)     returns (Session);
   rpc LaunchSession(LaunchSessionRequest) returns (LaunchSessionResponse);
   rpc KillSession(KillSessionRequest)   returns (KillSessionResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+  rpc PruneSessions(PruneSessionsRequest) returns (PruneSessionsResponse);
   rpc SendInput(SendInputRequest)       returns (SendInputResponse);
 
   // AI-powered session name suggestion
@@ -116,6 +118,26 @@ message KillSessionRequest {
 
 message KillSessionResponse {
   bool success = 1;
+}
+
+// DeleteSession removes a terminal (completed/errored/killed) session row
+// and its events. Live sessions must be KillSessioned first — the server
+// rejects the request if the session is still active.
+message DeleteSessionRequest {
+  string id = 1;
+}
+
+message DeleteSessionResponse {
+  bool success = 1;
+}
+
+// PruneSessions removes every terminal session row at once. Assistant-role
+// sessions are never deleted (server-managed). Intended for UI "clear
+// completed" actions.
+message PruneSessionsRequest {}
+
+message PruneSessionsResponse {
+  int32 deleted_count = 1;
 }
 
 message ListProjectsRequest {}

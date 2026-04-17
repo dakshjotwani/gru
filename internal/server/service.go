@@ -323,6 +323,86 @@ func (s *Service) KillSession(
 	return connect.NewResponse(&gruv1.KillSessionResponse{Success: true}), nil
 }
 
+// DeleteSession removes a terminal session row and its events from the store.
+// Rejects still-live sessions — the caller must KillSession first. The
+// assistant singleton is protected (same as KillSession) so a stray UI click
+// can't wipe it out.
+func (s *Service) DeleteSession(
+	ctx context.Context,
+	req *connect.Request[gruv1.DeleteSessionRequest],
+) (*connect.Response[gruv1.DeleteSessionResponse], error) {
+	sessionID := req.Msg.Id
+	if sessionID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("session id required"))
+	}
+	row, err := s.store.Queries().GetSession(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("session %q not found", sessionID))
+	} else if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if row.Role == "assistant" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("Gru assistant is server-managed and cannot be deleted"))
+	}
+	switch row.Status {
+	case "completed", "errored", "killed":
+		// OK
+	default:
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("session is %s — kill it before deleting", row.Status))
+	}
+	if err := s.store.Queries().DeleteEventsForSession(ctx, sessionID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("delete events: %w", err))
+	}
+	if err := s.store.Queries().DeleteSession(ctx, sessionID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("delete session: %w", err))
+	}
+	s.pub.Publish(&gruv1.SessionEvent{
+		Type:      "session.deleted",
+		SessionId: sessionID,
+		ProjectId: row.ProjectID,
+		Runtime:   row.Runtime,
+		Timestamp: timestamppb.Now(),
+	})
+	return connect.NewResponse(&gruv1.DeleteSessionResponse{Success: true}), nil
+}
+
+// PruneSessions deletes every terminal session row in one shot, skipping the
+// assistant singleton. Publishes one session.deleted event per removed row so
+// subscribed UIs can update their session map in-place.
+func (s *Service) PruneSessions(
+	ctx context.Context,
+	req *connect.Request[gruv1.PruneSessionsRequest],
+) (*connect.Response[gruv1.PruneSessionsResponse], error) {
+	ids, err := s.store.Queries().ListTerminalSessionIDs(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	deleted := int32(0)
+	for _, id := range ids {
+		// Best-effort: skip rows that fail rather than abort the whole batch.
+		// A failed delete leaves stale state in the DB, which the operator can
+		// retry later; aborting would leave the UI confused about how many
+		// rows actually went.
+		if err := s.store.Queries().DeleteEventsForSession(ctx, id); err != nil {
+			log.Printf("PruneSessions: delete events %s: %v", id, err)
+			continue
+		}
+		if err := s.store.Queries().DeleteSession(ctx, id); err != nil {
+			log.Printf("PruneSessions: delete session %s: %v", id, err)
+			continue
+		}
+		s.pub.Publish(&gruv1.SessionEvent{
+			Type:      "session.deleted",
+			SessionId: id,
+			Timestamp: timestamppb.Now(),
+		})
+		deleted++
+	}
+	return connect.NewResponse(&gruv1.PruneSessionsResponse{DeletedCount: deleted}), nil
+}
+
 func (s *Service) SendInput(
 	ctx context.Context,
 	req *connect.Request[gruv1.SendInputRequest],

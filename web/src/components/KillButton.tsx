@@ -9,14 +9,19 @@ interface KillButtonProps {
    *  is tight. Confirm UI overlays in place (inline kebab-style) so it doesn't
    *  expand the card height. */
   compact?: boolean;
+  /** "kill" (default) terminates a live session via KillSession. "delete"
+   *  removes a terminal session's row from the DB via DeleteSession; the × is
+   *  the same glyph but the action and confirm copy swap. */
+  mode?: 'kill' | 'delete';
 }
 
-export function KillButton({ sessionId, onKilled, compact }: KillButtonProps) {
+export function KillButton({ sessionId, onKilled, compact, mode = 'kill' }: KillButtonProps) {
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const shortId = sessionId.slice(0, 8);
+  const verb = mode === 'delete' ? 'Remove' : 'Kill';
 
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
@@ -34,11 +39,15 @@ export function KillButton({ sessionId, onKilled, compact }: KillButtonProps) {
     setLoading(true);
     setError(null);
     try {
-      await gruClient.killSession({ id: sessionId });
+      if (mode === 'delete') {
+        await gruClient.deleteSession({ id: sessionId });
+      } else {
+        await gruClient.killSession({ id: sessionId });
+      }
       setConfirming(false);
       onKilled?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to kill session');
+      setError(err instanceof Error ? err.message : `Failed to ${verb.toLowerCase()} session`);
     } finally {
       setLoading(false);
     }
@@ -46,16 +55,16 @@ export function KillButton({ sessionId, onKilled, compact }: KillButtonProps) {
 
   if (confirming) {
     // Compact variant keeps the inline confirm tight (no shortId label) so the
-    // sidebar card doesn't grow vertically when a user arms the kill.
+    // sidebar card doesn't grow vertically when a user arms the kill/delete.
     if (compact) {
       return (
-        <span className={styles.compactConfirm} role="dialog" aria-label={`Kill minion ${shortId}?`}>
+        <span className={styles.compactConfirm} role="dialog" aria-label={`${verb} minion ${shortId}?`}>
           <button
             className={styles.compactConfirmBtn}
             onClick={handleConfirm}
             disabled={loading}
-            aria-label="Confirm kill"
-            title="Confirm kill"
+            aria-label={`Confirm ${verb.toLowerCase()}`}
+            title={`Confirm ${verb.toLowerCase()}`}
           >
             {loading ? '…' : '✓'}
           </button>
@@ -73,15 +82,15 @@ export function KillButton({ sessionId, onKilled, compact }: KillButtonProps) {
       );
     }
     return (
-      <div className={styles.confirm} role="dialog" aria-label={`Kill session ${shortId}?`}>
-        <span className={styles.question}>Kill session {shortId}?</span>
+      <div className={styles.confirm} role="dialog" aria-label={`${verb} session ${shortId}?`}>
+        <span className={styles.question}>{verb} session {shortId}?</span>
         <button
           className={styles.confirmBtn}
           onClick={handleConfirm}
           disabled={loading}
-          aria-label="Confirm kill"
+          aria-label={`Confirm ${verb.toLowerCase()}`}
         >
-          {loading ? 'Killing…' : 'Confirm'}
+          {loading ? `${verb === 'Kill' ? 'Killing' : 'Removing'}…` : 'Confirm'}
         </button>
         <button
           className={styles.cancelBtn}
@@ -101,16 +110,16 @@ export function KillButton({ sessionId, onKilled, compact }: KillButtonProps) {
       <button
         className={styles.compactKillBtn}
         onClick={handleClick}
-        aria-label={`Kill minion ${shortId}`}
-        title="Kill minion"
+        aria-label={`${verb} minion ${shortId}`}
+        title={mode === 'delete' ? 'Remove from list' : 'Kill minion'}
       >
         ×
       </button>
     );
   }
   return (
-    <button className={styles.killBtn} onClick={handleClick} aria-label={`Kill session ${shortId}`}>
-      Kill
+    <button className={styles.killBtn} onClick={handleClick} aria-label={`${verb} session ${shortId}`}>
+      {verb}
     </button>
   );
 }

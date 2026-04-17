@@ -41,3 +41,17 @@ RETURNING *;
 
 -- name: UpdateSessionPID :exec
 UPDATE sessions SET pid = ?, pgid = ? WHERE id = ?;
+
+-- name: DeleteEventsForSession :exec
+DELETE FROM events WHERE session_id = sqlc.arg(id);
+
+-- name: DeleteSession :exec
+DELETE FROM sessions WHERE id = sqlc.arg(id);
+
+-- name: ListTerminalSessionIDs :many
+-- Returns IDs of every terminal (completed/errored/killed) session, skipping
+-- assistant-role singletons. Used by PruneSessions to delete in a single
+-- atomic loop without an extra ListSessions round-trip.
+SELECT id FROM sessions
+WHERE status IN ('completed','errored','killed')
+  AND role <> 'assistant';

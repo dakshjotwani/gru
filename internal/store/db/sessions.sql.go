@@ -70,6 +70,24 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const deleteEventsForSession = `-- name: DeleteEventsForSession :exec
+DELETE FROM events WHERE session_id = ?1
+`
+
+func (q *Queries) DeleteEventsForSession(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteEventsForSession, id)
+	return err
+}
+
+const deleteSession = `-- name: DeleteSession :exec
+DELETE FROM sessions WHERE id = ?1
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteSession, id)
+	return err
+}
+
 const getAssistantSession = `-- name: GetAssistantSession :one
 SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role FROM sessions
 WHERE role = 'assistant'
@@ -175,6 +193,38 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTerminalSessionIDs = `-- name: ListTerminalSessionIDs :many
+SELECT id FROM sessions
+WHERE status IN ('completed','errored','killed')
+  AND role <> 'assistant'
+`
+
+// Returns IDs of every terminal (completed/errored/killed) session, skipping
+// assistant-role singletons. Used by PruneSessions to delete in a single
+// atomic loop without an extra ListSessions round-trip.
+func (q *Queries) ListTerminalSessionIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listTerminalSessionIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

@@ -160,6 +160,10 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
     }
   })();
   const isSidebarMode = Boolean(onSelect);
+  const isTerminal =
+    session.status === SessionStatus.COMPLETED ||
+    session.status === SessionStatus.ERRORED ||
+    session.status === SessionStatus.KILLED;
   const canKill = isSidebarMode && session.role !== 'assistant' && session.role !== 'journal';
 
   return (
@@ -201,7 +205,11 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
           {projectName && <span className={styles.project}>{projectName}</span>}
           {timeInState && <span className={styles.time}>{timeInState}</span>}
           {canKill && (
-            <KillButton sessionId={session.id} compact />
+            <KillButton
+              sessionId={session.id}
+              compact
+              mode={isTerminal ? 'delete' : 'kill'}
+            />
           )}
         </div>
       </div>

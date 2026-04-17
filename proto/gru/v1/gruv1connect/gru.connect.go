@@ -42,6 +42,12 @@ const (
 	GruServiceLaunchSessionProcedure = "/gru.v1.GruService/LaunchSession"
 	// GruServiceKillSessionProcedure is the fully-qualified name of the GruService's KillSession RPC.
 	GruServiceKillSessionProcedure = "/gru.v1.GruService/KillSession"
+	// GruServiceDeleteSessionProcedure is the fully-qualified name of the GruService's DeleteSession
+	// RPC.
+	GruServiceDeleteSessionProcedure = "/gru.v1.GruService/DeleteSession"
+	// GruServicePruneSessionsProcedure is the fully-qualified name of the GruService's PruneSessions
+	// RPC.
+	GruServicePruneSessionsProcedure = "/gru.v1.GruService/PruneSessions"
 	// GruServiceSendInputProcedure is the fully-qualified name of the GruService's SendInput RPC.
 	GruServiceSendInputProcedure = "/gru.v1.GruService/SendInput"
 	// GruServiceSuggestSessionNameProcedure is the fully-qualified name of the GruService's
@@ -66,6 +72,8 @@ type GruServiceClient interface {
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error)
 	LaunchSession(context.Context, *connect.Request[v1.LaunchSessionRequest]) (*connect.Response[v1.LaunchSessionResponse], error)
 	KillSession(context.Context, *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error)
+	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
+	PruneSessions(context.Context, *connect.Request[v1.PruneSessionsRequest]) (*connect.Response[v1.PruneSessionsResponse], error)
 	SendInput(context.Context, *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error)
 	// AI-powered session name suggestion
 	SuggestSessionName(context.Context, *connect.Request[v1.SuggestSessionNameRequest]) (*connect.Response[v1.SuggestSessionNameResponse], error)
@@ -110,6 +118,18 @@ func NewGruServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			httpClient,
 			baseURL+GruServiceKillSessionProcedure,
 			connect.WithSchema(gruServiceMethods.ByName("KillSession")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteSession: connect.NewClient[v1.DeleteSessionRequest, v1.DeleteSessionResponse](
+			httpClient,
+			baseURL+GruServiceDeleteSessionProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("DeleteSession")),
+			connect.WithClientOptions(opts...),
+		),
+		pruneSessions: connect.NewClient[v1.PruneSessionsRequest, v1.PruneSessionsResponse](
+			httpClient,
+			baseURL+GruServicePruneSessionsProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("PruneSessions")),
 			connect.WithClientOptions(opts...),
 		),
 		sendInput: connect.NewClient[v1.SendInputRequest, v1.SendInputResponse](
@@ -157,6 +177,8 @@ type gruServiceClient struct {
 	getSession         *connect.Client[v1.GetSessionRequest, v1.Session]
 	launchSession      *connect.Client[v1.LaunchSessionRequest, v1.LaunchSessionResponse]
 	killSession        *connect.Client[v1.KillSessionRequest, v1.KillSessionResponse]
+	deleteSession      *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
+	pruneSessions      *connect.Client[v1.PruneSessionsRequest, v1.PruneSessionsResponse]
 	sendInput          *connect.Client[v1.SendInputRequest, v1.SendInputResponse]
 	suggestSessionName *connect.Client[v1.SuggestSessionNameRequest, v1.SuggestSessionNameResponse]
 	listProjects       *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
@@ -183,6 +205,16 @@ func (c *gruServiceClient) LaunchSession(ctx context.Context, req *connect.Reque
 // KillSession calls gru.v1.GruService.KillSession.
 func (c *gruServiceClient) KillSession(ctx context.Context, req *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error) {
 	return c.killSession.CallUnary(ctx, req)
+}
+
+// DeleteSession calls gru.v1.GruService.DeleteSession.
+func (c *gruServiceClient) DeleteSession(ctx context.Context, req *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
+	return c.deleteSession.CallUnary(ctx, req)
+}
+
+// PruneSessions calls gru.v1.GruService.PruneSessions.
+func (c *gruServiceClient) PruneSessions(ctx context.Context, req *connect.Request[v1.PruneSessionsRequest]) (*connect.Response[v1.PruneSessionsResponse], error) {
+	return c.pruneSessions.CallUnary(ctx, req)
 }
 
 // SendInput calls gru.v1.GruService.SendInput.
@@ -222,6 +254,8 @@ type GruServiceHandler interface {
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error)
 	LaunchSession(context.Context, *connect.Request[v1.LaunchSessionRequest]) (*connect.Response[v1.LaunchSessionResponse], error)
 	KillSession(context.Context, *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error)
+	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
+	PruneSessions(context.Context, *connect.Request[v1.PruneSessionsRequest]) (*connect.Response[v1.PruneSessionsResponse], error)
 	SendInput(context.Context, *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error)
 	// AI-powered session name suggestion
 	SuggestSessionName(context.Context, *connect.Request[v1.SuggestSessionNameRequest]) (*connect.Response[v1.SuggestSessionNameResponse], error)
@@ -262,6 +296,18 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 		GruServiceKillSessionProcedure,
 		svc.KillSession,
 		connect.WithSchema(gruServiceMethods.ByName("KillSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gruServiceDeleteSessionHandler := connect.NewUnaryHandler(
+		GruServiceDeleteSessionProcedure,
+		svc.DeleteSession,
+		connect.WithSchema(gruServiceMethods.ByName("DeleteSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gruServicePruneSessionsHandler := connect.NewUnaryHandler(
+		GruServicePruneSessionsProcedure,
+		svc.PruneSessions,
+		connect.WithSchema(gruServiceMethods.ByName("PruneSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
 	gruServiceSendInputHandler := connect.NewUnaryHandler(
@@ -310,6 +356,10 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 			gruServiceLaunchSessionHandler.ServeHTTP(w, r)
 		case GruServiceKillSessionProcedure:
 			gruServiceKillSessionHandler.ServeHTTP(w, r)
+		case GruServiceDeleteSessionProcedure:
+			gruServiceDeleteSessionHandler.ServeHTTP(w, r)
+		case GruServicePruneSessionsProcedure:
+			gruServicePruneSessionsHandler.ServeHTTP(w, r)
 		case GruServiceSendInputProcedure:
 			gruServiceSendInputHandler.ServeHTTP(w, r)
 		case GruServiceSuggestSessionNameProcedure:
@@ -345,6 +395,14 @@ func (UnimplementedGruServiceHandler) LaunchSession(context.Context, *connect.Re
 
 func (UnimplementedGruServiceHandler) KillSession(context.Context, *connect.Request[v1.KillSessionRequest]) (*connect.Response[v1.KillSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.KillSession is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.DeleteSession is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) PruneSessions(context.Context, *connect.Request[v1.PruneSessionsRequest]) (*connect.Response[v1.PruneSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.PruneSessions is not implemented"))
 }
 
 func (UnimplementedGruServiceHandler) SendInput(context.Context, *connect.Request[v1.SendInputRequest]) (*connect.Response[v1.SendInputResponse], error) {

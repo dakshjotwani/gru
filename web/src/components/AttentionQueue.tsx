@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Project, Session, SessionEvent } from '../types';
 import { SessionStatus } from '../types';
 import { isTerminalStatus } from '../utils/status';
+import { gruClient } from '../client';
 import { SessionCard } from './SessionCard';
 import styles from './AttentionQueue.module.css';
 
@@ -71,6 +72,29 @@ function sortSessions(sessions: Session[]): Session[] {
 export function AttentionQueue({ sessions, events, projects, connected, onSessionSelect, selectedSessionId, onSortedSessions }: AttentionQueueProps) {
   const [hideRunning, setHideRunning] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [pruning, setPruning] = useState(false);
+  const [pruneError, setPruneError] = useState<string | null>(null);
+
+  async function handlePrune() {
+    const n = Array.from(sessions.values()).filter(
+      (s) => isTerminalStatus(s.status) && s.role !== 'assistant'
+    ).length;
+    if (n === 0) return;
+    if (!window.confirm(`Remove ${n} completed minion${n !== 1 ? 's' : ''} from the list? This deletes their history.`)) {
+      return;
+    }
+    setPruning(true);
+    setPruneError(null);
+    try {
+      await gruClient.pruneSessions({});
+      // The server publishes session.deleted events for each removed row and
+      // the stream reducer drops them from the local map — no manual refetch.
+    } catch (err) {
+      setPruneError(err instanceof Error ? err.message : 'Failed to clear');
+    } finally {
+      setPruning(false);
+    }
+  }
 
   const projectMap = useMemo(() => {
     const m = new Map<string, Project>();
@@ -146,6 +170,17 @@ export function AttentionQueue({ sessions, events, projects, connected, onSessio
             Hide running{runningCount > 0 ? ` (${runningCount})` : ''}
           </span>
         </label>
+        {completedCount > 0 && (
+          <button
+            type="button"
+            className={styles.clearBtn}
+            onClick={handlePrune}
+            disabled={pruning}
+            title={pruneError ?? `Permanently remove all ${completedCount} completed minion${completedCount !== 1 ? 's' : ''}`}
+          >
+            {pruning ? 'Clearing…' : `Clear completed (${completedCount})`}
+          </button>
+        )}
       </div>
       {sortedSessions.map((session) => (
         <SessionCard
