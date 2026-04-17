@@ -38,9 +38,19 @@ function tsSeconds(ts: unknown): number | null {
  *  a newly-idle one, and score encodes that ranking natively. */
 function sortSessions(sessions: Session[]): Session[] {
   return sessions.slice().sort((a, b) => {
-    // Primary: attention_score desc. Proto-json omits zero-valued fields, so
-    // a session whose engine score is 0 arrives as `undefined` at runtime,
-    // not 0 — coerce so subtraction never yields NaN (which breaks sort).
+    // Terminal sessions (completed/errored/killed) always sink below active
+    // ones regardless of attention_score. The backend keeps their final
+    // attention_score around (it's not reset on exit), so without this guard
+    // an errored session with score 1.0 would interleave with live idle
+    // sessions and drown out what actually needs triage.
+    const aTerm = isTerminalStatus(a.status);
+    const bTerm = isTerminalStatus(b.status);
+    if (aTerm !== bTerm) return aTerm ? 1 : -1;
+
+    // Primary (within active / within terminal): attention_score desc.
+    // Proto-json omits zero-valued fields, so a session whose engine score
+    // is 0 arrives as `undefined` at runtime, not 0 — coerce so subtraction
+    // never yields NaN (which breaks sort).
     const as = a.attentionScore || 0;
     const bs = b.attentionScore || 0;
     if (as !== bs) return bs - as;
