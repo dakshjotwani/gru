@@ -23,12 +23,55 @@
   border-left-color: #388bfd44;
 }
 
-.attention {
+/* Status color lives entirely on the left border in sidebar mode — no loud
+ * status pill. Eye order: amber (needs_attention) dominates, violet (idle /
+ * paused) is secondary, running/starting fade into the background so active
+ * work doesn't steal attention from sessions that need triage. */
+.statusNeedsAttention {
   border-left-color: #d29922;
 }
 
+.statusIdle {
+  border-left-color: #a371f7;
+}
+
+.statusStarting {
+  border-left-color: #388bfd;
+}
+
+.statusRunning {
+  border-left-color: transparent;
+}
+
+.statusErrored {
+  border-left-color: #f85149;
+  opacity: 0.85;
+}
+
+.statusCompleted {
+  border-left-color: #3fb950aa;
+  opacity: 0.6;
+}
+
+.statusKilled {
+  border-left-color: #6e768188;
+  opacity: 0.6;
+}
+
+/* Selected overrides status color on the left border — the current selection
+ * should always visually win so you can see where you are. */
 .selected {
   background: #161b22;
+  border-left-color: #58a6ff;
+}
+
+.selected.statusNeedsAttention,
+.selected.statusIdle,
+.selected.statusStarting,
+.selected.statusRunning,
+.selected.statusErrored,
+.selected.statusCompleted,
+.selected.statusKilled {
   border-left-color: #58a6ff;
 }
 

@@ -59,3 +59,73 @@
   font-size: 0.75rem;
   color: #ff4d4f;
 }
+
+/* Compact variant — for the sidebar card header. Always visible but at low
+ * opacity so it doesn't dominate the row; darkens on hover to signal it's
+ * the destructive action. */
+.compactKillBtn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: #6e7681;
+  opacity: 0.4;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+
+.compactKillBtn:hover {
+  opacity: 1;
+  color: #f85149;
+  background: #2a1212;
+}
+
+.compactConfirm {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.compactConfirmBtn,
+.compactCancelBtn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.compactConfirmBtn {
+  border: 1px solid #f8514988;
+  background: #2a1212;
+  color: #f85149;
+}
+
+.compactConfirmBtn:hover:not(:disabled) {
+  background: #f85149;
+  color: #fff;
+}
+
+.compactCancelBtn {
+  border: 1px solid #30363d;
+  background: transparent;
+  color: #8b949e;
+}
+
+.compactCancelBtn:hover:not(:disabled) {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.compactConfirmBtn:disabled,
+.compactCancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

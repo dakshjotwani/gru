@@ -142,16 +142,33 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
     }
   };
 
-  const isJournal = session.role === 'journal';
+  // Status is conveyed primarily by the left-border color (see `statusClass`
+  // below) + the preview line ("Needs your attention", "Idle since…"). The
+  // loud StatusBadge pill is kept only for the expanded (non-sidebar) view
+  // where the card is the primary surface; in the sidebar it's too much
+  // visual noise when managing many minions.
+  const statusClass = (() => {
+    switch (session.status) {
+      case SessionStatus.NEEDS_ATTENTION: return styles.statusNeedsAttention;
+      case SessionStatus.IDLE: return styles.statusIdle;
+      case SessionStatus.STARTING: return styles.statusStarting;
+      case SessionStatus.RUNNING: return styles.statusRunning;
+      case SessionStatus.ERRORED: return styles.statusErrored;
+      case SessionStatus.COMPLETED: return styles.statusCompleted;
+      case SessionStatus.KILLED: return styles.statusKilled;
+      default: return '';
+    }
+  })();
+  const isSidebarMode = Boolean(onSelect);
+  const canKill = isSidebarMode && session.role !== 'assistant' && session.role !== 'journal';
 
   return (
     <div
       className={[
         styles.card,
+        statusClass,
         onSelect ? '' : expanded ? styles.expanded : '',
-        session.status === SessionStatus.NEEDS_ATTENTION ? styles.attention : '',
         isSelected ? styles.selected : '',
-        isJournal ? styles.journal : '',
       ].filter(Boolean).join(' ')}
       onClick={handleClick}
       role="button"
@@ -166,10 +183,11 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
       {/* Collapsed view */}
       <div className={styles.header}>
         <div className={styles.titleRow}>
-          {isJournal && <span className={styles.journalBadge} title="Gru journal agent — server-managed singleton">📓 Journal</span>}
           <span className={styles.name}>{displayName}</span>
-          <StatusBadge status={session.status} />
           <SignalPills signals={signals} />
+          {/* StatusBadge is intentionally omitted in sidebar mode — the left
+              border + preview line already convey the state. */}
+          {!isSidebarMode && <StatusBadge status={session.status} />}
         </div>
         <div className={styles.meta}>
           {showScore && (
@@ -180,8 +198,11 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
               ★ {session.attentionScore.toFixed(1)}
             </span>
           )}
-          {projectName && !isJournal && <span className={styles.project}>{projectName}</span>}
+          {projectName && <span className={styles.project}>{projectName}</span>}
           {timeInState && <span className={styles.time}>{timeInState}</span>}
+          {canKill && (
+            <KillButton sessionId={session.id} compact />
+          )}
         </div>
       </div>
       <div className={styles.preview}>{contextPreview}</div>
@@ -317,7 +338,7 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
               </button>
             )}
 
-            {!isJournal && <KillButton sessionId={session.id} />}
+            {session.role !== 'assistant' && session.role !== 'journal' && <KillButton sessionId={session.id} />}
 
             {sendError && <span className={styles.error}>{sendError}</span>}
           </div>
