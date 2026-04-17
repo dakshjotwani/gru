@@ -17,6 +17,8 @@ import (
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
+	"github.com/dakshjotwani/gru/internal/env"
+	"github.com/dakshjotwani/gru/internal/env/command"
 	"github.com/dakshjotwani/gru/internal/env/host"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/journal"
@@ -79,12 +81,15 @@ func runServer(portFilePath string) error {
 	adapterReg := adapter.NewRegistry()
 	adapterReg.Register(claudeadapter.NewNormalizer())
 
-	// env.Host is the default environment — everything runs on the operator's
-	// machine for v2. Future adapters (command/container/cloud) plug in here.
-	hostEnv := host.New()
+	// Build the env.Registry so LaunchSession can route per-launch to the
+	// adapter declared in a spec file. "host" stays the default for launches
+	// that don't carry an EnvSpec, preserving v1 behavior.
+	envReg := env.NewRegistry()
+	envReg.Register(host.New())
+	envReg.Register(command.New())
 
 	ctrlReg := controller.NewRegistry()
-	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", "7777", hostEnv))
+	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", "7777", envReg, "host"))
 
 	svc := server.NewService(s, pub)
 	svc.SetControllerRegistry(ctrlReg)

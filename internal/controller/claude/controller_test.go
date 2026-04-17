@@ -91,15 +91,25 @@ func (f *fakeEnv) calls() [][]string {
 	return out
 }
 
+// registryWith returns an env.Registry containing one adapter. Every existing
+// controller test used a fakeEnv with RuntimeID="host", which is also the
+// default adapter name the controller looks up when LaunchOptions.EnvSpec is
+// nil — so these tests stay functionally unchanged.
+func registryWith(e env.Environment) *env.Registry {
+	r := env.NewRegistry()
+	r.Register(e)
+	return r
+}
+
 func TestClaudeController_RuntimeID(t *testing.T) {
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", newFakeEnv())
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(newFakeEnv()), "host")
 	if got := c.RuntimeID(); got != "claude-code" {
 		t.Errorf("RuntimeID = %q, want %q", got, "claude-code")
 	}
 }
 
 func TestClaudeController_Capabilities(t *testing.T) {
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", newFakeEnv())
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(newFakeEnv()), "host")
 	caps := c.Capabilities()
 	if len(caps) != 1 || caps[0] != controller.CapKill {
 		t.Errorf("Capabilities = %v, want [kill]", caps)
@@ -108,7 +118,7 @@ func TestClaudeController_Capabilities(t *testing.T) {
 
 func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) {
 	fe := newFakeEnv()
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	projectDir := t.TempDir()
 
 	handle, err := c.Launch(context.Background(), controller.LaunchOptions{
@@ -141,7 +151,7 @@ func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) 
 
 func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
 	fe := newFakeEnv()
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	primary := t.TempDir()
 	secondary := t.TempDir()
 	tertiary := t.TempDir()
@@ -180,7 +190,7 @@ func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
 
 func TestClaudeController_Kill_DestroysEnvInstance(t *testing.T) {
 	fe := newFakeEnv()
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	projectDir := t.TempDir()
 	sessionID := "abcd1234-0000-0000-0000-000000000099"
 

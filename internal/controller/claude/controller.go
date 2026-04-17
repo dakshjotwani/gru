@@ -22,37 +22,56 @@ import (
 
 // ClaudeController launches Claude Code inside an env.Environment instance,
 // wrapping the process in a detachable tmux session via PersistentPty.
+//
+// Adapter selection is per-launch: if LaunchOptions.EnvSpec is set, the
+// controller resolves the adapter from the registry by EnvSpec.Adapter;
+// otherwise it uses defaultAdapter (typically "host"). Each live session
+// remembers which adapter provisioned it so Kill can tear down correctly.
 type ClaudeController struct {
-	apiKey    string
-	host      string
-	port      string
-	claudeBin string
-	envAdp    env.Environment
-	pty       *persistentpty.PersistentPty
+	apiKey         string
+	host           string
+	port           string
+	claudeBin      string
+	envs           *env.Registry
+	defaultAdapter string
+	pty            *persistentpty.PersistentPty
 
 	mu   sync.Mutex
-	live map[string]env.Instance // sessionID → instance, for Kill lookups
+	live map[string]liveSession // sessionID → (adapter, instance), for Kill lookups
 }
 
-// NewClaudeController returns a controller backed by the supplied Environment
-// (typically env/host). Panics if e is nil — the controller has no meaningful
-// fallback if it can't provision environments.
-func NewClaudeController(apiKey, host, port string, e env.Environment) *ClaudeController {
-	if e == nil {
-		panic("claude: NewClaudeController requires a non-nil env.Environment")
+// liveSession pairs an Instance with the Environment that created it, so Kill
+// knows which adapter's Destroy to call. A sessionID is keyed to exactly one
+// (Environment, Instance) pair for its lifetime.
+type liveSession struct {
+	adapter env.Environment
+	inst    env.Instance
+}
+
+// NewClaudeController returns a controller backed by a registry of env
+// adapters. defaultAdapter is the runtime ID used when a launch doesn't
+// specify its own EnvSpec. Panics if registry is nil or defaultAdapter is
+// not registered — a controller with no provisioning substrate is useless.
+func NewClaudeController(apiKey, host, port string, envs *env.Registry, defaultAdapter string) *ClaudeController {
+	if envs == nil {
+		panic("claude: NewClaudeController requires a non-nil env.Registry")
+	}
+	if _, err := envs.Get(defaultAdapter); err != nil {
+		panic(fmt.Sprintf("claude: defaultAdapter %q not in registry: %v", defaultAdapter, err))
 	}
 	bin, err := exec.LookPath("claude")
 	if err != nil {
 		bin = "claude" // fall back; let the shell report at launch time
 	}
 	return &ClaudeController{
-		apiKey:    apiKey,
-		host:      host,
-		port:      port,
-		claudeBin: bin,
-		envAdp:    e,
-		pty:       persistentpty.New(),
-		live:      make(map[string]env.Instance),
+		apiKey:         apiKey,
+		host:           host,
+		port:           port,
+		claudeBin:      bin,
+		envs:           envs,
+		defaultAdapter: defaultAdapter,
+		pty:            persistentpty.New(),
+		live:           make(map[string]liveSession),
 	}
 }
 
@@ -98,26 +117,27 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		workdirs = append(workdirs, d)
 	}
 
-	inst, err := c.envAdp.Create(ctx, env.EnvSpec{
-		Name:     sessionID,
-		Adapter:  c.envAdp.RuntimeID(),
-		Workdirs: workdirs,
-	})
+	adapter, spec, err := c.resolveAdapterAndSpec(opts, sessionID, workdirs)
 	if err != nil {
-		return nil, fmt.Errorf("claude: env.Create: %w", err)
+		return nil, err
+	}
+
+	inst, err := adapter.Create(ctx, spec)
+	if err != nil {
+		return nil, fmt.Errorf("claude: env.Create (%s): %w", spec.Adapter, err)
 	}
 
 	name := tmuxName(sessionID)
 	shellCmd := buildClaudeCmd(opts, sessionID, c.apiKey, c.host, c.port, c.claudeBin)
-	if err := c.pty.Start(ctx, c.envAdp, inst, name, opts.ProjectDir, shellCmd); err != nil {
+	if err := c.pty.Start(ctx, adapter, inst, name, opts.ProjectDir, shellCmd); err != nil {
 		// Best-effort rollback: release the env instance so the workdir-set
 		// claim doesn't leak and a retry with the same session ID works.
-		_ = c.envAdp.Destroy(context.Background(), inst)
+		_ = adapter.Destroy(context.Background(), inst)
 		return nil, fmt.Errorf("claude: persistentpty.Start: %w", err)
 	}
 
 	c.mu.Lock()
-	c.live[sessionID] = inst
+	c.live[sessionID] = liveSession{adapter: adapter, inst: inst}
 	c.mu.Unlock()
 
 	writeLookupFiles(opts.ProjectDir, sessionID, opts.NoWorktree)
@@ -129,11 +149,45 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	}, nil
 }
 
+// resolveAdapterAndSpec picks the env adapter and builds the spec for this
+// launch. When opts.EnvSpec is nil, the default adapter gets a minimal spec
+// scoped to the session's workdirs. Otherwise the caller's spec is taken
+// verbatim, but Name and Workdirs are forced to the session's values — the
+// controller always owns the session identity and the workdir set, not the
+// spec file.
+func (c *ClaudeController) resolveAdapterAndSpec(opts controller.LaunchOptions, sessionID string, workdirs []string) (env.Environment, env.EnvSpec, error) {
+	if opts.EnvSpec == nil {
+		adapter, err := c.envs.Get(c.defaultAdapter)
+		if err != nil {
+			return nil, env.EnvSpec{}, fmt.Errorf("claude: default adapter %q: %w", c.defaultAdapter, err)
+		}
+		return adapter, env.EnvSpec{
+			Name:     sessionID,
+			Adapter:  c.defaultAdapter,
+			Workdirs: workdirs,
+		}, nil
+	}
+	adapterID := opts.EnvSpec.Adapter
+	if adapterID == "" {
+		adapterID = c.defaultAdapter
+	}
+	adapter, err := c.envs.Get(adapterID)
+	if err != nil {
+		return nil, env.EnvSpec{}, fmt.Errorf("claude: env adapter %q: %w", adapterID, err)
+	}
+	spec := *opts.EnvSpec
+	spec.Name = sessionID
+	spec.Adapter = adapterID
+	spec.Workdirs = workdirs
+	return adapter, spec, nil
+}
+
 // Kill tears down the tmux session and releases the env instance's resource
-// claims. Idempotent — calling Kill on an unknown session returns nil.
+// claims via the same adapter that created it. Idempotent — calling Kill on
+// an unknown session returns nil.
 func (c *ClaudeController) Kill(ctx context.Context, sessionID string) error {
 	c.mu.Lock()
-	inst, ok := c.live[sessionID]
+	ls, ok := c.live[sessionID]
 	if ok {
 		delete(c.live, sessionID)
 	}
@@ -144,8 +198,8 @@ func (c *ClaudeController) Kill(ctx context.Context, sessionID string) error {
 	// the pane goes away and the user doesn't have to reach for tmux.
 	name := tmuxName(sessionID)
 	if ok {
-		_ = c.pty.Stop(ctx, c.envAdp, inst, name)
-		return c.envAdp.Destroy(ctx, inst)
+		_ = c.pty.Stop(ctx, ls.adapter, ls.inst, name)
+		return ls.adapter.Destroy(ctx, ls.inst)
 	}
 	_ = exec.CommandContext(ctx, "tmux", "kill-session", "-t", name).Run()
 	return nil
