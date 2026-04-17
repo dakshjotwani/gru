@@ -251,14 +251,18 @@ func (x *Session) GetRole() string {
 }
 
 type Project struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Runtime       string                 `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Path      string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Runtime   string                 `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Extra workdirs passed to every session launched in this project as
+	// `--add-dir <path>`. Order is significant — the primary cwd is still
+	// `path`; these append as secondary read/edit dirs.
+	AdditionalWorkdirs []string `protobuf:"bytes,6,rep,name=additional_workdirs,json=additionalWorkdirs,proto3" json:"additional_workdirs,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -322,6 +326,13 @@ func (x *Project) GetRuntime() string {
 func (x *Project) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Project) GetAdditionalWorkdirs() []string {
+	if x != nil {
+		return x.AdditionalWorkdirs
 	}
 	return nil
 }
@@ -559,12 +570,17 @@ func (x *GetSessionRequest) GetId() string {
 }
 
 type LaunchSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectDir    string                 `protobuf:"bytes,1,opt,name=project_dir,json=projectDir,proto3" json:"project_dir,omitempty"`
-	Prompt        string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Profile       string                 `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
-	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`               // required, human-readable session name
-	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"` // optional, what problem is being solved
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ProjectDir  string                 `protobuf:"bytes,1,opt,name=project_dir,json=projectDir,proto3" json:"project_dir,omitempty"`
+	Prompt      string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Profile     string                 `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name        string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`               // required, human-readable session name
+	Description string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"` // optional, what problem is being solved
+	// Extra workdirs for this specific launch. Merged with the project's
+	// saved `additional_workdirs` (project defaults come first, then these),
+	// deduped while preserving order. Each is passed to Claude Code as
+	// `--add-dir <path>`.
+	AddDirs       []string `protobuf:"bytes,6,rep,name=add_dirs,json=addDirs,proto3" json:"add_dirs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -632,6 +648,13 @@ func (x *LaunchSessionRequest) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *LaunchSessionRequest) GetAddDirs() []string {
+	if x != nil {
+		return x.AddDirs
+	}
+	return nil
 }
 
 type LaunchSessionResponse struct {
@@ -846,6 +869,60 @@ func (x *ListProjectsResponse) GetProjects() []*Project {
 	return nil
 }
 
+type UpdateProjectRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// additional_workdirs replaces the project's saved list verbatim. Send the
+	// full intended list — this is not a patch. Empty list clears it.
+	AdditionalWorkdirs []string `protobuf:"bytes,2,rep,name=additional_workdirs,json=additionalWorkdirs,proto3" json:"additional_workdirs,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *UpdateProjectRequest) Reset() {
+	*x = UpdateProjectRequest{}
+	mi := &file_gru_v1_gru_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProjectRequest) ProtoMessage() {}
+
+func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
+func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *UpdateProjectRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateProjectRequest) GetAdditionalWorkdirs() []string {
+	if x != nil {
+		return x.AdditionalWorkdirs
+	}
+	return nil
+}
+
 type AgentProfile struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -857,7 +934,7 @@ type AgentProfile struct {
 
 func (x *AgentProfile) Reset() {
 	*x = AgentProfile{}
-	mi := &file_gru_v1_gru_proto_msgTypes[12]
+	mi := &file_gru_v1_gru_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -869,7 +946,7 @@ func (x *AgentProfile) String() string {
 func (*AgentProfile) ProtoMessage() {}
 
 func (x *AgentProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[12]
+	mi := &file_gru_v1_gru_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -882,7 +959,7 @@ func (x *AgentProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentProfile.ProtoReflect.Descriptor instead.
 func (*AgentProfile) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{12}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AgentProfile) GetName() string {
@@ -915,7 +992,7 @@ type ListProfilesRequest struct {
 
 func (x *ListProfilesRequest) Reset() {
 	*x = ListProfilesRequest{}
-	mi := &file_gru_v1_gru_proto_msgTypes[13]
+	mi := &file_gru_v1_gru_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -927,7 +1004,7 @@ func (x *ListProfilesRequest) String() string {
 func (*ListProfilesRequest) ProtoMessage() {}
 
 func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[13]
+	mi := &file_gru_v1_gru_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -940,7 +1017,7 @@ func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{13}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListProfilesRequest) GetProjectDir() string {
@@ -959,7 +1036,7 @@ type ListProfilesResponse struct {
 
 func (x *ListProfilesResponse) Reset() {
 	*x = ListProfilesResponse{}
-	mi := &file_gru_v1_gru_proto_msgTypes[14]
+	mi := &file_gru_v1_gru_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -971,7 +1048,7 @@ func (x *ListProfilesResponse) String() string {
 func (*ListProfilesResponse) ProtoMessage() {}
 
 func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[14]
+	mi := &file_gru_v1_gru_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -984,7 +1061,7 @@ func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesResponse.ProtoReflect.Descriptor instead.
 func (*ListProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{14}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListProfilesResponse) GetProfiles() []*AgentProfile {
@@ -1004,7 +1081,7 @@ type SendInputRequest struct {
 
 func (x *SendInputRequest) Reset() {
 	*x = SendInputRequest{}
-	mi := &file_gru_v1_gru_proto_msgTypes[15]
+	mi := &file_gru_v1_gru_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1016,7 +1093,7 @@ func (x *SendInputRequest) String() string {
 func (*SendInputRequest) ProtoMessage() {}
 
 func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[15]
+	mi := &file_gru_v1_gru_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1029,7 +1106,7 @@ func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendInputRequest.ProtoReflect.Descriptor instead.
 func (*SendInputRequest) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{15}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SendInputRequest) GetSessionId() string {
@@ -1056,7 +1133,7 @@ type SendInputResponse struct {
 
 func (x *SendInputResponse) Reset() {
 	*x = SendInputResponse{}
-	mi := &file_gru_v1_gru_proto_msgTypes[16]
+	mi := &file_gru_v1_gru_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1068,7 +1145,7 @@ func (x *SendInputResponse) String() string {
 func (*SendInputResponse) ProtoMessage() {}
 
 func (x *SendInputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[16]
+	mi := &file_gru_v1_gru_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1081,7 +1158,7 @@ func (x *SendInputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendInputResponse.ProtoReflect.Descriptor instead.
 func (*SendInputResponse) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{16}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SendInputResponse) GetSuccess() bool {
@@ -1108,7 +1185,7 @@ type SubscribeEventsRequest struct {
 
 func (x *SubscribeEventsRequest) Reset() {
 	*x = SubscribeEventsRequest{}
-	mi := &file_gru_v1_gru_proto_msgTypes[17]
+	mi := &file_gru_v1_gru_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1120,7 +1197,7 @@ func (x *SubscribeEventsRequest) String() string {
 func (*SubscribeEventsRequest) ProtoMessage() {}
 
 func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[17]
+	mi := &file_gru_v1_gru_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1133,7 +1210,7 @@ func (x *SubscribeEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeEventsRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeEventsRequest) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{17}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SubscribeEventsRequest) GetProjectIds() []string {
@@ -1160,7 +1237,7 @@ type SuggestSessionNameRequest struct {
 
 func (x *SuggestSessionNameRequest) Reset() {
 	*x = SuggestSessionNameRequest{}
-	mi := &file_gru_v1_gru_proto_msgTypes[18]
+	mi := &file_gru_v1_gru_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1172,7 +1249,7 @@ func (x *SuggestSessionNameRequest) String() string {
 func (*SuggestSessionNameRequest) ProtoMessage() {}
 
 func (x *SuggestSessionNameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[18]
+	mi := &file_gru_v1_gru_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1185,7 +1262,7 @@ func (x *SuggestSessionNameRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestSessionNameRequest.ProtoReflect.Descriptor instead.
 func (*SuggestSessionNameRequest) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{18}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SuggestSessionNameRequest) GetPrompt() string {
@@ -1212,7 +1289,7 @@ type SuggestSessionNameResponse struct {
 
 func (x *SuggestSessionNameResponse) Reset() {
 	*x = SuggestSessionNameResponse{}
-	mi := &file_gru_v1_gru_proto_msgTypes[19]
+	mi := &file_gru_v1_gru_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1224,7 +1301,7 @@ func (x *SuggestSessionNameResponse) String() string {
 func (*SuggestSessionNameResponse) ProtoMessage() {}
 
 func (x *SuggestSessionNameResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gru_v1_gru_proto_msgTypes[19]
+	mi := &file_gru_v1_gru_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1237,7 +1314,7 @@ func (x *SuggestSessionNameResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestSessionNameResponse.ProtoReflect.Descriptor instead.
 func (*SuggestSessionNameResponse) Descriptor() ([]byte, []int) {
-	return file_gru_v1_gru_proto_rawDescGZIP(), []int{19}
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SuggestSessionNameResponse) GetName() string {
@@ -1279,14 +1356,15 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x04name\x18\r \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x0e \x01(\tR\vdescription\x12\x16\n" +
 	"\x06prompt\x18\x0f \x01(\tR\x06prompt\x12\x12\n" +
-	"\x04role\x18\x10 \x01(\tR\x04role\"\x96\x01\n" +
+	"\x04role\x18\x10 \x01(\tR\x04role\"\xc7\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x18\n" +
 	"\aruntime\x18\x04 \x01(\tR\aruntime\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xde\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12/\n" +
+	"\x13additional_workdirs\x18\x06 \x03(\tR\x12additionalWorkdirs\"\xde\x01\n" +
 	"\fSessionEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1304,14 +1382,15 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x14ListSessionsResponse\x12+\n" +
 	"\bsessions\x18\x01 \x03(\v2\x0f.gru.v1.SessionR\bsessions\"#\n" +
 	"\x11GetSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x9f\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xba\x01\n" +
 	"\x14LaunchSessionRequest\x12\x1f\n" +
 	"\vproject_dir\x18\x01 \x01(\tR\n" +
 	"projectDir\x12\x16\n" +
 	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x18\n" +
 	"\aprofile\x18\x03 \x01(\tR\aprofile\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x05 \x01(\tR\vdescription\"B\n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
+	"\badd_dirs\x18\x06 \x03(\tR\aaddDirs\"B\n" +
 	"\x15LaunchSessionResponse\x12)\n" +
 	"\asession\x18\x01 \x01(\v2\x0f.gru.v1.SessionR\asession\"$\n" +
 	"\x12KillSessionRequest\x12\x0e\n" +
@@ -1320,7 +1399,10 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x15\n" +
 	"\x13ListProjectsRequest\"C\n" +
 	"\x14ListProjectsResponse\x12+\n" +
-	"\bprojects\x18\x01 \x03(\v2\x0f.gru.v1.ProjectR\bprojects\"Z\n" +
+	"\bprojects\x18\x01 \x03(\v2\x0f.gru.v1.ProjectR\bprojects\"W\n" +
+	"\x14UpdateProjectRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
+	"\x13additional_workdirs\x18\x02 \x03(\tR\x12additionalWorkdirs\"Z\n" +
 	"\fAgentProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x14\n" +
@@ -1356,7 +1438,7 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x1eSESSION_STATUS_NEEDS_ATTENTION\x10\x04\x12\x1c\n" +
 	"\x18SESSION_STATUS_COMPLETED\x10\x05\x12\x1a\n" +
 	"\x16SESSION_STATUS_ERRORED\x10\x06\x12\x19\n" +
-	"\x15SESSION_STATUS_KILLED\x10\a2\xa7\x05\n" +
+	"\x15SESSION_STATUS_KILLED\x10\a2\xe7\x05\n" +
 	"\n" +
 	"GruService\x12I\n" +
 	"\fListSessions\x12\x1b.gru.v1.ListSessionsRequest\x1a\x1c.gru.v1.ListSessionsResponse\x128\n" +
@@ -1366,7 +1448,8 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\vKillSession\x12\x1a.gru.v1.KillSessionRequest\x1a\x1b.gru.v1.KillSessionResponse\x12@\n" +
 	"\tSendInput\x12\x18.gru.v1.SendInputRequest\x1a\x19.gru.v1.SendInputResponse\x12[\n" +
 	"\x12SuggestSessionName\x12!.gru.v1.SuggestSessionNameRequest\x1a\".gru.v1.SuggestSessionNameResponse\x12I\n" +
-	"\fListProjects\x12\x1b.gru.v1.ListProjectsRequest\x1a\x1c.gru.v1.ListProjectsResponse\x12I\n" +
+	"\fListProjects\x12\x1b.gru.v1.ListProjectsRequest\x1a\x1c.gru.v1.ListProjectsResponse\x12>\n" +
+	"\rUpdateProject\x12\x1c.gru.v1.UpdateProjectRequest\x1a\x0f.gru.v1.Project\x12I\n" +
 	"\fListProfiles\x12\x1b.gru.v1.ListProfilesRequest\x1a\x1c.gru.v1.ListProfilesResponse\x12I\n" +
 	"\x0fSubscribeEvents\x12\x1e.gru.v1.SubscribeEventsRequest\x1a\x14.gru.v1.SessionEvent0\x01B\x7f\n" +
 	"\n" +
@@ -1385,7 +1468,7 @@ func file_gru_v1_gru_proto_rawDescGZIP() []byte {
 }
 
 var file_gru_v1_gru_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_gru_v1_gru_proto_goTypes = []any{
 	(SessionStatus)(0),                 // 0: gru.v1.SessionStatus
 	(*Session)(nil),                    // 1: gru.v1.Session
@@ -1400,48 +1483,51 @@ var file_gru_v1_gru_proto_goTypes = []any{
 	(*KillSessionResponse)(nil),        // 10: gru.v1.KillSessionResponse
 	(*ListProjectsRequest)(nil),        // 11: gru.v1.ListProjectsRequest
 	(*ListProjectsResponse)(nil),       // 12: gru.v1.ListProjectsResponse
-	(*AgentProfile)(nil),               // 13: gru.v1.AgentProfile
-	(*ListProfilesRequest)(nil),        // 14: gru.v1.ListProfilesRequest
-	(*ListProfilesResponse)(nil),       // 15: gru.v1.ListProfilesResponse
-	(*SendInputRequest)(nil),           // 16: gru.v1.SendInputRequest
-	(*SendInputResponse)(nil),          // 17: gru.v1.SendInputResponse
-	(*SubscribeEventsRequest)(nil),     // 18: gru.v1.SubscribeEventsRequest
-	(*SuggestSessionNameRequest)(nil),  // 19: gru.v1.SuggestSessionNameRequest
-	(*SuggestSessionNameResponse)(nil), // 20: gru.v1.SuggestSessionNameResponse
-	(*timestamppb.Timestamp)(nil),      // 21: google.protobuf.Timestamp
+	(*UpdateProjectRequest)(nil),       // 13: gru.v1.UpdateProjectRequest
+	(*AgentProfile)(nil),               // 14: gru.v1.AgentProfile
+	(*ListProfilesRequest)(nil),        // 15: gru.v1.ListProfilesRequest
+	(*ListProfilesResponse)(nil),       // 16: gru.v1.ListProfilesResponse
+	(*SendInputRequest)(nil),           // 17: gru.v1.SendInputRequest
+	(*SendInputResponse)(nil),          // 18: gru.v1.SendInputResponse
+	(*SubscribeEventsRequest)(nil),     // 19: gru.v1.SubscribeEventsRequest
+	(*SuggestSessionNameRequest)(nil),  // 20: gru.v1.SuggestSessionNameRequest
+	(*SuggestSessionNameResponse)(nil), // 21: gru.v1.SuggestSessionNameResponse
+	(*timestamppb.Timestamp)(nil),      // 22: google.protobuf.Timestamp
 }
 var file_gru_v1_gru_proto_depIdxs = []int32{
 	0,  // 0: gru.v1.Session.status:type_name -> gru.v1.SessionStatus
-	21, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
-	21, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
-	21, // 3: gru.v1.Session.last_event_at:type_name -> google.protobuf.Timestamp
-	21, // 4: gru.v1.Project.created_at:type_name -> google.protobuf.Timestamp
-	21, // 5: gru.v1.SessionEvent.timestamp:type_name -> google.protobuf.Timestamp
+	22, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
+	22, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
+	22, // 3: gru.v1.Session.last_event_at:type_name -> google.protobuf.Timestamp
+	22, // 4: gru.v1.Project.created_at:type_name -> google.protobuf.Timestamp
+	22, // 5: gru.v1.SessionEvent.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 6: gru.v1.ListSessionsRequest.status:type_name -> gru.v1.SessionStatus
 	1,  // 7: gru.v1.ListSessionsResponse.sessions:type_name -> gru.v1.Session
 	1,  // 8: gru.v1.LaunchSessionResponse.session:type_name -> gru.v1.Session
 	2,  // 9: gru.v1.ListProjectsResponse.projects:type_name -> gru.v1.Project
-	13, // 10: gru.v1.ListProfilesResponse.profiles:type_name -> gru.v1.AgentProfile
+	14, // 10: gru.v1.ListProfilesResponse.profiles:type_name -> gru.v1.AgentProfile
 	4,  // 11: gru.v1.GruService.ListSessions:input_type -> gru.v1.ListSessionsRequest
 	6,  // 12: gru.v1.GruService.GetSession:input_type -> gru.v1.GetSessionRequest
 	7,  // 13: gru.v1.GruService.LaunchSession:input_type -> gru.v1.LaunchSessionRequest
 	9,  // 14: gru.v1.GruService.KillSession:input_type -> gru.v1.KillSessionRequest
-	16, // 15: gru.v1.GruService.SendInput:input_type -> gru.v1.SendInputRequest
-	19, // 16: gru.v1.GruService.SuggestSessionName:input_type -> gru.v1.SuggestSessionNameRequest
+	17, // 15: gru.v1.GruService.SendInput:input_type -> gru.v1.SendInputRequest
+	20, // 16: gru.v1.GruService.SuggestSessionName:input_type -> gru.v1.SuggestSessionNameRequest
 	11, // 17: gru.v1.GruService.ListProjects:input_type -> gru.v1.ListProjectsRequest
-	14, // 18: gru.v1.GruService.ListProfiles:input_type -> gru.v1.ListProfilesRequest
-	18, // 19: gru.v1.GruService.SubscribeEvents:input_type -> gru.v1.SubscribeEventsRequest
-	5,  // 20: gru.v1.GruService.ListSessions:output_type -> gru.v1.ListSessionsResponse
-	1,  // 21: gru.v1.GruService.GetSession:output_type -> gru.v1.Session
-	8,  // 22: gru.v1.GruService.LaunchSession:output_type -> gru.v1.LaunchSessionResponse
-	10, // 23: gru.v1.GruService.KillSession:output_type -> gru.v1.KillSessionResponse
-	17, // 24: gru.v1.GruService.SendInput:output_type -> gru.v1.SendInputResponse
-	20, // 25: gru.v1.GruService.SuggestSessionName:output_type -> gru.v1.SuggestSessionNameResponse
-	12, // 26: gru.v1.GruService.ListProjects:output_type -> gru.v1.ListProjectsResponse
-	15, // 27: gru.v1.GruService.ListProfiles:output_type -> gru.v1.ListProfilesResponse
-	3,  // 28: gru.v1.GruService.SubscribeEvents:output_type -> gru.v1.SessionEvent
-	20, // [20:29] is the sub-list for method output_type
-	11, // [11:20] is the sub-list for method input_type
+	13, // 18: gru.v1.GruService.UpdateProject:input_type -> gru.v1.UpdateProjectRequest
+	15, // 19: gru.v1.GruService.ListProfiles:input_type -> gru.v1.ListProfilesRequest
+	19, // 20: gru.v1.GruService.SubscribeEvents:input_type -> gru.v1.SubscribeEventsRequest
+	5,  // 21: gru.v1.GruService.ListSessions:output_type -> gru.v1.ListSessionsResponse
+	1,  // 22: gru.v1.GruService.GetSession:output_type -> gru.v1.Session
+	8,  // 23: gru.v1.GruService.LaunchSession:output_type -> gru.v1.LaunchSessionResponse
+	10, // 24: gru.v1.GruService.KillSession:output_type -> gru.v1.KillSessionResponse
+	18, // 25: gru.v1.GruService.SendInput:output_type -> gru.v1.SendInputResponse
+	21, // 26: gru.v1.GruService.SuggestSessionName:output_type -> gru.v1.SuggestSessionNameResponse
+	12, // 27: gru.v1.GruService.ListProjects:output_type -> gru.v1.ListProjectsResponse
+	2,  // 28: gru.v1.GruService.UpdateProject:output_type -> gru.v1.Project
+	16, // 29: gru.v1.GruService.ListProfiles:output_type -> gru.v1.ListProfilesResponse
+	3,  // 30: gru.v1.GruService.SubscribeEvents:output_type -> gru.v1.SessionEvent
+	21, // [21:31] is the sub-list for method output_type
+	11, // [11:21] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -1458,7 +1544,7 @@ func file_gru_v1_gru_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gru_v1_gru_proto_rawDesc), len(file_gru_v1_gru_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -19,6 +19,7 @@ type Querier interface {
 	ListEventsBySession(ctx context.Context, sessionID string) ([]Event, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error)
+	UpdateProjectAdditionalWorkdirs(ctx context.Context, arg UpdateProjectAdditionalWorkdirsParams) (Project, error)
 	UpdateSessionAttentionScore(ctx context.Context, arg UpdateSessionAttentionScoreParams) (Session, error)
 	UpdateSessionLastEvent(ctx context.Context, arg UpdateSessionLastEventParams) error
 	UpdateSessionPID(ctx context.Context, arg UpdateSessionPIDParams) error

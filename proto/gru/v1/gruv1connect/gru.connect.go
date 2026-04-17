@@ -49,6 +49,9 @@ const (
 	GruServiceSuggestSessionNameProcedure = "/gru.v1.GruService/SuggestSessionName"
 	// GruServiceListProjectsProcedure is the fully-qualified name of the GruService's ListProjects RPC.
 	GruServiceListProjectsProcedure = "/gru.v1.GruService/ListProjects"
+	// GruServiceUpdateProjectProcedure is the fully-qualified name of the GruService's UpdateProject
+	// RPC.
+	GruServiceUpdateProjectProcedure = "/gru.v1.GruService/UpdateProject"
 	// GruServiceListProfilesProcedure is the fully-qualified name of the GruService's ListProfiles RPC.
 	GruServiceListProfilesProcedure = "/gru.v1.GruService/ListProfiles"
 	// GruServiceSubscribeEventsProcedure is the fully-qualified name of the GruService's
@@ -68,6 +71,7 @@ type GruServiceClient interface {
 	SuggestSessionName(context.Context, *connect.Request[v1.SuggestSessionNameRequest]) (*connect.Response[v1.SuggestSessionNameResponse], error)
 	// Projects
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
+	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
 	ListProfiles(context.Context, *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error)
 	// Real-time event stream
 	SubscribeEvents(context.Context, *connect.Request[v1.SubscribeEventsRequest]) (*connect.ServerStreamForClient[v1.SessionEvent], error)
@@ -126,6 +130,12 @@ func NewGruServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(gruServiceMethods.ByName("ListProjects")),
 			connect.WithClientOptions(opts...),
 		),
+		updateProject: connect.NewClient[v1.UpdateProjectRequest, v1.Project](
+			httpClient,
+			baseURL+GruServiceUpdateProjectProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("UpdateProject")),
+			connect.WithClientOptions(opts...),
+		),
 		listProfiles: connect.NewClient[v1.ListProfilesRequest, v1.ListProfilesResponse](
 			httpClient,
 			baseURL+GruServiceListProfilesProcedure,
@@ -150,6 +160,7 @@ type gruServiceClient struct {
 	sendInput          *connect.Client[v1.SendInputRequest, v1.SendInputResponse]
 	suggestSessionName *connect.Client[v1.SuggestSessionNameRequest, v1.SuggestSessionNameResponse]
 	listProjects       *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
+	updateProject      *connect.Client[v1.UpdateProjectRequest, v1.Project]
 	listProfiles       *connect.Client[v1.ListProfilesRequest, v1.ListProfilesResponse]
 	subscribeEvents    *connect.Client[v1.SubscribeEventsRequest, v1.SessionEvent]
 }
@@ -189,6 +200,11 @@ func (c *gruServiceClient) ListProjects(ctx context.Context, req *connect.Reques
 	return c.listProjects.CallUnary(ctx, req)
 }
 
+// UpdateProject calls gru.v1.GruService.UpdateProject.
+func (c *gruServiceClient) UpdateProject(ctx context.Context, req *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error) {
+	return c.updateProject.CallUnary(ctx, req)
+}
+
 // ListProfiles calls gru.v1.GruService.ListProfiles.
 func (c *gruServiceClient) ListProfiles(ctx context.Context, req *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error) {
 	return c.listProfiles.CallUnary(ctx, req)
@@ -211,6 +227,7 @@ type GruServiceHandler interface {
 	SuggestSessionName(context.Context, *connect.Request[v1.SuggestSessionNameRequest]) (*connect.Response[v1.SuggestSessionNameResponse], error)
 	// Projects
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
+	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
 	ListProfiles(context.Context, *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error)
 	// Real-time event stream
 	SubscribeEvents(context.Context, *connect.Request[v1.SubscribeEventsRequest], *connect.ServerStream[v1.SessionEvent]) error
@@ -265,6 +282,12 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(gruServiceMethods.ByName("ListProjects")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gruServiceUpdateProjectHandler := connect.NewUnaryHandler(
+		GruServiceUpdateProjectProcedure,
+		svc.UpdateProject,
+		connect.WithSchema(gruServiceMethods.ByName("UpdateProject")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gruServiceListProfilesHandler := connect.NewUnaryHandler(
 		GruServiceListProfilesProcedure,
 		svc.ListProfiles,
@@ -293,6 +316,8 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 			gruServiceSuggestSessionNameHandler.ServeHTTP(w, r)
 		case GruServiceListProjectsProcedure:
 			gruServiceListProjectsHandler.ServeHTTP(w, r)
+		case GruServiceUpdateProjectProcedure:
+			gruServiceUpdateProjectHandler.ServeHTTP(w, r)
 		case GruServiceListProfilesProcedure:
 			gruServiceListProfilesHandler.ServeHTTP(w, r)
 		case GruServiceSubscribeEventsProcedure:
@@ -332,6 +357,10 @@ func (UnimplementedGruServiceHandler) SuggestSessionName(context.Context, *conne
 
 func (UnimplementedGruServiceHandler) ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.ListProjects is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.UpdateProject is not implemented"))
 }
 
 func (UnimplementedGruServiceHandler) ListProfiles(context.Context, *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error) {

@@ -20,6 +20,8 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
   const [description, setDescription] = useState('');
   const [profile, setProfile] = useState('');
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [addDirs, setAddDirs] = useState<string[]>([]);
+  const [saveWorkdirs, setSaveWorkdirs] = useState(true);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +101,18 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
     }
   }, [projects.length, useCustomDir]);
 
+  // Prefill additional workdirs from the selected project's saved defaults.
+  // Custom-path launches start empty — there's no project row yet, so we have
+  // nothing to pull from. Resets whenever the selected project changes.
+  useEffect(() => {
+    if (useCustomDir) {
+      setAddDirs([]);
+      return;
+    }
+    const proj = projects.find((p) => p.path === projectDir);
+    setAddDirs(proj?.additionalWorkdirs ?? []);
+  }, [projectDir, projects, useCustomDir]);
+
   // Close on Escape.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -138,12 +152,42 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
     setLaunching(true);
     setError(null);
     try {
+      const cleanedDirs = addDirs.map((d) => d.trim()).filter((d) => d && d !== projectDir.trim());
+
+      // Persist the workdir list back to the project before launching so
+      // future sessions in this project inherit it. Skip when:
+      //  - user opted out via the checkbox
+      //  - project row doesn't exist yet (custom-path launch)
+      //  - the list matches what the project already has (no-op)
+      if (saveWorkdirs && !useCustomDir) {
+        const selectedProject = projects.find((p) => p.path === projectDir);
+        if (selectedProject) {
+          const existing = selectedProject.additionalWorkdirs ?? [];
+          const same =
+            existing.length === cleanedDirs.length &&
+            existing.every((v, i) => v === cleanedDirs[i]);
+          if (!same) {
+            try {
+              await gruClient.updateProject({
+                id: selectedProject.id,
+                additionalWorkdirs: cleanedDirs,
+              });
+            } catch (err) {
+              setError(formatError(err));
+              setLaunching(false);
+              return;
+            }
+          }
+        }
+      }
+
       await gruClient.launchSession({
         projectDir: projectDir.trim(),
         name: name.trim(),
         prompt: prompt.trim(),
         description: description.trim(),
         profile: profile,
+        addDirs: cleanedDirs,
       });
       onLaunched();
       onClose();
@@ -242,6 +286,66 @@ export function LaunchModal({ projects, onClose, onLaunched }: LaunchModalProps)
               )}
             </div>
           )}
+
+          {/* Additional workdirs — passed to Claude Code as --add-dir <path>.
+               Defaults pre-fill from the selected project; edits here are
+               persisted back to the project unless "save as default" is off. */}
+          <div className={styles.field}>
+            <label className={styles.label}>
+              Additional workdirs <span className={styles.optional}>(optional)</span>
+            </label>
+            <div className={styles.workdirList}>
+              {addDirs.map((dir, i) => (
+                <div key={i} className={styles.workdirRow}>
+                  <input
+                    className={styles.input}
+                    type="text"
+                    placeholder="/path/to/secondary-repo"
+                    value={dir}
+                    onChange={(e) => {
+                      const next = [...addDirs];
+                      next[i] = e.target.value;
+                      setAddDirs(next);
+                      clearError();
+                    }}
+                    disabled={launching}
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    className={styles.workdirRemoveBtn}
+                    onClick={() => setAddDirs(addDirs.filter((_, idx) => idx !== i))}
+                    disabled={launching}
+                    aria-label={`Remove workdir ${dir}`}
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className={styles.workdirAddBtn}
+                onClick={() => setAddDirs([...addDirs, ''])}
+                disabled={launching}
+              >
+                + add workdir
+              </button>
+            </div>
+            {!useCustomDir && projectDir && (
+              <label className={styles.toggleInline}>
+                <input
+                  type="checkbox"
+                  checked={saveWorkdirs}
+                  onChange={() => setSaveWorkdirs((v) => !v)}
+                  disabled={launching}
+                />
+                <span className={styles.toggleInlineLabel}>
+                  Save this list as the project's default
+                </span>
+              </label>
+            )}
+          </div>
 
           {/* Prompt */}
           <div className={styles.field}>

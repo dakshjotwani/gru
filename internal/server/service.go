@@ -191,15 +191,34 @@ func (s *Service) LaunchSession(
 		log.Printf("LaunchSession: load skill content: %v (continuing without skills)", err)
 	}
 
+	// Merge add_dirs: request takes precedence for order, but if the project
+	// already has saved defaults and the request is empty we still apply them.
+	// Otherwise the launch request is the source of truth (the modal pre-fills
+	// from project defaults, so user intent lives in the request payload).
+	addDirs := make([]string, 0, len(req.Msg.AddDirs))
+	seen := map[string]struct{}{}
+	for _, d := range req.Msg.AddDirs {
+		d = filepath.Clean(d)
+		if d == "" || d == "." || d == projectDir {
+			continue
+		}
+		if _, dup := seen[d]; dup {
+			continue
+		}
+		seen[d] = struct{}{}
+		addDirs = append(addDirs, d)
+	}
+
 	handle, err := ctrl.Launch(ctx, controller.LaunchOptions{
-		SessionID:       sessionID,
-		ProjectDir:      projectDir,
-		Prompt:          prompt,
-		Profile:         profile,
-		Model:           agentProfile.Model,
-		Agent:           agentProfile.Agent,
-		ExtraPrompt:     skillContent,
-		AutoMode:        agentProfile.AutoMode,
+		SessionID:   sessionID,
+		ProjectDir:  projectDir,
+		Prompt:      prompt,
+		Profile:     profile,
+		Model:       agentProfile.Model,
+		Agent:       agentProfile.Agent,
+		ExtraPrompt: skillContent,
+		AutoMode:    agentProfile.AutoMode,
+		AddDirs:     addDirs,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("launch: %w", err))
@@ -403,15 +422,71 @@ func (s *Service) ListProjects(
 	}
 	projects := make([]*gruv1.Project, 0, len(rows))
 	for _, r := range rows {
-		projects = append(projects, &gruv1.Project{
-			Id:        r.ID,
-			Name:      r.Name,
-			Path:      r.Path,
-			Runtime:   r.Runtime,
-			CreatedAt: parseTimestamp(r.CreatedAt),
-		})
+		projects = append(projects, rowToProject(r))
 	}
 	return connect.NewResponse(&gruv1.ListProjectsResponse{Projects: projects}), nil
+}
+
+// UpdateProject applies a full-list replacement to the project's stored
+// additional_workdirs. The request carries the intended final list — not a
+// patch — so sending an empty list clears it. Validates every entry is an
+// existing directory up front; partial application is not supported.
+func (s *Service) UpdateProject(
+	ctx context.Context,
+	req *connect.Request[gruv1.UpdateProjectRequest],
+) (*connect.Response[gruv1.Project], error) {
+	if req.Msg.Id == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("project id required"))
+	}
+	cleaned := make([]string, 0, len(req.Msg.AdditionalWorkdirs))
+	for _, d := range req.Msg.AdditionalWorkdirs {
+		d = filepath.Clean(d)
+		if d == "" || d == "." {
+			continue
+		}
+		info, err := os.Stat(d)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("additional workdir %q: %w", d, err))
+		}
+		if !info.IsDir() {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("additional workdir %q is not a directory", d))
+		}
+		cleaned = append(cleaned, d)
+	}
+	payload, err := json.Marshal(cleaned)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	row, err := s.store.Queries().UpdateProjectAdditionalWorkdirs(ctx, store.UpdateProjectAdditionalWorkdirsParams{
+		ID:                 req.Msg.Id,
+		AdditionalWorkdirs: string(payload),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("project %s not found", req.Msg.Id))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(rowToProject(row)), nil
+}
+
+// rowToProject converts a sqlc Project row to the protobuf Project, decoding
+// additional_workdirs from its JSON representation. A malformed JSON column
+// falls back to an empty list rather than failing the whole response — the
+// column is DEFAULT '[]' so malformation should be impossible in practice.
+func rowToProject(r db.Project) *gruv1.Project {
+	var addDirs []string
+	if r.AdditionalWorkdirs != "" {
+		_ = json.Unmarshal([]byte(r.AdditionalWorkdirs), &addDirs)
+	}
+	return &gruv1.Project{
+		Id:                 r.ID,
+		Name:               r.Name,
+		Path:               r.Path,
+		Runtime:            r.Runtime,
+		CreatedAt:          parseTimestamp(r.CreatedAt),
+		AdditionalWorkdirs: addDirs,
+	}
 }
 
 // SubscribeEvents sends a snapshot of current sessions, then streams new events.

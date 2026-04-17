@@ -14,3 +14,9 @@ SELECT * FROM projects WHERE path = ? LIMIT 1;
 
 -- name: ListProjects :many
 SELECT * FROM projects ORDER BY name ASC;
+
+-- name: UpdateProjectAdditionalWorkdirs :one
+UPDATE projects
+SET additional_workdirs = sqlc.arg(additional_workdirs)
+WHERE id = sqlc.arg(id)
+RETURNING *;

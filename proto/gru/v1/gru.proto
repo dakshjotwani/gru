@@ -19,6 +19,7 @@ service GruService {
 
   // Projects
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (Project);
   rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
 
   // Real-time event stream
@@ -61,6 +62,11 @@ message Project {
   string path    = 3;
   string runtime = 4;
   google.protobuf.Timestamp created_at = 5;
+
+  // Extra workdirs passed to every session launched in this project as
+  // `--add-dir <path>`. Order is significant — the primary cwd is still
+  // `path`; these append as secondary read/edit dirs.
+  repeated string additional_workdirs = 6;
 }
 
 message SessionEvent {
@@ -92,6 +98,12 @@ message LaunchSessionRequest {
   string profile      = 3;
   string name         = 4;  // required, human-readable session name
   string description  = 5;  // optional, what problem is being solved
+
+  // Extra workdirs for this specific launch. Merged with the project's
+  // saved `additional_workdirs` (project defaults come first, then these),
+  // deduped while preserving order. Each is passed to Claude Code as
+  // `--add-dir <path>`.
+  repeated string add_dirs = 6;
 }
 
 message LaunchSessionResponse {
@@ -110,6 +122,14 @@ message ListProjectsRequest {}
 
 message ListProjectsResponse {
   repeated Project projects = 1;
+}
+
+message UpdateProjectRequest {
+  string id = 1;
+
+  // additional_workdirs replaces the project's saved list verbatim. Send the
+  // full intended list — this is not a patch. Empty list clears it.
+  repeated string additional_workdirs = 2;
 }
 
 message AgentProfile {
