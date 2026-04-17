@@ -18,9 +18,14 @@ func TestCommandAdapter_Conformance(t *testing.T) {
 	sessionCounter := 0
 	adapter := command.New()
 
-	newSpec := func(t *testing.T) env.EnvSpec {
+	newSpec := func(r conformance.Reporter) env.EnvSpec {
 		sessionCounter++
-		workdir := t.TempDir()
+		// t.TempDir captured from the outer function to auto-clean.
+		workdir, err := os.MkdirTemp("", "cmd-spec-*")
+		if err != nil {
+			r.Fatalf("mkdir tmp: %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(workdir) })
 		sessionID := fmt.Sprintf("cmd-%d-%s", sessionCounter, time.Now().Format("150405"))
 		return env.EnvSpec{
 			Name:    sessionID,
@@ -41,16 +46,14 @@ func TestCommandAdapter_Conformance(t *testing.T) {
 		Name:    "command",
 		Adapter: adapter,
 		NewSpec: newSpec,
-		KillBackingResource: func(t *testing.T, inst env.Instance) {
-			// The "backing resource" for the fixture adapter is the sandbox
-			// dir. Remove it and the status probe reports running=false,
-			// which Rehydrate treats as "gone" and errors on.
+		KillBackingResource: func(r conformance.Reporter, inst env.Instance) {
 			ref, err := unwrapUserRef(inst.ProviderRef)
 			if err != nil {
-				t.Fatalf("decode provider ref: %v", err)
+				r.Fatalf("decode provider ref: %v", err)
+				return
 			}
 			if err := os.RemoveAll(ref); err != nil {
-				t.Fatalf("remove sandbox: %v", err)
+				r.Fatalf("remove sandbox: %v", err)
 			}
 		},
 		// events.sh emits a "started" event on launch; caseEventsPump can

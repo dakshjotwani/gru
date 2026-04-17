@@ -33,6 +33,11 @@ func newRootCmd() *cobra.Command {
 			if cmd.Name() == "server" || cmd.Name() == "prune" {
 				return nil
 			}
+			// `gru env` subcommands don't talk to the server — skip config
+			// load so they work before the operator has ever run `gru init`.
+			if parent := cmd.Parent(); parent != nil && parent.Name() == "env" {
+				return nil
+			}
 			if state.serverURL == "" {
 				cfg, err := config.Load(defaultConfigPath())
 				if err != nil {
@@ -63,6 +68,7 @@ func newRootCmd() *cobra.Command {
 		newLaunchCmd(state),
 		newTailCmd(state),
 		newAttachCmd(state),
+		newEnvCmd(),
 	)
 
 	return root

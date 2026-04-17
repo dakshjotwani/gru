@@ -1,11 +1,17 @@
 // Package conformance runs the shared Environment contract test suite against
 // any adapter implementation. See docs/superpowers/specs/2026-04-17-gru-v2-design.md
 // §Success criteria #6 for the case list.
+//
+// The suite is split into pure case functions (each taking a minimal Reporter)
+// and a testing.T adapter layered on top. This lets the same cases drive both
+// `go test` runs and the `gru env test` CLI.
 package conformance
 
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -16,239 +22,280 @@ import (
 
 // Suite describes one adapter-under-test.
 type Suite struct {
-	// Name is used in subtest naming.
-	Name string
-
-	// Adapter is the Environment to run the suite against.
-	Adapter env.Environment
-
-	// NewSpec returns a fresh EnvSpec for one test case. Each case calls
-	// NewSpec(t) to avoid shared state across tests.
-	NewSpec func(t *testing.T) env.EnvSpec
-
-	// KillBackingResource optionally simulates "the backing resource is gone"
-	// for case #4 (Rehydrate-after-kill). Implementations may remove files,
-	// kill tmux sessions, etc. Return nil to skip the test case cleanly.
-	KillBackingResource func(t *testing.T, inst env.Instance)
-
-	// ForceLifecycleEvent triggers a non-heartbeat Event on the given instance
-	// for case #7. If nil, case #7 is skipped.
-	ForceLifecycleEvent func(t *testing.T, inst env.Instance)
-
-	// SupportsEventsRespawn indicates whether the adapter's Events stream has
-	// an external producer that can die and be respawned (case #8). Host
-	// adapter typically returns false; command adapter returns true.
+	Name                  string
+	Adapter               env.Environment
+	NewSpec               func(r Reporter) env.EnvSpec
+	KillBackingResource   func(r Reporter, inst env.Instance)
+	ForceLifecycleEvent   func(r Reporter, inst env.Instance)
 	SupportsEventsRespawn bool
 }
 
-// Run executes the full conformance suite. Call from an adapter's _test.go:
-//
-//	func TestConformance(t *testing.T) {
-//	    conformance.Run(t, conformance.Suite{Name: "host", ...})
-//	}
+// Reporter is the minimal surface case functions need from their test runner.
+// testing.T satisfies this by implementing Helper/Fatalf/Logf/Skip; our CLI
+// runner provides a bespoke implementation.
+type Reporter interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Logf(format string, args ...any)
+	Skip(args ...any)
+	// Failed returns whether Fatalf has been called.
+	Failed() bool
+}
+
+// CaseFunc is the signature of a single conformance case.
+type CaseFunc func(r Reporter, s Suite)
+
+// Cases returns the case list in deterministic order.
+func Cases() []struct {
+	Name string
+	Fn   CaseFunc
+} {
+	return []struct {
+		Name string
+		Fn   CaseFunc
+	}{
+		{"CreateDestroy", caseCreateDestroy},
+		{"ExecEcho", caseExecEcho},
+		{"ExecPtyIsReal", caseExecPtyIsReal},
+		{"RehydrateAfterKill", caseRehydrateAfterKill},
+		{"RehydrateWorks", caseRehydrateWorks},
+		{"DestroyIsIdempotent", caseDestroyIdempotent},
+		{"EventsPump", caseEventsPump},
+		{"EventsRespawn", caseEventsRespawn},
+		{"StatusLifecycle", caseStatusLifecycle},
+	}
+}
+
+// Run executes the full suite via testing.T subtests.
 func Run(t *testing.T, s Suite) {
 	t.Helper()
 	if s.Adapter == nil || s.NewSpec == nil {
 		t.Fatalf("conformance: Suite.Adapter and Suite.NewSpec are required")
 	}
-
-	t.Run(s.Name+"/CreateDestroy", func(t *testing.T) { caseCreateDestroy(t, s) })
-	t.Run(s.Name+"/ExecEcho", func(t *testing.T) { caseExecEcho(t, s) })
-	t.Run(s.Name+"/ExecPtyIsReal", func(t *testing.T) { caseExecPtyIsReal(t, s) })
-	t.Run(s.Name+"/RehydrateAfterKill", func(t *testing.T) { caseRehydrateAfterKill(t, s) })
-	t.Run(s.Name+"/RehydrateWorks", func(t *testing.T) { caseRehydrateWorks(t, s) })
-	t.Run(s.Name+"/DestroyIsIdempotent", func(t *testing.T) { caseDestroyIdempotent(t, s) })
-	t.Run(s.Name+"/EventsPump", func(t *testing.T) { caseEventsPump(t, s) })
-	t.Run(s.Name+"/EventsRespawn", func(t *testing.T) { caseEventsRespawn(t, s) })
-	t.Run(s.Name+"/StatusLifecycle", func(t *testing.T) { caseStatusLifecycle(t, s) })
+	for _, c := range Cases() {
+		c := c
+		t.Run(s.Name+"/"+c.Name, func(t *testing.T) {
+			c.Fn(&testingReporter{t: t}, s)
+		})
+	}
 }
 
-func caseCreateDestroy(t *testing.T, s Suite) {
+// testingReporter adapts *testing.T to Reporter.
+type testingReporter struct{ t *testing.T }
+
+func (r *testingReporter) Helper()                             { r.t.Helper() }
+func (r *testingReporter) Fatalf(format string, args ...any)   { r.t.Fatalf(format, args...) }
+func (r *testingReporter) Logf(format string, args ...any)     { r.t.Logf(format, args...) }
+func (r *testingReporter) Skip(args ...any)                    { r.t.Skip(args...) }
+func (r *testingReporter) Failed() bool                        { return r.t.Failed() }
+
+// ---- cases ----
+
+func caseCreateDestroy(r Reporter, s Suite) {
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	if inst.ProviderRef == "" {
-		t.Fatalf("Create returned empty ProviderRef")
+		r.Fatalf("Create returned empty ProviderRef")
 	}
 	if err := s.Adapter.Destroy(ctx, inst); err != nil {
-		t.Fatalf("Destroy: %v", err)
+		r.Fatalf("Destroy: %v", err)
 	}
 }
 
-func caseExecEcho(t *testing.T, s Suite) {
+func caseExecEcho(r Reporter, s Suite) {
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	defer func() { _ = s.Adapter.Destroy(ctx, inst) }()
 	res, err := s.Adapter.Exec(ctx, inst, []string{"sh", "-c", "echo hello"})
 	if err != nil {
-		t.Fatalf("Exec: %v", err)
+		r.Fatalf("Exec: %v", err)
 	}
 	if res.ExitCode != 0 {
-		t.Fatalf("Exec exit=%d stderr=%q", res.ExitCode, res.Stderr)
+		r.Fatalf("Exec exit=%d stderr=%q", res.ExitCode, res.Stderr)
 	}
 	if !bytes.Contains(res.Stdout, []byte("hello")) {
-		t.Fatalf("Exec stdout %q did not contain %q", res.Stdout, "hello")
+		r.Fatalf("Exec stdout %q did not contain %q", res.Stdout, "hello")
 	}
 }
 
-func caseExecPtyIsReal(t *testing.T, s Suite) {
+func caseExecPtyIsReal(r Reporter, s Suite) {
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	defer func() { _ = s.Adapter.Destroy(ctx, inst) }()
 
-	// Use `stty size` — it prints rows/cols on a real tty and fails on a
-	// pipe. A valid real pty returns two numbers; a pipe returns "stdin
-	// isn't a terminal".
 	stream, err := s.Adapter.ExecPty(ctx, inst, []string{"sh", "-c", "stty size; exit"})
 	if err != nil {
-		t.Fatalf("ExecPty: %v", err)
+		r.Fatalf("ExecPty: %v", err)
 	}
 	defer stream.Close()
 
 	out, err := readWithTimeout(stream, 3*time.Second)
-	if err != nil && err != io.EOF {
-		t.Fatalf("read pty: %v", err)
+	if err != nil && !errors.Is(err, io.EOF) {
+		r.Fatalf("read pty: %v", err)
 	}
 	if strings.Contains(string(out), "not a terminal") {
-		t.Fatalf("ExecPty was not a real pty — got %q", out)
+		r.Fatalf("ExecPty was not a real pty — got %q", out)
 	}
-	// Two integers separated by whitespace (e.g. "24 80") confirm a tty.
 	parts := strings.Fields(strings.TrimSpace(string(out)))
 	if len(parts) < 2 {
-		t.Fatalf("ExecPty output %q did not look like `stty size` output", out)
+		r.Fatalf("ExecPty output %q did not look like `stty size` output", out)
 	}
 }
 
-func caseRehydrateAfterKill(t *testing.T, s Suite) {
+func caseRehydrateAfterKill(r Reporter, s Suite) {
 	if s.KillBackingResource == nil {
-		t.Skip("adapter does not provide KillBackingResource")
+		r.Skip("adapter does not provide KillBackingResource")
+		return
 	}
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	defer func() { _ = s.Adapter.Destroy(ctx, inst) }()
 
-	s.KillBackingResource(t, inst)
+	s.KillBackingResource(r, inst)
 
 	if _, err := s.Adapter.Rehydrate(ctx, inst.ProviderRef); err == nil {
-		t.Fatalf("Rehydrate succeeded after backing resource was killed; expected error")
+		r.Fatalf("Rehydrate succeeded after backing resource was killed; expected error")
 	}
 }
 
-func caseRehydrateWorks(t *testing.T, s Suite) {
+func caseRehydrateWorks(r Reporter, s Suite) {
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	defer func() { _ = s.Adapter.Destroy(ctx, inst) }()
 
 	rehyd, err := s.Adapter.Rehydrate(ctx, inst.ProviderRef)
 	if err != nil {
-		t.Fatalf("Rehydrate: %v", err)
+		r.Fatalf("Rehydrate: %v", err)
 	}
 	res, err := s.Adapter.Exec(ctx, rehyd, []string{"sh", "-c", "echo ok"})
 	if err != nil {
-		t.Fatalf("Exec on rehydrated instance: %v", err)
+		r.Fatalf("Exec on rehydrated instance: %v", err)
 	}
 	if res.ExitCode != 0 || !bytes.Contains(res.Stdout, []byte("ok")) {
-		t.Fatalf("Exec on rehydrated: exit=%d stdout=%q", res.ExitCode, res.Stdout)
+		r.Fatalf("Exec on rehydrated: exit=%d stdout=%q", res.ExitCode, res.Stdout)
 	}
 }
 
-func caseDestroyIdempotent(t *testing.T, s Suite) {
+func caseDestroyIdempotent(r Reporter, s Suite) {
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	if err := s.Adapter.Destroy(ctx, inst); err != nil {
-		t.Fatalf("first Destroy: %v", err)
+		r.Fatalf("first Destroy: %v", err)
 	}
 	if err := s.Adapter.Destroy(ctx, inst); err != nil {
-		t.Fatalf("second Destroy (idempotence): %v", err)
+		r.Fatalf("second Destroy (idempotence): %v", err)
 	}
 }
 
-func caseEventsPump(t *testing.T, s Suite) {
+func caseEventsPump(r Reporter, s Suite) {
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
 	}
 	defer func() { _ = s.Adapter.Destroy(ctx, inst) }()
 
 	evCh, err := s.Adapter.Events(ctx, inst)
 	if err != nil {
-		t.Fatalf("Events: %v", err)
+		r.Fatalf("Events: %v", err)
 	}
 
 	if s.ForceLifecycleEvent != nil {
-		s.ForceLifecycleEvent(t, inst)
+		s.ForceLifecycleEvent(r, inst)
 	}
 
 	select {
 	case evt, ok := <-evCh:
 		if !ok {
-			t.Fatalf("Events channel closed before any event arrived")
+			r.Fatalf("Events channel closed before any event arrived")
 		}
 		if evt.Kind == "" {
-			t.Fatalf("event with empty Kind")
+			r.Fatalf("event with empty Kind")
 		}
 	case <-time.After(2 * time.Second):
 		if s.ForceLifecycleEvent != nil {
-			t.Fatalf("no event received within 2s after ForceLifecycleEvent")
+			r.Fatalf("no event received within 2s after ForceLifecycleEvent")
 		}
-		// If no force hook was provided, an adapter that emits nothing on
-		// its own is still conformant. Not an error.
 	}
 }
 
-func caseEventsRespawn(t *testing.T, s Suite) {
+func caseEventsRespawn(r Reporter, s Suite) {
 	if !s.SupportsEventsRespawn {
-		t.Skip("adapter does not have a killable events producer")
+		r.Skip("adapter does not have a killable events producer")
+		return
 	}
-	// Populated by command-adapter tests. Host adapter skips.
-	t.Skip("TODO: implement once a SupportsEventsRespawn adapter exists")
-}
-
-func caseStatusLifecycle(t *testing.T, s Suite) {
+	// Detailed respawn behavior is exercised in adapter-specific tests with
+	// tunable heartbeat/respawn timings (see internal/env/command/events_test.go).
+	// The conformance gate here is just a smoke test: Events must emit at
+	// least one event and stay open during the window.
 	ctx, cancel := testCtx()
 	defer cancel()
-	inst, err := s.Adapter.Create(ctx, s.NewSpec(t))
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		r.Fatalf("Create: %v", err)
+	}
+	defer func() { _ = s.Adapter.Destroy(ctx, inst) }()
+	evCh, err := s.Adapter.Events(ctx, inst)
+	if err != nil {
+		r.Fatalf("Events: %v", err)
+	}
+	select {
+	case evt, ok := <-evCh:
+		if !ok {
+			r.Fatalf("Events channel closed before any event arrived")
+		}
+		if evt.Kind == "" {
+			r.Fatalf("event with empty Kind")
+		}
+	case <-time.After(3 * time.Second):
+		r.Fatalf("no event observed within 3s on a respawn-capable adapter")
+	}
+}
+
+func caseStatusLifecycle(r Reporter, s Suite) {
+	ctx, cancel := testCtx()
+	defer cancel()
+	inst, err := s.Adapter.Create(ctx, s.NewSpec(r))
+	if err != nil {
+		r.Fatalf("Create: %v", err)
 	}
 	st, err := s.Adapter.Status(ctx, inst)
 	if err != nil {
-		t.Fatalf("Status: %v", err)
+		r.Fatalf("Status: %v", err)
 	}
 	if !st.Running {
-		t.Fatalf("Status.Running=false after Create; want true")
+		r.Fatalf("Status.Running=false after Create; want true")
 	}
 	if err := s.Adapter.Destroy(ctx, inst); err != nil {
-		t.Fatalf("Destroy: %v", err)
+		r.Fatalf("Destroy: %v", err)
 	}
-	// After Destroy, Status should either return running=false or an error.
 	if st2, err := s.Adapter.Status(ctx, inst); err == nil && st2.Running {
-		t.Fatalf("Status.Running=true after Destroy; want false or error")
+		r.Fatalf("Status.Running=true after Destroy; want false or error")
 	}
 }
 
@@ -258,7 +305,7 @@ func testCtx() (context.Context, context.CancelFunc) {
 }
 
 // readWithTimeout reads from r until EOF or timeout. Returns whatever was
-// read. Used so pty reads (which block forever on a live pty) don't hang.
+// read.
 func readWithTimeout(r io.Reader, d time.Duration) ([]byte, error) {
 	var out bytes.Buffer
 	done := make(chan error, 1)
@@ -281,4 +328,49 @@ func readWithTimeout(r io.Reader, d time.Duration) ([]byte, error) {
 	case <-time.After(d):
 		return out.Bytes(), nil
 	}
+}
+
+// CLIReporter is a Reporter implementation for standalone (non-go-test) runs.
+// It buffers logs per-case and records the pass/fail/skip outcome.
+type CLIReporter struct {
+	Logs    strings.Builder
+	failed  bool
+	skipped bool
+}
+
+func (c *CLIReporter) Helper() {}
+func (c *CLIReporter) Fatalf(format string, args ...any) {
+	c.failed = true
+	fmt.Fprintf(&c.Logs, format+"\n", args...)
+	panic(&cliAbort{})
+}
+func (c *CLIReporter) Logf(format string, args ...any) {
+	fmt.Fprintf(&c.Logs, format+"\n", args...)
+}
+func (c *CLIReporter) Skip(args ...any) {
+	c.skipped = true
+	fmt.Fprintln(&c.Logs, args...)
+	panic(&cliAbort{})
+}
+func (c *CLIReporter) Failed() bool  { return c.failed }
+func (c *CLIReporter) Skipped() bool { return c.skipped }
+
+type cliAbort struct{}
+
+// RunOne runs a single case with a CLIReporter. Panics from Fatalf/Skip are
+// recovered so the runner can move on to the next case.
+func RunOne(fn CaseFunc, s Suite) *CLIReporter {
+	rep := &CLIReporter{}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if _, ok := r.(*cliAbort); ok {
+					return
+				}
+				panic(r)
+			}
+		}()
+		fn(rep, s)
+	}()
+	return rep
 }

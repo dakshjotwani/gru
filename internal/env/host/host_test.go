@@ -1,6 +1,8 @@
 package host_test
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -13,26 +15,34 @@ import (
 	"github.com/dakshjotwani/gru/internal/env/host"
 )
 
+func randHex() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
 func TestHostConformance(t *testing.T) {
 	adapter := host.New()
+	// Use t.TempDir at suite setup — each NewSpec call returns a fresh dir.
 	conformance.Run(t, conformance.Suite{
 		Name:    "host",
 		Adapter: adapter,
-		NewSpec: func(t *testing.T) env.EnvSpec {
+		NewSpec: func(r conformance.Reporter) env.EnvSpec {
 			dir := t.TempDir()
 			return env.EnvSpec{
-				Name:     "host-conf-" + t.Name() + "-" + time.Now().Format("150405.000"),
+				Name:     "host-conf-" + time.Now().Format("150405") + "-" + randHex(),
 				Adapter:  "host",
 				Workdirs: []string{dir},
 			}
 		},
-		KillBackingResource: func(t *testing.T, inst env.Instance) {
+		KillBackingResource: func(r conformance.Reporter, inst env.Instance) {
 			dir, err := workdirFromProviderRef(inst.ProviderRef)
 			if err != nil {
-				t.Fatalf("decode provider ref: %v", err)
+				r.Fatalf("decode provider ref: %v", err)
+				return
 			}
 			if err := os.RemoveAll(dir); err != nil {
-				t.Fatalf("remove workdir: %v", err)
+				r.Fatalf("remove workdir: %v", err)
 			}
 		},
 		ForceLifecycleEvent:   nil,
