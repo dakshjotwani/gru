@@ -7,15 +7,52 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Addr    string         `yaml:"addr"`
-	APIKey  string         `yaml:"api_key"`
-	DBPath  string         `yaml:"db_path"`
-	Journal JournalConfig  `yaml:"journal"`
+	Addr      string          `yaml:"addr"`
+	APIKey    string          `yaml:"api_key"`
+	DBPath    string          `yaml:"db_path"`
+	Journal   JournalConfig   `yaml:"journal"`
+	Attention AttentionConfig `yaml:"attention"`
+}
+
+// AttentionConfig tunes the attention-score engine (weights only for v2).
+// Any zero field falls back to the default documented in the v2 spec.
+type AttentionConfig struct {
+	Weights AttentionWeights `yaml:"weights"`
+}
+
+// AttentionWeights overrides individual signal weights. See
+// internal/attention.DefaultWeights for the default values.
+type AttentionWeights struct {
+	Paused         float64 `yaml:"paused"`
+	Notification   float64 `yaml:"notification"`
+	ToolError      float64 `yaml:"tool_error"`
+	StalenessCap   float64 `yaml:"staleness_cap"`
+	StalenessStart string  `yaml:"staleness_start"` // duration string, e.g. "5m"
+	StalenessFull  string  `yaml:"staleness_full"`  // duration string, e.g. "15m"
+}
+
+// ParseStalenessDurations decodes the two duration strings. Returns zero
+// duration for an empty string, letting the engine fall back to its default.
+func (a AttentionWeights) ParseStalenessDurations() (start, full time.Duration, err error) {
+	if a.StalenessStart != "" {
+		start, err = time.ParseDuration(a.StalenessStart)
+		if err != nil {
+			return 0, 0, fmt.Errorf("attention.weights.staleness_start: %w", err)
+		}
+	}
+	if a.StalenessFull != "" {
+		full, err = time.ParseDuration(a.StalenessFull)
+		if err != nil {
+			return 0, 0, fmt.Errorf("attention.weights.staleness_full: %w", err)
+		}
+	}
+	return start, full, nil
 }
 
 // JournalConfig controls the server-managed journal agent singleton.

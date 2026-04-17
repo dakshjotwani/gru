@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dakshjotwani/gru/internal/adapter"
+	"github.com/dakshjotwani/gru/internal/attention"
 	"github.com/dakshjotwani/gru/internal/store"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -52,13 +53,22 @@ func (p *Publisher) Publish(evt *gruv1.SessionEvent) {
 
 // Handler handles POST /events from hook scripts.
 type Handler struct {
-	store *store.Store
-	reg   *adapter.Registry
-	pub   *Publisher
+	store     *store.Store
+	reg       *adapter.Registry
+	pub       *Publisher
+	attention *attention.Engine
 }
 
+// NewHandler wires the HTTP handler. The attention engine is optional — if
+// nil, attention_score is passed through unchanged (v1 behavior).
 func NewHandler(s *store.Store, reg *adapter.Registry, pub *Publisher) http.Handler {
 	return &Handler{store: s, reg: reg, pub: pub}
+}
+
+// NewHandlerWithAttention wires the handler with an attention engine that
+// scores each event into session.attention_score on the way to SQLite.
+func NewHandlerWithAttention(s *store.Store, reg *adapter.Registry, pub *Publisher, a *attention.Engine) http.Handler {
+	return &Handler{store: s, reg: reg, pub: pub, attention: a}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -163,10 +173,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lastEventAt := evt.Timestamp.UTC().Format(time.RFC3339)
+	attentionScore := sess.AttentionScore
+	if h.attention != nil {
+		// Status already transitioned above; forget the score for sessions
+		// that are terminal so we don't keep state for them.
+		switch newStatus {
+		case "completed", "errored", "killed":
+			h.attention.Forget(sess.ID)
+			attentionScore = 0
+		default:
+			snap := h.attention.OnEvent(sess.ID, string(evt.Type))
+			attentionScore = snap.Score
+		}
+	}
 	if err := q.UpdateSessionLastEvent(r.Context(), store.UpdateSessionLastEventParams{
 		Status:         newStatus,
 		LastEventAt:    &lastEventAt,
-		AttentionScore: sess.AttentionScore,
+		AttentionScore: attentionScore,
 		ID:             sess.ID,
 	}); err != nil {
 		// Non-fatal: event is stored and published even if the session timestamp update fails.

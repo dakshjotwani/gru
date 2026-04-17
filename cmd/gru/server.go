@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/adapter"
 	claudeadapter "github.com/dakshjotwani/gru/internal/adapter/claude"
+	"github.com/dakshjotwani/gru/internal/attention"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
@@ -55,7 +56,35 @@ func runServer() error {
 
 	svc := server.NewService(s, pub)
 	svc.SetControllerRegistry(ctrlReg)
-	ingestionHandler := ingestion.NewHandler(s, adapterReg, pub)
+
+	// Build the attention engine from config-provided weights. Any zero
+	// field falls back to the documented defaults.
+	attnWeights := attention.DefaultWeights()
+	cw := cfg.Attention.Weights
+	if cw.Paused != 0 {
+		attnWeights.Paused = cw.Paused
+	}
+	if cw.Notification != 0 {
+		attnWeights.Notification = cw.Notification
+	}
+	if cw.ToolError != 0 {
+		attnWeights.ToolError = cw.ToolError
+	}
+	if cw.StalenessCap != 0 {
+		attnWeights.StalenessCap = cw.StalenessCap
+	}
+	if start, full, err := cw.ParseStalenessDurations(); err != nil {
+		log.Printf("attention: ignoring bad staleness duration: %v", err)
+	} else {
+		if start != 0 {
+			attnWeights.StalenessStart = start
+		}
+		if full != 0 {
+			attnWeights.StalenessFull = full
+		}
+	}
+	attnEngine := attention.New(attnWeights)
+	ingestionHandler := ingestion.NewHandlerWithAttention(s, adapterReg, pub, attnEngine)
 
 	// Start process liveness supervisor in the background.
 	serverCtx, serverCancel := context.WithCancel(context.Background())
