@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,8 +31,34 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func runServer() error {
-	cfgPath := filepath.Join(os.Getenv("HOME"), ".gru", "server.yaml")
+// stateDir returns the directory Gru uses for server.yaml, logs, and the
+// default db_path. Falls back to $HOME/.gru when GRU_STATE_DIR is unset.
+// Overriding via env is what lets a gru-on-gru minion run a second server
+// against its own state dir without touching the parent's ~/.gru/.
+func stateDir() string {
+	if d := os.Getenv("GRU_STATE_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(os.Getenv("HOME"), ".gru")
+}
+
+// writePortFile atomically writes "host:port" to path via a tmp file + rename.
+// The port is always written as 127.0.0.1:<port> so callers get a usable URL
+// even when the listener is bound to [::] or :0.
+func writePortFile(path string, port int) error {
+	payload := fmt.Sprintf("127.0.0.1:%d\n", port)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(payload), 0o644); err != nil {
+		return fmt.Errorf("write tmp port file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("rename port file: %w", err)
+	}
+	return nil
+}
+
+func runServer(portFilePath string) error {
+	cfgPath := filepath.Join(stateDir(), "server.yaml")
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -129,16 +156,31 @@ func runServer() error {
 	// Auth via ?token= query param (browsers can't set headers on WS upgrades).
 	mux.Handle("GET /terminal/{session_id}", server.NewTerminalHandler(cfg.APIKey, s))
 
+	// Bind the listener explicitly so we can read the bound port (and
+	// optionally publish it to --port-file) before serving. Required for
+	// ephemeral-port flows where cfg.Addr is ":0".
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.Addr, err)
+	}
+	boundPort := ln.Addr().(*net.TCPAddr).Port
+
+	if portFilePath != "" {
+		if err := writePortFile(portFilePath, boundPort); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("write port file: %w", err)
+		}
+	}
+
 	// h2c enables HTTP/2 cleartext (required for gRPC without TLS).
 	// CORS wraps the mux so OPTIONS preflights are answered before BearerAuth runs.
 	httpServer := &http.Server{
-		Addr:    cfg.Addr,
 		Handler: h2c.NewHandler(server.CORS(mux), &http2.Server{}),
 	}
 
-	log.Printf("gru server listening on %s (db: %s)", cfg.Addr, cfg.DBPath)
+	log.Printf("gru server listening on 127.0.0.1:%d (db: %s)", boundPort, cfg.DBPath)
 	log.Printf("API key: %s", cfg.APIKey)
-	return httpServer.ListenAndServe()
+	return httpServer.Serve(ln)
 }
 
 // supervisorStoreAdapter adapts *store.Store to supervisor.SessionStore.
@@ -277,11 +319,16 @@ func (a *supervisorPublisherAdapter) PublishStatusChange(_ context.Context, e su
 }
 
 func newServerCmd() *cobra.Command {
-	return &cobra.Command{
+	var portFilePath string
+	c := &cobra.Command{
 		Use:   "server",
 		Short: "Start the gru server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServer()
+			return runServer(portFilePath)
 		},
 	}
+	c.Flags().StringVar(&portFilePath, "port-file", "",
+		"After bind, atomically write 'host:port' to this path. Required for "+
+			"ephemeral-port flows (addr: :0) so callers can discover the real port.")
+	return c
 }
