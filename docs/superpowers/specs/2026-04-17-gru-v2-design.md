@@ -336,7 +336,7 @@ Weights live in `~/.gru/server.yaml` under `attention.weights.*` so the operator
 
 ## The `gru:scaffold-env` skill
 
-Claude Code skill shipped in the Gru repo at `.claude/skills/gru/scaffold-env/`. Not a Gru data model. Resolves the two operator on-ramps:
+Claude Code skill shipped in the Gru repo at `skills/gru/scaffold-env/` (tracked in git; operators symlink it into their per-project `.claude/skills/` per the README in `skills/`). Not a Gru data model. Resolves the two operator on-ramps:
 
 **If the user has no environment:**
 1. Asks targeted questions: what's the work, tools needed, local or remote, trust level.

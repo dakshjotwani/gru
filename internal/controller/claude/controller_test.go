@@ -98,6 +98,46 @@ func TestClaudeController_Launch_SessionAndWindowCreated(t *testing.T) {
 	}
 }
 
+func TestClaudeController_Launch_AddDirs(t *testing.T) {
+	ft := newFakeTmux()
+	c := claudectrl.NewClaudeControllerWithRunner("key", "localhost", "7070", ft)
+	primary := t.TempDir()
+	secondary := t.TempDir()
+	tertiary := t.TempDir()
+
+	_, err := c.Launch(context.Background(), controller.LaunchOptions{
+		SessionID:  "abcd1234-0000-0000-0000-000000000001",
+		ProjectDir: primary,
+		Prompt:     "test",
+		AddDirs:    []string{secondary, "", tertiary}, // empty string should be skipped
+	})
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	var newWindow string
+	for _, call := range ft.runs {
+		joined := strings.Join(call, " ")
+		if strings.Contains(joined, "new-window") {
+			newWindow = joined
+			break
+		}
+	}
+	if newWindow == "" {
+		t.Fatal("new-window call not found")
+	}
+	if !strings.Contains(newWindow, "--add-dir "+secondary) {
+		t.Errorf("expected --add-dir for secondary workdir, got: %s", newWindow)
+	}
+	if !strings.Contains(newWindow, "--add-dir "+tertiary) {
+		t.Errorf("expected --add-dir for tertiary workdir, got: %s", newWindow)
+	}
+	// Empty string must be skipped; there should be no "--add-dir --" sequence.
+	if strings.Contains(newWindow, "--add-dir \"\"") || strings.Contains(newWindow, "--add-dir '--") {
+		t.Errorf("empty AddDirs entry leaked into argv: %s", newWindow)
+	}
+}
+
 func TestClaudeController_Launch_WindowNameFormat(t *testing.T) {
 	ft := newFakeTmux()
 	c := claudectrl.NewClaudeControllerWithRunner("key", "localhost", "7070", ft)

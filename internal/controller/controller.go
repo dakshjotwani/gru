@@ -15,16 +15,21 @@ const (
 )
 
 type LaunchOptions struct {
-	SessionID       string
-	ProjectDir      string
-	Prompt          string
-	Profile         string
-	Model           string            // optional; passed as --model to the agent runtime
-	Agent           string            // optional; passed as --agent to select a Claude Code agent
-	ExtraPrompt     string            // optional extra system prompt content (skills, etc.)
-	AutoMode        bool              // pass --enable-auto-mode to use classifier-based auto-approval
-	NoWorktree      bool              // skip --worktree; ProjectDir is used as-is (non-git dirs like the journal)
-	Env             map[string]string
+	SessionID   string
+	ProjectDir  string
+	Prompt      string
+	Profile     string
+	Model       string   // optional; passed as --model to the agent runtime
+	Agent       string   // optional; passed as --agent to select a Claude Code agent
+	ExtraPrompt string   // optional extra system prompt content (skills, etc.)
+	AutoMode    bool     // pass --enable-auto-mode to use classifier-based auto-approval
+	NoWorktree  bool     // skip --worktree; ProjectDir is used as-is (non-git dirs like the journal)
+	// AddDirs is an ordered list of extra workdirs beyond ProjectDir. Each is
+	// passed to Claude Code as --add-dir <path> so the agent can read/edit
+	// files in secondary repos (kernel + uboot + buildroot, backend + infra,
+	// etc.). The primary cwd remains ProjectDir (v2 spec §Project).
+	AddDirs []string
+	Env     map[string]string
 }
 
 type SessionHandle struct {

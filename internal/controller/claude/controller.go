@@ -111,6 +111,12 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	if opts.Agent != "" {
 		claudeArgs = append(claudeArgs, "--agent", opts.Agent)
 	}
+	for _, dir := range opts.AddDirs {
+		if dir == "" {
+			continue
+		}
+		claudeArgs = append(claudeArgs, "--add-dir", dir)
+	}
 	if opts.ExtraPrompt != "" {
 		escaped := "'" + strings.ReplaceAll(opts.ExtraPrompt, "'", "'\\''") + "'"
 		claudeArgs = append(claudeArgs, "--append-system-prompt", escaped)
@@ -155,15 +161,19 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	if err := os.MkdirAll(sessionLookupDir, 0o755); err == nil {
 		_ = os.WriteFile(filepath.Join(sessionLookupDir, shortID), []byte(sessionID), 0o644)
 	}
-	// The session's actual working directory: worktree for normal launches,
-	// the project dir itself when NoWorktree is set.
-	cwd := opts.ProjectDir
-	if !opts.NoWorktree {
-		cwd = filepath.Join(opts.ProjectDir, ".claude", "worktrees", shortID)
-	}
-	cwdLookupDir := filepath.Join(cwd, ".gru")
-	if err := os.MkdirAll(cwdLookupDir, 0o755); err == nil {
-		_ = os.WriteFile(filepath.Join(cwdLookupDir, "session-id"), []byte(sessionID), 0o644)
+	// For NoWorktree launches (e.g. the journal), the session's CWD is the
+	// project dir itself — write a flat CWD-local lookup so the hook can
+	// resolve the session ID without the worktree naming convention.
+	//
+	// For worktree launches we deliberately do NOT pre-create the worktree
+	// path here: Claude Code runs `git worktree add` when it sees --worktree,
+	// and that command fails if the directory already exists. The legacy
+	// <projectDir>/.gru/sessions/<shortID> lookup written above is enough.
+	if opts.NoWorktree {
+		cwdLookupDir := filepath.Join(opts.ProjectDir, ".gru")
+		if err := os.MkdirAll(cwdLookupDir, 0o755); err == nil {
+			_ = os.WriteFile(filepath.Join(cwdLookupDir, "session-id"), []byte(sessionID), 0o644)
+		}
 	}
 
 	// Set remain-on-exit on the specific window so the pane stays visible
