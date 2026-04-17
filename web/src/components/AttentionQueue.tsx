@@ -30,64 +30,35 @@ function tsSeconds(ts: unknown): number | null {
   return null;
 }
 
-const STATUS_PRIORITY: Record<number, number> = {
-  [SessionStatus.NEEDS_ATTENTION]: 0,
-  [SessionStatus.IDLE]: 1,
-  [SessionStatus.STARTING]: 2,
-  [SessionStatus.RUNNING]: 3,
-};
-
+/** Queue ordering: the backend attention engine rolls all triage signals
+ *  (paused, notification, tool_error, staleness) into a single `attention_score`.
+ *  The queue mirrors that by sorting on the score itself — higher score means
+ *  "the operator should look at this first." Status grouping as a primary sort
+ *  key (v1) gets in the way: a stale+errored running session should rank above
+ *  a newly-idle one, and score encodes that ranking natively. */
 function sortSessions(sessions: Session[]): Session[] {
   return sessions.slice().sort((a, b) => {
-    // Journal role is always pinned to the top.
+    // Journal role is always pinned to the top so it's one keystroke away.
     const aj = a.role === 'journal';
     const bj = b.role === 'journal';
     if (aj !== bj) return aj ? -1 : 1;
 
-    // Primary: status group
-    const pa = STATUS_PRIORITY[a.status] ?? 99;
-    const pb = STATUS_PRIORITY[b.status] ?? 99;
-    if (pa !== pb) return pa - pb;
+    // Primary: attention_score desc. Proto-json omits zero-valued fields, so
+    // a session whose engine score is 0 arrives as `undefined` at runtime,
+    // not 0 — coerce so subtraction never yields NaN (which breaks sort).
+    const as = a.attentionScore || 0;
+    const bs = b.attentionScore || 0;
+    if (as !== bs) return bs - as;
 
-    const aLastEvent = tsSeconds(a.lastEventAt);
-    const bLastEvent = tsSeconds(b.lastEventAt);
+    // Tiebreaker within a score bucket: most recent activity first. Keeps
+    // fresh sessions above stale ones when scores coincidentally match.
+    const aLast = tsSeconds(a.lastEventAt);
+    const bLast = tsSeconds(b.lastEventAt);
+    if (aLast !== null && bLast !== null && aLast !== bLast) return bLast - aLast;
+    if (aLast === null && bLast !== null) return 1;
+    if (bLast === null && aLast !== null) return -1;
 
-    if (a.status === SessionStatus.NEEDS_ATTENTION) {
-      // By attention_score desc, then last_event_at desc; nulls to top
-      if (a.attentionScore !== b.attentionScore) return b.attentionScore - a.attentionScore;
-      if (aLastEvent === null && bLastEvent === null) return 0;
-      if (aLastEvent === null) return -1;
-      if (bLastEvent === null) return 1;
-      return bLastEvent - aLastEvent;
-    }
-
-    if (a.status === SessionStatus.RUNNING) {
-      // By last_event_at desc; nulls to top
-      if (aLastEvent === null && bLastEvent === null) return 0;
-      if (aLastEvent === null) return -1;
-      if (bLastEvent === null) return 1;
-      return bLastEvent - aLastEvent;
-    }
-
-    if (a.status === SessionStatus.IDLE) {
-      // By last_event_at asc (longest-idle first); nulls to top
-      if (aLastEvent === null && bLastEvent === null) return 0;
-      if (aLastEvent === null) return -1;
-      if (bLastEvent === null) return 1;
-      return aLastEvent - bLastEvent;
-    }
-
-    if (a.status === SessionStatus.STARTING) {
-      // By started_at desc; nulls to top
-      const aStarted = tsSeconds(a.startedAt);
-      const bStarted = tsSeconds(b.startedAt);
-      if (aStarted === null && bStarted === null) return 0;
-      if (aStarted === null) return -1;
-      if (bStarted === null) return 1;
-      return bStarted - aStarted;
-    }
-
-    // Stable tiebreaker: sort by ID so equal sessions don't shuffle.
+    // Stable final tiebreaker.
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 }

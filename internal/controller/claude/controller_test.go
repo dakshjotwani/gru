@@ -2,59 +2,113 @@ package claude_test
 
 import (
 	"context"
+	"io"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudectrl "github.com/dakshjotwani/gru/internal/controller/claude"
+	"github.com/dakshjotwani/gru/internal/env"
 )
 
-type fakeTmux struct {
-	runs    [][]string
-	outputs map[string][]byte
-	errs    map[string]error
+// fakeEnv is an in-memory env.Environment that records every Exec/ExecPty call
+// and succeeds unconditionally. It is just enough for the controller tests —
+// real conformance happens in internal/env/host.
+type fakeEnv struct {
+	mu        sync.Mutex
+	execCalls [][]string
+	created   map[string]env.Instance
+	destroyed map[string]bool
 }
 
-func (f *fakeTmux) Run(args ...string) error {
-	f.runs = append(f.runs, args)
-	key := strings.Join(args[:1], " ")
-	if err, ok := f.errs[key]; ok {
-		return err
+func newFakeEnv() *fakeEnv {
+	return &fakeEnv{
+		created:   make(map[string]env.Instance),
+		destroyed: make(map[string]bool),
 	}
-	return nil
 }
 
-func (f *fakeTmux) Output(args ...string) ([]byte, error) {
-	f.runs = append(f.runs, args)
-	key := strings.Join(args, " ")
-	if out, ok := f.outputs[key]; ok {
-		return out, nil
+func (f *fakeEnv) RuntimeID() string { return "host" }
+
+func (f *fakeEnv) Create(_ context.Context, spec env.EnvSpec) (env.Instance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	inst := env.Instance{
+		ID:         spec.Name,
+		Adapter:    "host",
+		PtyHolders: []string{"tmux"},
+		StartedAt:  time.Now(),
 	}
+	f.created[spec.Name] = inst
+	return inst, nil
+}
+
+func (f *fakeEnv) Rehydrate(_ context.Context, providerRef string) (env.Instance, error) {
+	return env.Instance{Adapter: "host", ProviderRef: providerRef, PtyHolders: []string{"tmux"}}, nil
+}
+
+func (f *fakeEnv) Exec(_ context.Context, _ env.Instance, cmd []string) (env.ExecResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execCalls = append(f.execCalls, cmd)
+	// tmux has-session returns non-zero when the session doesn't exist. By
+	// returning ExitCode=1 we tell PersistentPty "no session yet, go ahead
+	// and create one", which is what every Start call expects.
+	if len(cmd) >= 2 && cmd[0] == "tmux" && cmd[1] == "has-session" {
+		return env.ExecResult{ExitCode: 1}, nil
+	}
+	return env.ExecResult{ExitCode: 0}, nil
+}
+
+func (f *fakeEnv) ExecPty(_ context.Context, _ env.Instance, _ []string) (io.ReadWriteCloser, error) {
 	return nil, nil
 }
 
-func newFakeTmux() *fakeTmux {
-	return &fakeTmux{outputs: make(map[string][]byte), errs: make(map[string]error)}
+func (f *fakeEnv) Destroy(_ context.Context, inst env.Instance) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.destroyed[inst.ID] = true
+	return nil
+}
+
+func (f *fakeEnv) Events(_ context.Context, _ env.Instance) (<-chan env.Event, error) {
+	ch := make(chan env.Event)
+	close(ch)
+	return ch, nil
+}
+
+func (f *fakeEnv) Status(_ context.Context, _ env.Instance) (env.Status, error) {
+	return env.Status{Running: true}, nil
+}
+
+func (f *fakeEnv) calls() [][]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([][]string, len(f.execCalls))
+	copy(out, f.execCalls)
+	return out
 }
 
 func TestClaudeController_RuntimeID(t *testing.T) {
-	c := claudectrl.NewClaudeController("key", "localhost", "7070")
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", newFakeEnv())
 	if got := c.RuntimeID(); got != "claude-code" {
 		t.Errorf("RuntimeID = %q, want %q", got, "claude-code")
 	}
 }
 
 func TestClaudeController_Capabilities(t *testing.T) {
-	c := claudectrl.NewClaudeController("key", "localhost", "7070")
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", newFakeEnv())
 	caps := c.Capabilities()
 	if len(caps) != 1 || caps[0] != controller.CapKill {
 		t.Errorf("Capabilities = %v, want [kill]", caps)
 	}
 }
 
-func TestClaudeController_Launch_SessionAndWindowCreated(t *testing.T) {
-	ft := newFakeTmux()
-	c := claudectrl.NewClaudeControllerWithRunner("key", "localhost", "7070", ft)
+func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) {
+	fe := newFakeEnv()
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
 	projectDir := t.TempDir()
 
 	handle, err := c.Launch(context.Background(), controller.LaunchOptions{
@@ -64,43 +118,30 @@ func TestClaudeController_Launch_SessionAndWindowCreated(t *testing.T) {
 		Profile:    "feat-dev",
 	})
 	if err != nil {
-		t.Fatalf("Launch: unexpected error: %v", err)
+		t.Fatalf("Launch: %v", err)
 	}
-	if handle.TmuxSession == "" {
-		t.Error("TmuxSession is empty")
+	if handle.TmuxSession != "gru-abcd1234" {
+		t.Errorf("TmuxSession = %q, want %q", handle.TmuxSession, "gru-abcd1234")
 	}
-	if handle.TmuxWindow == "" {
-		t.Error("TmuxWindow is empty")
-	}
-	if handle.SessionID == "" {
-		t.Error("SessionID is empty")
+	if handle.TmuxWindow != "" {
+		t.Errorf("TmuxWindow = %q, want empty (v2 one-session-per-window layout)", handle.TmuxWindow)
 	}
 
-	var foundSession bool
-	for _, call := range ft.runs {
-		if len(call) > 0 && call[0] == "new-session" {
-			foundSession = true
-		}
-	}
-	if !foundSession {
-		t.Error("tmux new-session was not called")
-	}
-
-	var foundWindow bool
-	for _, call := range ft.runs {
+	var sawNewSession bool
+	for _, call := range fe.calls() {
 		joined := strings.Join(call, " ")
-		if strings.Contains(joined, "new-window") && strings.Contains(joined, "GRU_SESSION_ID") {
-			foundWindow = true
+		if strings.Contains(joined, "new-session") && strings.Contains(joined, "GRU_SESSION_ID") {
+			sawNewSession = true
 		}
 	}
-	if !foundWindow {
-		t.Error("tmux new-window with GRU_SESSION_ID was not called")
+	if !sawNewSession {
+		t.Error("PersistentPty did not issue tmux new-session with env vars")
 	}
 }
 
-func TestClaudeController_Launch_AddDirs(t *testing.T) {
-	ft := newFakeTmux()
-	c := claudectrl.NewClaudeControllerWithRunner("key", "localhost", "7070", ft)
+func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
+	fe := newFakeEnv()
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
 	primary := t.TempDir()
 	secondary := t.TempDir()
 	tertiary := t.TempDir()
@@ -109,54 +150,53 @@ func TestClaudeController_Launch_AddDirs(t *testing.T) {
 		SessionID:  "abcd1234-0000-0000-0000-000000000001",
 		ProjectDir: primary,
 		Prompt:     "test",
-		AddDirs:    []string{secondary, "", tertiary}, // empty string should be skipped
+		AddDirs:    []string{secondary, "", tertiary}, // empty string skipped
 	})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
 
-	var newWindow string
-	for _, call := range ft.runs {
+	var launched string
+	for _, call := range fe.calls() {
 		joined := strings.Join(call, " ")
-		if strings.Contains(joined, "new-window") {
-			newWindow = joined
+		if strings.Contains(joined, "new-session") && strings.Contains(joined, "GRU_SESSION_ID") {
+			launched = joined
 			break
 		}
 	}
-	if newWindow == "" {
-		t.Fatal("new-window call not found")
+	if launched == "" {
+		t.Fatal("new-session call with env vars not found")
 	}
-	if !strings.Contains(newWindow, "--add-dir "+secondary) {
-		t.Errorf("expected --add-dir for secondary workdir, got: %s", newWindow)
+	if !strings.Contains(launched, "--add-dir "+secondary) {
+		t.Errorf("expected --add-dir for secondary workdir in %q", launched)
 	}
-	if !strings.Contains(newWindow, "--add-dir "+tertiary) {
-		t.Errorf("expected --add-dir for tertiary workdir, got: %s", newWindow)
+	if !strings.Contains(launched, "--add-dir "+tertiary) {
+		t.Errorf("expected --add-dir for tertiary workdir in %q", launched)
 	}
-	// Empty string must be skipped; there should be no "--add-dir --" sequence.
-	if strings.Contains(newWindow, "--add-dir \"\"") || strings.Contains(newWindow, "--add-dir '--") {
-		t.Errorf("empty AddDirs entry leaked into argv: %s", newWindow)
+	if strings.Contains(launched, "--add-dir \"\"") || strings.Contains(launched, "--add-dir ''") {
+		t.Errorf("empty AddDirs entry leaked into argv: %s", launched)
 	}
 }
 
-func TestClaudeController_Launch_WindowNameFormat(t *testing.T) {
-	ft := newFakeTmux()
-	c := claudectrl.NewClaudeControllerWithRunner("key", "localhost", "7070", ft)
+func TestClaudeController_Kill_DestroysEnvInstance(t *testing.T) {
+	fe := newFakeEnv()
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
 	projectDir := t.TempDir()
+	sessionID := "abcd1234-0000-0000-0000-000000000099"
 
-	handle, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  "abcd1234-0000-0000-0000-000000000001",
+	if _, err := c.Launch(context.Background(), controller.LaunchOptions{
+		SessionID:  sessionID,
 		ProjectDir: projectDir,
-		Prompt:     "test",
-		Profile:    "feat-dev",
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	if !strings.HasPrefix(handle.TmuxWindow, "feat-dev·") {
-		t.Errorf("TmuxWindow = %q, want prefix %q", handle.TmuxWindow, "feat-dev·")
+	if err := c.Kill(context.Background(), sessionID); err != nil {
+		t.Fatalf("Kill: %v", err)
 	}
-	if !strings.Contains(handle.TmuxWindow, "abcd1234") {
-		t.Errorf("TmuxWindow = %q, want short ID %q", handle.TmuxWindow, "abcd1234")
+	fe.mu.Lock()
+	destroyed := fe.destroyed[sessionID]
+	fe.mu.Unlock()
+	if !destroyed {
+		t.Errorf("Kill did not call env.Destroy for session %s", sessionID)
 	}
 }
-

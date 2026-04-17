@@ -16,6 +16,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
+	"github.com/dakshjotwani/gru/internal/env/host"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/journal"
 	"github.com/dakshjotwani/gru/internal/server"
@@ -51,8 +52,12 @@ func runServer() error {
 	adapterReg := adapter.NewRegistry()
 	adapterReg.Register(claudeadapter.NewNormalizer())
 
+	// env.Host is the default environment — everything runs on the operator's
+	// machine for v2. Future adapters (command/container/cloud) plug in here.
+	hostEnv := host.New()
+
 	ctrlReg := controller.NewRegistry()
-	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", "7777"))
+	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", "7777", hostEnv))
 
 	svc := server.NewService(s, pub)
 	svc.SetControllerRegistry(ctrlReg)
@@ -103,6 +108,10 @@ func runServer() error {
 		10*time.Second,
 	)
 	sv.SetJournalRespawner(&journalRespawner{store: s, reg: ctrlReg, cfg: cfg})
+	// Wire attention-engine rescoring into the supervisor tick so the
+	// staleness signal ramps up for silent sessions (otherwise the score
+	// only changes on hook arrival).
+	sv.SetAttentionRescorer(&attentionRescorer{store: s, pub: pub, engine: attnEngine})
 	go sv.Run(serverCtx)
 
 	mux := http.NewServeMux()
@@ -218,6 +227,36 @@ func (a *supervisorPublisherAdapter) PublishExit(_ context.Context, e supervisor
 	a.pub.Publish(&gruv1.SessionEvent{
 		Type:      eventType,
 		SessionId: e.SessionID,
+		Timestamp: timestamppb.Now(),
+	})
+}
+
+// attentionRescorer adapts the attention engine + store to supervisor's
+// AttentionRescorer interface. The supervisor calls Rescore on every tick so
+// long-silent sessions drift up the queue via the staleness ramp.
+type attentionRescorer struct {
+	store  *store.Store
+	pub    *ingestion.Publisher
+	engine *attention.Engine
+}
+
+func (r *attentionRescorer) Rescore(ctx context.Context, sessionID string) {
+	snap := r.engine.Recompute(sessionID)
+	// Nothing to do if we never saw an event for this session — the engine
+	// returns a zero snapshot and we'd just overwrite score=0 with score=0.
+	if snap.Score == 0 && len(snap.Signals) == 0 {
+		return
+	}
+	if _, err := r.store.Queries().UpdateSessionAttentionScore(ctx, store.UpdateSessionAttentionScoreParams{
+		AttentionScore: snap.Score,
+		ID:             sessionID,
+	}); err != nil {
+		log.Printf("attention: rescore %s: %v", sessionID, err)
+		return
+	}
+	r.pub.Publish(&gruv1.SessionEvent{
+		Type:      "attention.rescored",
+		SessionId: sessionID,
 		Timestamp: timestamppb.Now(),
 	})
 }

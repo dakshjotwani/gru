@@ -71,6 +71,14 @@ type JournalRespawner interface {
 	RespawnJournal(ctx context.Context) error
 }
 
+// AttentionRescorer recomputes the attention score for a live session on
+// every supervisor tick. The real consumer is the attention engine's
+// staleness ramp, which otherwise wouldn't drift without new hook events.
+// Nil-safe: when unset, the supervisor skips rescoring.
+type AttentionRescorer interface {
+	Rescore(ctx context.Context, sessionID string)
+}
+
 // DefaultIdleThreshold is the age beyond which a running session with no new
 // events is treated as stuck and flipped to needs_attention. Chosen to leave
 // comfortable headroom above typical long tool calls (test suites, builds)
@@ -88,6 +96,8 @@ type Supervisor struct {
 	journal        JournalRespawner
 	nextJournalTry time.Time // minimum wall time for the next respawn attempt
 	journalBackoff time.Duration
+
+	rescorer AttentionRescorer
 }
 
 func New(store SessionStore, pub EventPublisher, interval time.Duration) *Supervisor {
@@ -124,13 +134,23 @@ func (s *Supervisor) SetNowFunc(fn func() time.Time) { s.now = fn }
 // disappears).
 func (s *Supervisor) SetJournalRespawner(r JournalRespawner) { s.journal = r }
 
+// SetAttentionRescorer wires the per-tick attention rescore hook. If nil, the
+// attention engine's staleness ramp only advances when a hook event arrives.
+func (s *Supervisor) SetAttentionRescorer(r AttentionRescorer) { s.rescorer = r }
+
 // windowAlive reports whether the window still exists AND has at least one
 // live pane. We set remain-on-exit=on on session windows so users can read the
 // final output, which means a crashed agent leaves a dead pane behind — the
 // window is still listed but the process inside has exited. Treat that as not
 // alive so supervisor marks the session errored (and respawns the journal).
+//
+// When tmuxWindow is empty (v2 one-session-per-window layout), the target is
+// the tmux session itself and list-panes enumerates all panes in the session.
 func (s *Supervisor) windowAlive(tmuxSession, tmuxWindow string) bool {
-	target := tmuxSession + ":" + tmuxWindow
+	target := tmuxSession
+	if tmuxWindow != "" {
+		target = tmuxSession + ":" + tmuxWindow
+	}
 	out, err := s.tmux.Output("list-panes", "-t", target, "-F", "#{pane_dead}")
 	if err != nil {
 		return false // window gone entirely, or tmux session gone
@@ -150,7 +170,10 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 	}
 	journalAlive := false
 	for _, sess := range sessions {
-		if sess.TmuxSession == "" || sess.TmuxWindow == "" {
+		// v1 sessions had a TmuxWindow; v2 (one-session-per-window) leaves it
+		// empty and the target is the tmux session itself. Either way we
+		// require at least a session name.
+		if sess.TmuxSession == "" {
 			continue
 		}
 		if s.windowAlive(sess.TmuxSession, sess.TmuxWindow) {
@@ -158,6 +181,9 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 				journalAlive = true
 			}
 			s.checkStale(ctx, sess)
+			if s.rescorer != nil {
+				s.rescorer.Rescore(ctx, sess.ID)
+			}
 			continue
 		}
 		// Sessions that were idle/needs_attention completed normally;

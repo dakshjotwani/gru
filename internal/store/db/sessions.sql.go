@@ -185,6 +185,43 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 	return items, nil
 }
 
+const updateSessionAttentionScore = `-- name: UpdateSessionAttentionScore :one
+UPDATE sessions
+SET attention_score = ?1
+WHERE id = ?2
+RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role
+`
+
+type UpdateSessionAttentionScoreParams struct {
+	AttentionScore float64
+	ID             string
+}
+
+func (q *Queries) UpdateSessionAttentionScore(ctx context.Context, arg UpdateSessionAttentionScoreParams) (Session, error) {
+	row := q.db.QueryRowContext(ctx, updateSessionAttentionScore, arg.AttentionScore, arg.ID)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Runtime,
+		&i.Status,
+		&i.Profile,
+		&i.Pid,
+		&i.Pgid,
+		&i.AttentionScore,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.LastEventAt,
+		&i.TmuxSession,
+		&i.TmuxWindow,
+		&i.Name,
+		&i.Description,
+		&i.Prompt,
+		&i.Role,
+	)
+	return i, err
+}
+
 const updateSessionLastEvent = `-- name: UpdateSessionLastEvent :exec
 UPDATE sessions
 SET status = ?,

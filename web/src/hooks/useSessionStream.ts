@@ -218,7 +218,9 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
           result.push(session);
         }
       }
-      return result.sort((a, b) => b.attentionScore - a.attentionScore);
+      // Coerce nullish to 0 — protojson omits zero-valued fields, so a session
+      // with engine score 0 arrives as undefined here (NaN subtraction breaks sort).
+      return result.sort((a, b) => (b.attentionScore || 0) - (a.attentionScore || 0));
     },
     [state.sessions]
   );

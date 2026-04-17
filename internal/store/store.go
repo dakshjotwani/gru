@@ -27,6 +27,7 @@ type CreateEventParams    = db.CreateEventParams
 type ListSessionsParams   = db.ListSessionsParams
 type UpdateSessionStatusParams    = db.UpdateSessionStatusParams
 type UpdateSessionLastEventParams = db.UpdateSessionLastEventParams
+type UpdateSessionAttentionScoreParams = db.UpdateSessionAttentionScoreParams
 
 // Open opens (or creates) the SQLite database at path, enables WAL mode,
 // and runs migrations.

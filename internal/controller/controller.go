@@ -44,6 +44,16 @@ type SessionController interface {
 	Launch(ctx context.Context, opts LaunchOptions) (*SessionHandle, error)
 }
 
+// Killer is the optional interface a SessionController may implement to
+// participate in KillSession. Implementations are responsible for tearing
+// down the underlying process (tmux, container, etc.) and releasing any
+// adapter-level resource claims (e.g. env.Host workdir-set uniqueness).
+// Server code should do a type assertion: if the controller does not
+// implement Killer, KillSession falls back to purely database-level cleanup.
+type Killer interface {
+	Kill(ctx context.Context, sessionID string) error
+}
+
 type Registry struct {
 	controllers map[string]SessionController
 }

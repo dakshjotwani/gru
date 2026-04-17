@@ -33,5 +33,11 @@ SET status = ?,
     attention_score = ?
 WHERE id = ?;
 
+-- name: UpdateSessionAttentionScore :one
+UPDATE sessions
+SET attention_score = sqlc.arg(attention_score)
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
 -- name: UpdateSessionPID :exec
 UPDATE sessions SET pid = ?, pgid = ? WHERE id = ?;

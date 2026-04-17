@@ -6,6 +6,7 @@ import { StatusBadge } from './StatusBadge';
 import { KillButton } from './KillButton';
 import { uptimeSeconds, timeAgo } from '../utils/time';
 import { parseEventPayload } from '../utils/payload';
+import { computeSignals } from '../utils/signals';
 import styles from './SessionCard.module.css';
 
 interface SessionCardProps {
@@ -102,6 +103,8 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
   const displayName = session.name || session.id.slice(0, 8);
   const timeInState = getTimeInState(session);
   const contextPreview = getContextPreview(session, events);
+  const signals = computeSignals(session, events);
+  const showScore = session.attentionScore > 0;
 
   async function handleSendInput(text: string) {
     setSending(true);
@@ -166,8 +169,17 @@ export function SessionCard({ session, events, projectName, onSelect, isSelected
           {isJournal && <span className={styles.journalBadge} title="Gru journal agent — server-managed singleton">📓 Journal</span>}
           <span className={styles.name}>{displayName}</span>
           <StatusBadge status={session.status} />
+          <SignalPills signals={signals} />
         </div>
         <div className={styles.meta}>
+          {showScore && (
+            <span
+              className={styles.score}
+              title={`attention_score: ${session.attentionScore.toFixed(2)} (engine-computed, higher = triage first)`}
+            >
+              ★ {session.attentionScore.toFixed(1)}
+            </span>
+          )}
           {projectName && !isJournal && <span className={styles.project}>{projectName}</span>}
           {timeInState && <span className={styles.time}>{timeInState}</span>}
         </div>
@@ -330,6 +342,46 @@ function getAttentionContext(events: SessionEvent[]): { toolName?: string; toolS
     toolInput: toolParsed.toolInput,
     message: notifParsed.message,
   };
+}
+
+/** SignalPills renders the active attention signals as small inline pills next
+ *  to the status badge. Shows *why* a session is ranked where it is — the pill
+ *  labels match the attention engine's signal names so the mental model stays
+ *  one-to-one with the server-side weights. */
+/** SignalPills shows only the signals that add information beyond the status
+ *  badge. `paused` and `notification` are implied by IDLE / NEEDS_ATTENTION,
+ *  so rendering them as pills would duplicate the badge. The ones worth
+ *  surfacing are `stale` (a RUNNING session that has gone quiet) and
+ *  `tool_error` (a recent tool failure that hasn't been recovered from) —
+ *  both describe conditions the status badge doesn't capture. */
+function SignalPills({ signals }: { signals: ReturnType<typeof computeSignals> }) {
+  const pills: { key: string; label: string; title: string; className: string }[] = [];
+  if (signals.toolError) {
+    pills.push({
+      key: 'tool_error',
+      label: 'tool error',
+      title: 'Most recent tool call failed and no work has resumed (tool_error signal, +0.5)',
+      className: styles.pillError,
+    });
+  }
+  if (signals.stale) {
+    pills.push({
+      key: 'stale',
+      label: 'stale',
+      title: 'Running but no events in 5+ minutes (staleness signal, up to +0.3)',
+      className: styles.pillStale,
+    });
+  }
+  if (pills.length === 0) return null;
+  return (
+    <span className={styles.pillGroup}>
+      {pills.map((p) => (
+        <span key={p.key} className={`${styles.pill} ${p.className}`} title={p.title}>
+          {p.label}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function getIdleContext(events: SessionEvent[]): string | null {

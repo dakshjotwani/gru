@@ -35,10 +35,17 @@ func newPruneCmd() *cobra.Command {
 			for _, row := range rows {
 				switch row.Status {
 				case "errored", "completed", "killed":
-					// best-effort: kill the tmux window in case it's still open
-					if row.TmuxSession != nil && row.TmuxWindow != nil {
-						target := *row.TmuxSession + ":" + *row.TmuxWindow
-						_ = exec.Command("tmux", "kill-window", "-t", target).Run()
+					// best-effort: remove the tmux remnants in case they're
+					// still open. v1 sessions had a tmux window inside a
+					// shared project session (kill-window); v2 sessions own
+					// their tmux session (kill-session).
+					if row.TmuxSession != nil && *row.TmuxSession != "" {
+						if row.TmuxWindow != nil && *row.TmuxWindow != "" {
+							target := *row.TmuxSession + ":" + *row.TmuxWindow
+							_ = exec.Command("tmux", "kill-window", "-t", target).Run()
+						} else {
+							_ = exec.Command("tmux", "kill-session", "-t", *row.TmuxSession).Run()
+						}
 					}
 					// delete events first (FK constraint), then the session
 					if _, err := s.DB().ExecContext(ctx,

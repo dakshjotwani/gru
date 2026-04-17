@@ -1,3 +1,8 @@
+// Package claude is the Claude Code session controller. Launches route
+// through env.Environment + persistentpty.PersistentPty so the tmux process
+// lives inside the instance (host, container, …) rather than in the Gru
+// daemon. That separation is what lets a Gru restart leave running sessions
+// alone. See docs/superpowers/specs/2026-04-17-gru-v2-design.md.
 package claude
 
 import (
@@ -7,44 +12,48 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/dakshjotwani/gru/internal/controller"
+	"github.com/dakshjotwani/gru/internal/env"
+	"github.com/dakshjotwani/gru/internal/env/persistentpty"
 	"github.com/google/uuid"
 )
 
-type tmuxRunner interface {
-	Run(args ...string) error
-	Output(args ...string) ([]byte, error)
-}
-
-type realTmux struct{}
-
-func (r *realTmux) Run(args ...string) error {
-	return exec.Command("tmux", args...).Run()
-}
-
-func (r *realTmux) Output(args ...string) ([]byte, error) {
-	return exec.Command("tmux", args...).Output()
-}
-
+// ClaudeController launches Claude Code inside an env.Environment instance,
+// wrapping the process in a detachable tmux session via PersistentPty.
 type ClaudeController struct {
 	apiKey    string
 	host      string
 	port      string
 	claudeBin string
-	tmux      tmuxRunner
+	envAdp    env.Environment
+	pty       *persistentpty.PersistentPty
+
+	mu   sync.Mutex
+	live map[string]env.Instance // sessionID → instance, for Kill lookups
 }
 
-func NewClaudeController(apiKey, host, port string) *ClaudeController {
+// NewClaudeController returns a controller backed by the supplied Environment
+// (typically env/host). Panics if e is nil — the controller has no meaningful
+// fallback if it can't provision environments.
+func NewClaudeController(apiKey, host, port string, e env.Environment) *ClaudeController {
+	if e == nil {
+		panic("claude: NewClaudeController requires a non-nil env.Environment")
+	}
 	bin, err := exec.LookPath("claude")
 	if err != nil {
-		bin = "claude" // fall back and let the shell report the error at launch time
+		bin = "claude" // fall back; let the shell report at launch time
 	}
-	return &ClaudeController{apiKey: apiKey, host: host, port: port, claudeBin: bin, tmux: &realTmux{}}
-}
-
-func NewClaudeControllerWithRunner(apiKey, host, port string, runner tmuxRunner) *ClaudeController {
-	return &ClaudeController{apiKey: apiKey, host: host, port: port, claudeBin: "claude", tmux: runner}
+	return &ClaudeController{
+		apiKey:    apiKey,
+		host:      host,
+		port:      port,
+		claudeBin: bin,
+		envAdp:    e,
+		pty:       persistentpty.New(),
+		live:      make(map[string]env.Instance),
+	}
 }
 
 func (c *ClaudeController) RuntimeID() string { return "claude-code" }
@@ -53,12 +62,20 @@ func (c *ClaudeController) Capabilities() []controller.Capability {
 	return []controller.Capability{controller.CapKill}
 }
 
-func sanitizeProjectName(name string) string {
-	name = strings.ToLower(name)
-	replacer := strings.NewReplacer("/", "-", " ", "-", ".", "-")
-	name = replacer.Replace(name)
-	name = strings.TrimPrefix(name, "gru-")
-	return name
+// shortID truncates a UUID to 8 hex characters for tmux-session naming. The
+// full UUID is still the authoritative session ID.
+func shortID(sessionID string) string {
+	clean := strings.ReplaceAll(sessionID, "-", "")
+	if len(clean) >= 8 {
+		return clean[:8]
+	}
+	return clean
+}
+
+// tmuxName is the stable tmux-session name for a given Gru session. One tmux
+// session per Gru session — a v2 convention departure from v1's one-per-project.
+func tmuxName(sessionID string) string {
+	return "gru-" + shortID(sessionID)
 }
 
 func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
@@ -71,120 +88,119 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		sessionID = uuid.NewString()
 	}
 
-	projectName := sanitizeProjectName(opts.ProjectDir)
-	tmuxSession := "gru-" + projectName
-
-	if err := c.tmux.Run("new-session", "-d", "-s", tmuxSession); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if !strings.Contains(string(exitErr.Stderr), "duplicate session") {
-				_ = err
-			}
-		}
-	}
-
-	shortID := sessionID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	var windowName string
-	if opts.Profile != "" {
-		windowName = opts.Profile + "·" + shortID
-	} else {
-		windowName = shortID
-	}
-
-	// Launch claude interactively. Passing the prompt as a positional argument
-	// starts the session with that task; claude remains interactive afterward.
-	// --worktree <shortID> tells Claude Code to create/reuse a worktree at
-	// <projectDir>/.claude/worktrees/<shortID>, preserving memories across sessions.
-	// Skip for non-git launches (e.g. the journal at ~/.gru/journal).
-	var claudeArgs []string
-	if !opts.NoWorktree {
-		claudeArgs = append(claudeArgs, "--worktree", shortID)
-	}
-	if opts.AutoMode {
-		claudeArgs = append(claudeArgs, "--permission-mode", "auto")
-	}
-	if opts.Model != "" {
-		claudeArgs = append(claudeArgs, "--model", opts.Model)
-	}
-	if opts.Agent != "" {
-		claudeArgs = append(claudeArgs, "--agent", opts.Agent)
-	}
-	for _, dir := range opts.AddDirs {
-		if dir == "" {
+	// Build the ordered workdir list. env.Host enforces uniqueness on this
+	// exact ordered set — first launch wins, duplicates fail loudly.
+	workdirs := []string{opts.ProjectDir}
+	for _, d := range opts.AddDirs {
+		if d == "" {
 			continue
 		}
-		claudeArgs = append(claudeArgs, "--add-dir", dir)
-	}
-	if opts.ExtraPrompt != "" {
-		escaped := "'" + strings.ReplaceAll(opts.ExtraPrompt, "'", "'\\''") + "'"
-		claudeArgs = append(claudeArgs, "--append-system-prompt", escaped)
-	}
-	if opts.Prompt != "" {
-		// Shell-quote the prompt using single quotes so spaces and special
-		// characters are passed through to claude verbatim.
-		escaped := "'" + strings.ReplaceAll(opts.Prompt, "'", "'\\''") + "'"
-		claudeArgs = append(claudeArgs, escaped)
-	}
-	// Inline env vars in the command string — tmux 3.0a does not support -e on new-window.
-	claudeCmd := fmt.Sprintf("GRU_SESSION_ID=%s GRU_API_KEY=%s GRU_HOST=%s GRU_PORT=%s %s %s",
-		sessionID, c.apiKey, c.host, c.port,
-		c.claudeBin, strings.Join(claudeArgs, " "))
-
-	newWindowArgs := []string{
-		"new-window",
-		"-t", tmuxSession,
-		"-n", windowName,
-		"-c", opts.ProjectDir,
-		claudeCmd,
-	}
-	if err := c.tmux.Run(newWindowArgs...); err != nil {
-		return nil, fmt.Errorf("claude: tmux new-window: %w", err)
+		workdirs = append(workdirs, d)
 	}
 
-	// Write lookup files so the hook script can resolve the GRU session ID
-	// from the hook's cwd — Claude Code sanitizes the hook subprocess env.
-	//
-	// Two paths are written so both worktree and non-worktree launches work:
-	//
-	//   1. <projectDir>/.gru/sessions/<shortID>
-	//      Used when Claude runs in a worktree at <projectDir>/.claude/worktrees/<shortID>.
-	//      The hook derives shortID from basename(cwd) and projectDir from three
-	//      levels up.
-	//
-	//   2. <worktreeOrProjectDir>/.gru/session-id
-	//      A flat, CWD-local lookup that works regardless of worktree layout —
-	//      the hook falls back to this when the worktree-convention path misses
-	//      (e.g. the journal, which runs in ~/.gru/journal with no worktree).
-	sessionLookupDir := filepath.Join(opts.ProjectDir, ".gru", "sessions")
-	if err := os.MkdirAll(sessionLookupDir, 0o755); err == nil {
-		_ = os.WriteFile(filepath.Join(sessionLookupDir, shortID), []byte(sessionID), 0o644)
-	}
-	// For NoWorktree launches (e.g. the journal), the session's CWD is the
-	// project dir itself — write a flat CWD-local lookup so the hook can
-	// resolve the session ID without the worktree naming convention.
-	//
-	// For worktree launches we deliberately do NOT pre-create the worktree
-	// path here: Claude Code runs `git worktree add` when it sees --worktree,
-	// and that command fails if the directory already exists. The legacy
-	// <projectDir>/.gru/sessions/<shortID> lookup written above is enough.
-	if opts.NoWorktree {
-		cwdLookupDir := filepath.Join(opts.ProjectDir, ".gru")
-		if err := os.MkdirAll(cwdLookupDir, 0o755); err == nil {
-			_ = os.WriteFile(filepath.Join(cwdLookupDir, "session-id"), []byte(sessionID), 0o644)
-		}
+	inst, err := c.envAdp.Create(ctx, env.EnvSpec{
+		Name:     sessionID,
+		Adapter:  c.envAdp.RuntimeID(),
+		Workdirs: workdirs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claude: env.Create: %w", err)
 	}
 
-	// Set remain-on-exit on the specific window so the pane stays visible
-	// after the command finishes. Must target the window directly — setting
-	// this at the session level does not propagate to new windows in tmux.
-	windowTarget := tmuxSession + ":" + windowName
-	_ = c.tmux.Run("set-window-option", "-t", windowTarget, "remain-on-exit", "on")
+	name := tmuxName(sessionID)
+	shellCmd := buildClaudeCmd(opts, sessionID, c.apiKey, c.host, c.port, c.claudeBin)
+	if err := c.pty.Start(ctx, c.envAdp, inst, name, opts.ProjectDir, shellCmd); err != nil {
+		// Best-effort rollback: release the env instance so the workdir-set
+		// claim doesn't leak and a retry with the same session ID works.
+		_ = c.envAdp.Destroy(context.Background(), inst)
+		return nil, fmt.Errorf("claude: persistentpty.Start: %w", err)
+	}
+
+	c.mu.Lock()
+	c.live[sessionID] = inst
+	c.mu.Unlock()
+
+	writeLookupFiles(opts.ProjectDir, sessionID, opts.NoWorktree)
 
 	return &controller.SessionHandle{
 		SessionID:   sessionID,
-		TmuxSession: tmuxSession,
-		TmuxWindow:  windowName,
+		TmuxSession: name,
+		TmuxWindow:  "", // one-window session; callers target the session directly
 	}, nil
+}
+
+// Kill tears down the tmux session and releases the env instance's resource
+// claims. Idempotent — calling Kill on an unknown session returns nil.
+func (c *ClaudeController) Kill(ctx context.Context, sessionID string) error {
+	c.mu.Lock()
+	inst, ok := c.live[sessionID]
+	if ok {
+		delete(c.live, sessionID)
+	}
+	c.mu.Unlock()
+
+	// Even if we don't have the instance in memory (e.g. after a server
+	// restart), best-effort kill the tmux session by its well-known name so
+	// the pane goes away and the user doesn't have to reach for tmux.
+	name := tmuxName(sessionID)
+	if ok {
+		_ = c.pty.Stop(ctx, c.envAdp, inst, name)
+		return c.envAdp.Destroy(ctx, inst)
+	}
+	_ = exec.CommandContext(ctx, "tmux", "kill-session", "-t", name).Run()
+	return nil
+}
+
+// buildClaudeCmd constructs the shell command string tmux will run as the
+// first window's process. Env vars are inlined because tmux 3.0a does not
+// support `-e` on new-session.
+func buildClaudeCmd(opts controller.LaunchOptions, sessionID, apiKey, host, port, bin string) string {
+	var args []string
+	if !opts.NoWorktree {
+		args = append(args, "--worktree", shortID(sessionID))
+	}
+	if opts.AutoMode {
+		args = append(args, "--permission-mode", "auto")
+	}
+	if opts.Model != "" {
+		args = append(args, "--model", opts.Model)
+	}
+	if opts.Agent != "" {
+		args = append(args, "--agent", opts.Agent)
+	}
+	for _, d := range opts.AddDirs {
+		if d == "" {
+			continue
+		}
+		args = append(args, "--add-dir", d)
+	}
+	if opts.ExtraPrompt != "" {
+		args = append(args, "--append-system-prompt", shellQuote(opts.ExtraPrompt))
+	}
+	if opts.Prompt != "" {
+		args = append(args, shellQuote(opts.Prompt))
+	}
+	return fmt.Sprintf("GRU_SESSION_ID=%s GRU_API_KEY=%s GRU_HOST=%s GRU_PORT=%s %s %s",
+		sessionID, apiKey, host, port, bin, strings.Join(args, " "))
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// writeLookupFiles emits the per-session files that let gru-hook.sh resolve
+// the session ID from its cwd. Best-effort — hook ingestion still works via
+// env var fallbacks if any of these writes fail.
+func writeLookupFiles(projectDir, sessionID string, noWorktree bool) {
+	short := shortID(sessionID)
+	dir := filepath.Join(projectDir, ".gru", "sessions")
+	if err := os.MkdirAll(dir, 0o755); err == nil {
+		_ = os.WriteFile(filepath.Join(dir, short), []byte(sessionID), 0o644)
+	}
+	if noWorktree {
+		cwdDir := filepath.Join(projectDir, ".gru")
+		if err := os.MkdirAll(cwdDir, 0o755); err == nil {
+			_ = os.WriteFile(filepath.Join(cwdDir, "session-id"), []byte(sessionID), 0o644)
+		}
+	}
 }

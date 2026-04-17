@@ -258,10 +258,31 @@ func (s *Service) KillSession(
 			errors.New("journal session is server-managed; disable via `journal.enabled: false` in ~/.gru/server.yaml and restart the server"))
 	}
 
-	// Kill the tmux window using DB coordinates — works across server restarts.
-	if row.TmuxSession != nil && row.TmuxWindow != nil {
-		target := *row.TmuxSession + ":" + *row.TmuxWindow
-		_ = exec.Command("tmux", "kill-window", "-t", target).Run()
+	// Route through the controller's Killer when supported so it can release
+	// env-adapter resource claims (e.g. workdir-set uniqueness) in addition to
+	// tearing down the tmux session. Fall back to a best-effort direct tmux
+	// kill for pre-v2 sessions whose controller was never registered.
+	killed := false
+	if ctrl, err := s.controllerReg.Get(row.Runtime); err == nil {
+		if killer, ok := ctrl.(controller.Killer); ok {
+			if kErr := killer.Kill(ctx, sessionID); kErr == nil {
+				killed = true
+			} else {
+				log.Printf("KillSession: controller.Kill(%s): %v (falling back to direct tmux)", sessionID, kErr)
+			}
+		}
+	}
+	if !killed && row.TmuxSession != nil {
+		target := *row.TmuxSession
+		if row.TmuxWindow != nil && *row.TmuxWindow != "" {
+			target = target + ":" + *row.TmuxWindow
+		}
+		// kill-session for v2 (one-session-per-window); kill-window for v1.
+		if row.TmuxWindow != nil && *row.TmuxWindow != "" {
+			_ = exec.Command("tmux", "kill-window", "-t", target).Run()
+		} else {
+			_ = exec.Command("tmux", "kill-session", "-t", target).Run()
+		}
 	}
 
 	_, err = s.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
@@ -306,11 +327,14 @@ func (s *Service) SendInput(
 		}), nil
 	}
 
-	if row.TmuxSession == nil || row.TmuxWindow == nil {
+	if row.TmuxSession == nil || *row.TmuxSession == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session has no tmux pane"))
 	}
 
-	target := *row.TmuxSession + ":" + *row.TmuxWindow
+	target := *row.TmuxSession
+	if row.TmuxWindow != nil && *row.TmuxWindow != "" {
+		target = target + ":" + *row.TmuxWindow
+	}
 
 	// Use -l for literal text (prevents tmux from interpreting key names).
 	if err := exec.Command("tmux", "send-keys", "-t", target, "-l", "--", req.Msg.Text).Run(); err != nil {
