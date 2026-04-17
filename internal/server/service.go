@@ -16,6 +16,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
+	"github.com/dakshjotwani/gru/internal/env"
+	"github.com/dakshjotwani/gru/internal/env/spec"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/store/db"
@@ -209,6 +211,23 @@ func (s *Service) LaunchSession(
 		addDirs = append(addDirs, d)
 	}
 
+	// Optional env spec: when provided, route this launch through the adapter
+	// it names. Relative paths are resolved against the project dir so users
+	// can keep specs checked into the repo (e.g. .gru/envs/minion.yaml).
+	var envSpec *env.EnvSpec
+	if p := req.Msg.GetEnvSpecPath(); p != "" {
+		resolved := p
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(projectDir, resolved)
+		}
+		loaded, err := spec.LoadFile(resolved)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("load env spec %s: %w", resolved, err))
+		}
+		envSpec = &loaded
+	}
+
 	handle, err := ctrl.Launch(ctx, controller.LaunchOptions{
 		SessionID:   sessionID,
 		ProjectDir:  projectDir,
@@ -219,6 +238,7 @@ func (s *Service) LaunchSession(
 		ExtraPrompt: skillContent,
 		AutoMode:    agentProfile.AutoMode,
 		AddDirs:     addDirs,
+		EnvSpec:     envSpec,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("launch: %w", err))
