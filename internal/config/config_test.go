@@ -9,8 +9,10 @@ import (
 )
 
 func TestLoad_defaults(t *testing.T) {
-	// No config file — should return defaults.
-	cfg, err := config.Load("/nonexistent/path/server.yaml")
+	// No config file at path — Load returns defaults and auto-persists
+	// a generated API key. Use a writable temp path so the persist step succeeds.
+	dir := t.TempDir()
+	cfg, err := config.Load(filepath.Join(dir, "server.yaml"))
 	if err != nil {
 		t.Fatalf("Load returned error for missing file: %v", err)
 	}
