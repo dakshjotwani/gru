@@ -49,3 +49,21 @@ func (r *Registry) List() []string {
 	}
 	return ids
 }
+
+// KnownAdapterIDs is the authoritative list of adapters the Gru binary ships
+// with. spec.LoadFile consults it for up-front validation so a spec file
+// with adapter: kuberntes fails at load time with "unknown adapter; known:
+// host, command" instead of six frames deep inside controller.Launch.
+//
+// New adapters added to the binary must append their RuntimeID here.
+var KnownAdapterIDs = []string{"host", "command"}
+
+// IsKnownAdapter reports whether id is in KnownAdapterIDs.
+func IsKnownAdapter(id string) bool {
+	for _, k := range KnownAdapterIDs {
+		if k == id {
+			return true
+		}
+	}
+	return false
+}

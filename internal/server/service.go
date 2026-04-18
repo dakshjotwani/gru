@@ -155,20 +155,22 @@ func (s *Service) LaunchSession(
 	if req.Msg.Name == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name is required"))
 	}
+	if req.Msg.EnvSpec == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("env_spec is required"))
+	}
 
-	projectDir := filepath.Clean(req.Msg.ProjectDir)
+	specPath, err := resolveSpecPath(req.Msg.EnvSpec)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	loadedSpec, err := spec.LoadFile(specPath)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("load env spec %s: %w", specPath, err))
+	}
+
 	prompt := req.Msg.Prompt
 	profile := req.Msg.Profile
-
-	// Validate the project directory exists before persisting anything.
-	if info, err := os.Stat(projectDir); err != nil {
-		if os.IsNotExist(err) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project directory does not exist: %s", projectDir))
-		}
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cannot access project directory: %w", err))
-	} else if !info.IsDir() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project path is not a directory: %s", projectDir))
-	}
 
 	runtimeID := "claude-code"
 	ctrl, err := s.controllerReg.Get(runtimeID)
@@ -178,8 +180,11 @@ func (s *Service) LaunchSession(
 
 	sessionID := uuid.NewString()
 
-	// Load project config and resolve agent profile if specified.
-	projCfg, err := config.LoadProjectConfig(projectDir)
+	// Load project config from the spec's primary workdir so agent profile
+	// files (.gru/project.yaml, .gru/profiles.yaml) and skill content come
+	// from the same dir the agent will be editing.
+	primaryWorkdir := loadedSpec.Workdirs[0]
+	projCfg, err := config.LoadProjectConfig(primaryWorkdir)
 	if err != nil {
 		log.Printf("LaunchSession: load project config: %v (continuing without profile)", err)
 		projCfg = &config.ProjectConfig{}
@@ -188,65 +193,27 @@ func (s *Service) LaunchSession(
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	skillContent, err := agentProfile.SkillContent(projectDir)
+	skillContent, err := agentProfile.SkillContent(primaryWorkdir)
 	if err != nil {
 		log.Printf("LaunchSession: load skill content: %v (continuing without skills)", err)
 	}
 
-	// Merge add_dirs: request takes precedence for order, but if the project
-	// already has saved defaults and the request is empty we still apply them.
-	// Otherwise the launch request is the source of truth (the modal pre-fills
-	// from project defaults, so user intent lives in the request payload).
-	addDirs := make([]string, 0, len(req.Msg.AddDirs))
-	seen := map[string]struct{}{}
-	for _, d := range req.Msg.AddDirs {
-		d = filepath.Clean(d)
-		if d == "" || d == "." || d == projectDir {
-			continue
-		}
-		if _, dup := seen[d]; dup {
-			continue
-		}
-		seen[d] = struct{}{}
-		addDirs = append(addDirs, d)
-	}
-
-	// Optional env spec: when provided, route this launch through the adapter
-	// it names. Relative paths are resolved against the project dir so users
-	// can keep specs checked into the repo (e.g. .gru/envs/minion.yaml).
-	var envSpec *env.EnvSpec
-	if p := req.Msg.GetEnvSpecPath(); p != "" {
-		resolved := p
-		if !filepath.IsAbs(resolved) {
-			resolved = filepath.Join(projectDir, resolved)
-		}
-		loaded, err := spec.LoadFile(resolved)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				fmt.Errorf("load env spec %s: %w", resolved, err))
-		}
-		envSpec = &loaded
-	}
-
 	handle, err := ctrl.Launch(ctx, controller.LaunchOptions{
 		SessionID:   sessionID,
-		ProjectDir:  projectDir,
 		Prompt:      prompt,
 		Profile:     profile,
 		Model:       agentProfile.Model,
 		Agent:       agentProfile.Agent,
 		ExtraPrompt: skillContent,
 		AutoMode:    agentProfile.AutoMode,
-		AddDirs:     addDirs,
-		EnvSpec:     envSpec,
+		EnvSpec:     loadedSpec,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("launch: %w", err))
 	}
 
-	// Only persist the project after a successful launch — this prevents
-	// invalid or nonexistent paths from polluting the project list.
-	projectID, err := s.upsertProject(ctx, projectDir)
+	// Persist the project row keyed by spec path so ListProjects can show it.
+	projectID, err := s.upsertProject(ctx, specPath, loadedSpec)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("upsert project: %w", err))
 	}
@@ -478,8 +445,14 @@ func (s *Service) ListProfiles(
 	ctx context.Context,
 	req *connect.Request[gruv1.ListProfilesRequest],
 ) (*connect.Response[gruv1.ListProfilesResponse], error) {
-	projectDir := filepath.Clean(req.Msg.ProjectDir)
-	projCfg, err := config.LoadProjectConfig(projectDir)
+	// project_id is the spec path. Load the spec to find its primary
+	// workdir, then look for agent profile files (.gru/project.yaml etc.)
+	// inside that workdir.
+	workdir, err := projectPrimaryWorkdir(req.Msg.ProjectId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	projCfg, err := config.LoadProjectConfig(workdir)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("load project config: %w", err))
 	}
@@ -501,7 +474,10 @@ func (s *Service) SuggestSessionName(
 	if s.suggester == nil {
 		return connect.NewResponse(&gruv1.SuggestSessionNameResponse{}), nil
 	}
-	name, desc, err := s.suggester.suggest(ctx, req.Msg.Prompt, req.Msg.ProjectDir)
+	// project_id is the spec path; suggester wants the primary workdir so
+	// it can peek at the repo's README/language/etc.
+	workdir, _ := projectPrimaryWorkdir(req.Msg.ProjectId)
+	name, desc, err := s.suggester.suggest(ctx, req.Msg.Prompt, workdir)
 	if err != nil {
 		log.Printf("SuggestSessionName: %v", err)
 		return connect.NewResponse(&gruv1.SuggestSessionNameResponse{}), nil
@@ -527,10 +503,9 @@ func (s *Service) ListProjects(
 	return connect.NewResponse(&gruv1.ListProjectsResponse{Projects: projects}), nil
 }
 
-// UpdateProject applies a full-list replacement to the project's stored
-// additional_workdirs. The request carries the intended final list — not a
-// patch — so sending an empty list clears it. Validates every entry is an
-// existing directory up front; partial application is not supported.
+// UpdateProject is now a display-name rename only. Workdirs, adapter config,
+// and add-dirs live in the spec file; to change them, edit the YAML. An
+// empty new_name is a no-op.
 func (s *Service) UpdateProject(
 	ctx context.Context,
 	req *connect.Request[gruv1.UpdateProjectRequest],
@@ -538,28 +513,19 @@ func (s *Service) UpdateProject(
 	if req.Msg.Id == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("project id required"))
 	}
-	cleaned := make([]string, 0, len(req.Msg.AdditionalWorkdirs))
-	for _, d := range req.Msg.AdditionalWorkdirs {
-		d = filepath.Clean(d)
-		if d == "" || d == "." {
-			continue
-		}
-		info, err := os.Stat(d)
+	if req.Msg.NewName == "" {
+		row, err := s.store.Queries().GetProject(ctx, req.Msg.Id)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("additional workdir %q: %w", d, err))
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("project %s not found", req.Msg.Id))
+			}
+			return nil, connect.NewError(connect.CodeInternal, err)
 		}
-		if !info.IsDir() {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("additional workdir %q is not a directory", d))
-		}
-		cleaned = append(cleaned, d)
+		return connect.NewResponse(rowToProject(row)), nil
 	}
-	payload, err := json.Marshal(cleaned)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	row, err := s.store.Queries().UpdateProjectAdditionalWorkdirs(ctx, store.UpdateProjectAdditionalWorkdirsParams{
-		ID:                 req.Msg.Id,
-		AdditionalWorkdirs: string(payload),
+	row, err := s.store.Queries().RenameProject(ctx, store.RenameProjectParams{
+		ID:   req.Msg.Id,
+		Name: req.Msg.NewName,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -570,23 +536,33 @@ func (s *Service) UpdateProject(
 	return connect.NewResponse(rowToProject(row)), nil
 }
 
-// rowToProject converts a sqlc Project row to the protobuf Project, decoding
-// additional_workdirs from its JSON representation. A malformed JSON column
-// falls back to an empty list rather than failing the whole response — the
-// column is DEFAULT '[]' so malformation should be impossible in practice.
+// rowToProject converts a sqlc Project row to the protobuf Project.
 func rowToProject(r db.Project) *gruv1.Project {
-	var addDirs []string
-	if r.AdditionalWorkdirs != "" {
-		_ = json.Unmarshal([]byte(r.AdditionalWorkdirs), &addDirs)
-	}
 	return &gruv1.Project{
-		Id:                 r.ID,
-		Name:               r.Name,
-		Path:               r.Path,
-		Runtime:            r.Runtime,
-		CreatedAt:          parseTimestamp(r.CreatedAt),
-		AdditionalWorkdirs: addDirs,
+		Id:        r.ID,
+		Name:      r.Name,
+		Adapter:   r.Adapter,
+		Runtime:   r.Runtime,
+		CreatedAt: parseTimestamp(r.CreatedAt),
 	}
+}
+
+// projectPrimaryWorkdir returns the first workdir of the spec pointed at by
+// projectID (which is an absolute spec path). Used by ListProfiles and
+// SuggestSessionName, both of which want the "the directory the agent will
+// be editing" without carrying a workdir in the request.
+func projectPrimaryWorkdir(projectID string) (string, error) {
+	if projectID == "" {
+		return "", errors.New("project_id is required")
+	}
+	loaded, err := spec.LoadFile(projectID)
+	if err != nil {
+		return "", fmt.Errorf("load project spec %s: %w", projectID, err)
+	}
+	if len(loaded.Workdirs) == 0 {
+		return "", fmt.Errorf("project spec %s has no workdirs", projectID)
+	}
+	return loaded.Workdirs[0], nil
 }
 
 // SubscribeEvents sends a snapshot of current sessions, then streams new events.
@@ -640,18 +616,68 @@ func (s *Service) SubscribeEvents(
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
-func (s *Service) upsertProject(ctx context.Context, projectDir string) (string, error) {
-	name := filepath.Base(projectDir)
+// upsertProject records a project row keyed on the absolute spec path.
+// Display name is the basename of the spec's parent directory (so
+// ~/.gru/projects/gru-minion-fullstack/spec.yaml → "gru-minion-fullstack").
+// Adapter is cached from the loaded spec so ListProjects can label rows
+// without re-reading the YAML.
+func (s *Service) upsertProject(ctx context.Context, specPath string, loadedSpec env.EnvSpec) (string, error) {
+	name := filepath.Base(filepath.Dir(specPath))
+	if name == "" || name == "." || name == "/" {
+		name = filepath.Base(specPath)
+	}
 	row, err := s.store.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID:      uuid.NewString(),
+		ID:      specPath,
 		Name:    name,
-		Path:    projectDir,
+		Adapter: loadedSpec.Adapter,
 		Runtime: "claude-code",
 	})
 	if err != nil {
 		return "", err
 	}
 	return row.ID, nil
+}
+
+// resolveSpecPath turns the client-supplied env_spec value into an absolute
+// spec.yaml path. Accepted inputs:
+//   - absolute path ending in .yaml → used as-is
+//   - absolute path to a directory → append "spec.yaml"
+//   - bare name "foo" → ~/.gru/projects/foo/spec.yaml
+//   - relative .yaml path → resolved against $PWD
+//
+// The returned path MUST exist; resolveSpecPath errors otherwise.
+func resolveSpecPath(input string) (string, error) {
+	if input == "" {
+		return "", errors.New("env_spec is empty")
+	}
+	var candidate string
+	switch {
+	case strings.HasPrefix(input, "/"):
+		candidate = input
+	case strings.HasSuffix(input, ".yaml") || strings.HasSuffix(input, ".yml"):
+		abs, err := filepath.Abs(input)
+		if err != nil {
+			return "", fmt.Errorf("resolve env_spec %s: %w", input, err)
+		}
+		candidate = abs
+	default:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user home: %w", err)
+		}
+		candidate = filepath.Join(home, ".gru", "projects", input, "spec.yaml")
+	}
+	info, err := os.Stat(candidate)
+	if err != nil {
+		return "", fmt.Errorf("env_spec %s: %w", candidate, err)
+	}
+	if info.IsDir() {
+		candidate = filepath.Join(candidate, "spec.yaml")
+		if _, err := os.Stat(candidate); err != nil {
+			return "", fmt.Errorf("env_spec dir %s has no spec.yaml: %w", candidate, err)
+		}
+	}
+	return candidate, nil
 }
 
 func statusToString(s gruv1.SessionStatus) string {

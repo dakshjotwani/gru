@@ -20,7 +20,7 @@ func TestStore_GetAssistantSession(t *testing.T) {
 
 	// Need a project first (foreign key).
 	if _, err := q.UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "journal", Name: "journal", Path: "/tmp/journal", Runtime: "claude-code",
+		ID: "journal", Name: "journal", Adapter: "host", Runtime: "claude-code",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestStore_RoleDefaultEmpty(t *testing.T) {
 	ctx := context.Background()
 	q := s.Queries()
 	if _, err := q.UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "p1", Name: "p1", Path: "/tmp/p1", Runtime: "claude-code",
+		ID: "p1", Name: "p1", Adapter: "host", Runtime: "claude-code",
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file gru/v1/gru.proto.
  */
 export const file_gru_v1_gru: GenFile = /*@__PURE__*/
-  fileDesc("ChBncnUvdjEvZ3J1LnByb3RvEgZncnUudjEilQMKB1Nlc3Npb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdydW50aW1lGAMgASgJEiUKBnN0YXR1cxgEIAEoDjIVLmdydS52MS5TZXNzaW9uU3RhdHVzEg8KB3Byb2ZpbGUYBSABKAkSFwoPYXR0ZW50aW9uX3Njb3JlGAYgASgBEi4KCnN0YXJ0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1sYXN0X2V2ZW50X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNwaWQYCiABKAUSFAoMdG11eF9zZXNzaW9uGAsgASgJEhMKC3RtdXhfd2luZG93GAwgASgJEgwKBG5hbWUYDSABKAkSEwoLZGVzY3JpcHRpb24YDiABKAkSDgoGcHJvbXB0GA8gASgJEgwKBHJvbGUYECABKAkijwEKB1Byb2plY3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRwYXRoGAMgASgJEg8KB3J1bnRpbWUYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGwoTYWRkaXRpb25hbF93b3JrZGlycxgGIAMoCSKhAQoMU2Vzc2lvbkV2ZW50EgoKAmlkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIPCgdydW50aW1lGAQgASgJEgwKBHR5cGUYBSABKAkSLQoJdGltZXN0YW1wGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdwYXlsb2FkGAcgASgMIlAKE0xpc3RTZXNzaW9uc1JlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIlCgZzdGF0dXMYAiABKA4yFS5ncnUudjEuU2Vzc2lvblN0YXR1cyI5ChRMaXN0U2Vzc2lvbnNSZXNwb25zZRIhCghzZXNzaW9ucxgBIAMoCzIPLmdydS52MS5TZXNzaW9uIh8KEUdldFNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJIq8BChRMYXVuY2hTZXNzaW9uUmVxdWVzdBITCgtwcm9qZWN0X2RpchgBIAEoCRIOCgZwcm9tcHQYAiABKAkSDwoHcHJvZmlsZRgDIAEoCRIMCgRuYW1lGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGFkZF9kaXJzGAYgAygJEhoKDWVudl9zcGVjX3BhdGgYByABKAlIAIgBAUIQCg5fZW52X3NwZWNfcGF0aCI5ChVMYXVuY2hTZXNzaW9uUmVzcG9uc2USIAoHc2Vzc2lvbhgBIAEoCzIPLmdydS52MS5TZXNzaW9uIiAKEktpbGxTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSImChNLaWxsU2Vzc2lvblJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiIgoURGVsZXRlU2Vzc2lvblJlcXVlc3QSCgoCaWQYASABKAkiKAoVRGVsZXRlU2Vzc2lvblJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiFgoUUHJ1bmVTZXNzaW9uc1JlcXVlc3QiLgoVUHJ1bmVTZXNzaW9uc1Jlc3BvbnNlEhUKDWRlbGV0ZWRfY291bnQYASABKAUiFQoTTGlzdFByb2plY3RzUmVxdWVzdCI5ChRMaXN0UHJvamVjdHNSZXNwb25zZRIhCghwcm9qZWN0cxgBIAMoCzIPLmdydS52MS5Qcm9qZWN0Ij8KFFVwZGF0ZVByb2plY3RSZXF1ZXN0EgoKAmlkGAEgASgJEhsKE2FkZGl0aW9uYWxfd29ya2RpcnMYAiADKAkiQAoMQWdlbnRQcm9maWxlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDQoFbW9kZWwYAyABKAkiKgoTTGlzdFByb2ZpbGVzUmVxdWVzdBITCgtwcm9qZWN0X2RpchgBIAEoCSI+ChRMaXN0UHJvZmlsZXNSZXNwb25zZRImCghwcm9maWxlcxgBIAMoCzIULmdydS52MS5BZ2VudFByb2ZpbGUiNAoQU2VuZElucHV0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiOwoRU2VuZElucHV0UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIVCg1lcnJvcl9tZXNzYWdlGAIgASgJIkQKFlN1YnNjcmliZUV2ZW50c1JlcXVlc3QSEwoLcHJvamVjdF9pZHMYASADKAkSFQoNbWluX2F0dGVudGlvbhgCIAEoASJAChlTdWdnZXN0U2Vzc2lvbk5hbWVSZXF1ZXN0Eg4KBnByb21wdBgBIAEoCRITCgtwcm9qZWN0X2RpchgCIAEoCSI/ChpTdWdnZXN0U2Vzc2lvbk5hbWVSZXNwb25zZRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJKvoBCg1TZXNzaW9uU3RhdHVzEh4KGlNFU1NJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASGwoXU0VTU0lPTl9TVEFUVVNfU1RBUlRJTkcQARIaChZTRVNTSU9OX1NUQVRVU19SVU5OSU5HEAISFwoTU0VTU0lPTl9TVEFUVVNfSURMRRADEiIKHlNFU1NJT05fU1RBVFVTX05FRURTX0FUVEVOVElPThAEEhwKGFNFU1NJT05fU1RBVFVTX0NPTVBMRVRFRBAFEhoKFlNFU1NJT05fU1RBVFVTX0VSUk9SRUQQBhIZChVTRVNTSU9OX1NUQVRVU19LSUxMRUQQBzKDBwoKR3J1U2VydmljZRJJCgxMaXN0U2Vzc2lvbnMSGy5ncnUudjEuTGlzdFNlc3Npb25zUmVxdWVzdBocLmdydS52MS5MaXN0U2Vzc2lvbnNSZXNwb25zZRI4CgpHZXRTZXNzaW9uEhkuZ3J1LnYxLkdldFNlc3Npb25SZXF1ZXN0Gg8uZ3J1LnYxLlNlc3Npb24STAoNTGF1bmNoU2Vzc2lvbhIcLmdydS52MS5MYXVuY2hTZXNzaW9uUmVxdWVzdBodLmdydS52MS5MYXVuY2hTZXNzaW9uUmVzcG9uc2USRgoLS2lsbFNlc3Npb24SGi5ncnUudjEuS2lsbFNlc3Npb25SZXF1ZXN0GhsuZ3J1LnYxLktpbGxTZXNzaW9uUmVzcG9uc2USTAoNRGVsZXRlU2Vzc2lvbhIcLmdydS52MS5EZWxldGVTZXNzaW9uUmVxdWVzdBodLmdydS52MS5EZWxldGVTZXNzaW9uUmVzcG9uc2USTAoNUHJ1bmVTZXNzaW9ucxIcLmdydS52MS5QcnVuZVNlc3Npb25zUmVxdWVzdBodLmdydS52MS5QcnVuZVNlc3Npb25zUmVzcG9uc2USQAoJU2VuZElucHV0EhguZ3J1LnYxLlNlbmRJbnB1dFJlcXVlc3QaGS5ncnUudjEuU2VuZElucHV0UmVzcG9uc2USWwoSU3VnZ2VzdFNlc3Npb25OYW1lEiEuZ3J1LnYxLlN1Z2dlc3RTZXNzaW9uTmFtZVJlcXVlc3QaIi5ncnUudjEuU3VnZ2VzdFNlc3Npb25OYW1lUmVzcG9uc2USSQoMTGlzdFByb2plY3RzEhsuZ3J1LnYxLkxpc3RQcm9qZWN0c1JlcXVlc3QaHC5ncnUudjEuTGlzdFByb2plY3RzUmVzcG9uc2USPgoNVXBkYXRlUHJvamVjdBIcLmdydS52MS5VcGRhdGVQcm9qZWN0UmVxdWVzdBoPLmdydS52MS5Qcm9qZWN0EkkKDExpc3RQcm9maWxlcxIbLmdydS52MS5MaXN0UHJvZmlsZXNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RQcm9maWxlc1Jlc3BvbnNlEkkKD1N1YnNjcmliZUV2ZW50cxIeLmdydS52MS5TdWJzY3JpYmVFdmVudHNSZXF1ZXN0GhQuZ3J1LnYxLlNlc3Npb25FdmVudDABQn8KCmNvbS5ncnUudjFCCEdydVByb3RvUAFaLmdpdGh1Yi5jb20vZGFrc2hqb3R3YW5pL2dydS9wcm90by9ncnUvdjE7Z3J1djGiAgNHWFiqAgZHcnUuVjHKAgZHcnVcVjHiAhJHcnVcVjFcR1BCTWV0YWRhdGHqAgdHcnU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChBncnUvdjEvZ3J1LnByb3RvEgZncnUudjEilQMKB1Nlc3Npb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdydW50aW1lGAMgASgJEiUKBnN0YXR1cxgEIAEoDjIVLmdydS52MS5TZXNzaW9uU3RhdHVzEg8KB3Byb2ZpbGUYBSABKAkSFwoPYXR0ZW50aW9uX3Njb3JlGAYgASgBEi4KCnN0YXJ0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1sYXN0X2V2ZW50X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNwaWQYCiABKAUSFAoMdG11eF9zZXNzaW9uGAsgASgJEhMKC3RtdXhfd2luZG93GAwgASgJEgwKBG5hbWUYDSABKAkSEwoLZGVzY3JpcHRpb24YDiABKAkSDgoGcHJvbXB0GA8gASgJEgwKBHJvbGUYECABKAkidQoHUHJvamVjdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2FkYXB0ZXIYAyABKAkSDwoHcnVudGltZRgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKhAQoMU2Vzc2lvbkV2ZW50EgoKAmlkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIPCgdydW50aW1lGAQgASgJEgwKBHR5cGUYBSABKAkSLQoJdGltZXN0YW1wGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdwYXlsb2FkGAcgASgMIlAKE0xpc3RTZXNzaW9uc1JlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIlCgZzdGF0dXMYAiABKA4yFS5ncnUudjEuU2Vzc2lvblN0YXR1cyI5ChRMaXN0U2Vzc2lvbnNSZXNwb25zZRIhCghzZXNzaW9ucxgBIAMoCzIPLmdydS52MS5TZXNzaW9uIh8KEUdldFNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJImwKFExhdW5jaFNlc3Npb25SZXF1ZXN0EhAKCGVudl9zcGVjGAEgASgJEg4KBnByb21wdBgCIAEoCRIMCgRuYW1lGAMgASgJEhMKC2Rlc2NyaXB0aW9uGAQgASgJEg8KB3Byb2ZpbGUYBSABKAkiOQoVTGF1bmNoU2Vzc2lvblJlc3BvbnNlEiAKB3Nlc3Npb24YASABKAsyDy5ncnUudjEuU2Vzc2lvbiIgChJLaWxsU2Vzc2lvblJlcXVlc3QSCgoCaWQYASABKAkiJgoTS2lsbFNlc3Npb25SZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIiIKFERlbGV0ZVNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJIigKFURlbGV0ZVNlc3Npb25SZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIhYKFFBydW5lU2Vzc2lvbnNSZXF1ZXN0Ii4KFVBydW5lU2Vzc2lvbnNSZXNwb25zZRIVCg1kZWxldGVkX2NvdW50GAEgASgFIhUKE0xpc3RQcm9qZWN0c1JlcXVlc3QiOQoUTGlzdFByb2plY3RzUmVzcG9uc2USIQoIcHJvamVjdHMYASADKAsyDy5ncnUudjEuUHJvamVjdCI0ChRVcGRhdGVQcm9qZWN0UmVxdWVzdBIKCgJpZBgBIAEoCRIQCghuZXdfbmFtZRgCIAEoCSJACgxBZ2VudFByb2ZpbGUSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRINCgVtb2RlbBgDIAEoCSIpChNMaXN0UHJvZmlsZXNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiPgoUTGlzdFByb2ZpbGVzUmVzcG9uc2USJgoIcHJvZmlsZXMYASADKAsyFC5ncnUudjEuQWdlbnRQcm9maWxlIjQKEFNlbmRJbnB1dFJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIjsKEVNlbmRJbnB1dFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgSFQoNZXJyb3JfbWVzc2FnZRgCIAEoCSJEChZTdWJzY3JpYmVFdmVudHNSZXF1ZXN0EhMKC3Byb2plY3RfaWRzGAEgAygJEhUKDW1pbl9hdHRlbnRpb24YAiABKAEiPwoZU3VnZ2VzdFNlc3Npb25OYW1lUmVxdWVzdBIOCgZwcm9tcHQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCSI/ChpTdWdnZXN0U2Vzc2lvbk5hbWVSZXNwb25zZRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJKvoBCg1TZXNzaW9uU3RhdHVzEh4KGlNFU1NJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASGwoXU0VTU0lPTl9TVEFUVVNfU1RBUlRJTkcQARIaChZTRVNTSU9OX1NUQVRVU19SVU5OSU5HEAISFwoTU0VTU0lPTl9TVEFUVVNfSURMRRADEiIKHlNFU1NJT05fU1RBVFVTX05FRURTX0FUVEVOVElPThAEEhwKGFNFU1NJT05fU1RBVFVTX0NPTVBMRVRFRBAFEhoKFlNFU1NJT05fU1RBVFVTX0VSUk9SRUQQBhIZChVTRVNTSU9OX1NUQVRVU19LSUxMRUQQBzKDBwoKR3J1U2VydmljZRJJCgxMaXN0U2Vzc2lvbnMSGy5ncnUudjEuTGlzdFNlc3Npb25zUmVxdWVzdBocLmdydS52MS5MaXN0U2Vzc2lvbnNSZXNwb25zZRI4CgpHZXRTZXNzaW9uEhkuZ3J1LnYxLkdldFNlc3Npb25SZXF1ZXN0Gg8uZ3J1LnYxLlNlc3Npb24STAoNTGF1bmNoU2Vzc2lvbhIcLmdydS52MS5MYXVuY2hTZXNzaW9uUmVxdWVzdBodLmdydS52MS5MYXVuY2hTZXNzaW9uUmVzcG9uc2USRgoLS2lsbFNlc3Npb24SGi5ncnUudjEuS2lsbFNlc3Npb25SZXF1ZXN0GhsuZ3J1LnYxLktpbGxTZXNzaW9uUmVzcG9uc2USTAoNRGVsZXRlU2Vzc2lvbhIcLmdydS52MS5EZWxldGVTZXNzaW9uUmVxdWVzdBodLmdydS52MS5EZWxldGVTZXNzaW9uUmVzcG9uc2USTAoNUHJ1bmVTZXNzaW9ucxIcLmdydS52MS5QcnVuZVNlc3Npb25zUmVxdWVzdBodLmdydS52MS5QcnVuZVNlc3Npb25zUmVzcG9uc2USQAoJU2VuZElucHV0EhguZ3J1LnYxLlNlbmRJbnB1dFJlcXVlc3QaGS5ncnUudjEuU2VuZElucHV0UmVzcG9uc2USWwoSU3VnZ2VzdFNlc3Npb25OYW1lEiEuZ3J1LnYxLlN1Z2dlc3RTZXNzaW9uTmFtZVJlcXVlc3QaIi5ncnUudjEuU3VnZ2VzdFNlc3Npb25OYW1lUmVzcG9uc2USSQoMTGlzdFByb2plY3RzEhsuZ3J1LnYxLkxpc3RQcm9qZWN0c1JlcXVlc3QaHC5ncnUudjEuTGlzdFByb2plY3RzUmVzcG9uc2USPgoNVXBkYXRlUHJvamVjdBIcLmdydS52MS5VcGRhdGVQcm9qZWN0UmVxdWVzdBoPLmdydS52MS5Qcm9qZWN0EkkKDExpc3RQcm9maWxlcxIbLmdydS52MS5MaXN0UHJvZmlsZXNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RQcm9maWxlc1Jlc3BvbnNlEkkKD1N1YnNjcmliZUV2ZW50cxIeLmdydS52MS5TdWJzY3JpYmVFdmVudHNSZXF1ZXN0GhQuZ3J1LnYxLlNlc3Npb25FdmVudDABQn8KCmNvbS5ncnUudjFCCEdydVByb3RvUAFaLmdpdGh1Yi5jb20vZGFrc2hqb3R3YW5pL2dydS9wcm90by9ncnUvdjE7Z3J1djGiAgNHWFiqAgZHcnUuVjHKAgZHcnVcVjHiAhJHcnVcVjFcR1BCTWV0YWRhdGHqAgdHcnU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message gru.v1.Session
@@ -115,25 +115,38 @@ export const SessionSchema: GenMessage<Session> = /*@__PURE__*/
   messageDesc(file_gru_v1_gru, 0);
 
 /**
+ * Project is a reference to an env spec on disk. Project.id is the absolute
+ * path to the spec.yaml file; Project.name is the directory basename (used
+ * for display). Workdirs, adapter config, and everything else about how a
+ * session runs lives in the spec file itself — Gru stores only the pointer.
+ *
  * @generated from message gru.v1.Project
  */
 export type Project = Message<"gru.v1.Project"> & {
   /**
+   * absolute path to spec.yaml (also the PK in SQLite)
+   *
    * @generated from field: string id = 1;
    */
   id: string;
 
   /**
+   * display name (usually the directory basename)
+   *
    * @generated from field: string name = 2;
    */
   name: string;
 
   /**
-   * @generated from field: string path = 3;
+   * cached from the spec for listing without a disk read
+   *
+   * @generated from field: string adapter = 3;
    */
-  path: string;
+  adapter: string;
 
   /**
+   * agent runtime, e.g. "claude-code"
+   *
    * @generated from field: string runtime = 4;
    */
   runtime: string;
@@ -142,15 +155,6 @@ export type Project = Message<"gru.v1.Project"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 5;
    */
   createdAt?: Timestamp;
-
-  /**
-   * Extra workdirs passed to every session launched in this project as
-   * `--add-dir <path>`. Order is significant — the primary cwd is still
-   * `path`; these append as secondary read/edit dirs.
-   *
-   * @generated from field: repeated string additional_workdirs = 6;
-   */
-  additionalWorkdirs: string[];
 };
 
 /**
@@ -264,58 +268,48 @@ export const GetSessionRequestSchema: GenMessage<GetSessionRequest> = /*@__PURE_
   messageDesc(file_gru_v1_gru, 5);
 
 /**
+ * LaunchSessionRequest picks an env spec and launches an agent in it. The
+ * spec declares everything about where the session runs — workdirs,
+ * adapter, source isolation, mounts — so the launch payload is minimal.
+ *
  * @generated from message gru.v1.LaunchSessionRequest
  */
 export type LaunchSessionRequest = Message<"gru.v1.LaunchSessionRequest"> & {
   /**
-   * @generated from field: string project_dir = 1;
+   * Required. Either an absolute path to a spec.yaml file, or a project
+   * name that resolves to ~/.gru/projects/<name>/spec.yaml.
+   *
+   * @generated from field: string env_spec = 1;
    */
-  projectDir: string;
+  envSpec: string;
 
   /**
+   * required
+   *
    * @generated from field: string prompt = 2;
    */
   prompt: string;
 
   /**
-   * @generated from field: string profile = 3;
-   */
-  profile: string;
-
-  /**
-   * required, human-readable session name
+   * required, human-readable session label
    *
-   * @generated from field: string name = 4;
+   * @generated from field: string name = 3;
    */
   name: string;
 
   /**
-   * optional, what problem is being solved
+   * optional, what problem the session is solving
    *
-   * @generated from field: string description = 5;
+   * @generated from field: string description = 4;
    */
   description: string;
 
   /**
-   * Extra workdirs for this specific launch. Merged with the project's
-   * saved `additional_workdirs` (project defaults come first, then these),
-   * deduped while preserving order. Each is passed to Claude Code as
-   * `--add-dir <path>`.
+   * optional agent profile name
    *
-   * @generated from field: repeated string add_dirs = 6;
+   * @generated from field: string profile = 5;
    */
-  addDirs: string[];
-
-  /**
-   * Optional path to an env-spec YAML (see internal/env/spec). When set,
-   * the server resolves the spec and routes this launch through the
-   * adapter declared there (currently "host" or "command"). Relative
-   * paths are resolved against project_dir. Unset = the server's default
-   * adapter (host), preserving v1 behavior.
-   *
-   * @generated from field: optional string env_spec_path = 7;
-   */
-  envSpecPath?: string;
+  profile: string;
 };
 
 /**
@@ -479,21 +473,26 @@ export const ListProjectsResponseSchema: GenMessage<ListProjectsResponse> = /*@_
   messageDesc(file_gru_v1_gru, 15);
 
 /**
+ * UpdateProjectRequest lets the UI rename a project (rename the directory
+ * under ~/.gru/projects/). Workdirs / adapter config are edited by hand in
+ * the spec file, not through the API.
+ *
  * @generated from message gru.v1.UpdateProjectRequest
  */
 export type UpdateProjectRequest = Message<"gru.v1.UpdateProjectRequest"> & {
   /**
+   * absolute spec path
+   *
    * @generated from field: string id = 1;
    */
   id: string;
 
   /**
-   * additional_workdirs replaces the project's saved list verbatim. Send the
-   * full intended list — this is not a patch. Empty list clears it.
+   * optional rename; empty = no change
    *
-   * @generated from field: repeated string additional_workdirs = 2;
+   * @generated from field: string new_name = 2;
    */
-  additionalWorkdirs: string[];
+  newName: string;
 };
 
 /**
@@ -531,13 +530,17 @@ export const AgentProfileSchema: GenMessage<AgentProfile> = /*@__PURE__*/
   messageDesc(file_gru_v1_gru, 17);
 
 /**
+ * ListProfilesRequest asks for agent profiles associated with a project.
+ * project_id is the spec path so the server can look at the spec's workdirs
+ * for local profile files (e.g. .gru/profiles.yaml inside workdirs[0]).
+ *
  * @generated from message gru.v1.ListProfilesRequest
  */
 export type ListProfilesRequest = Message<"gru.v1.ListProfilesRequest"> & {
   /**
-   * @generated from field: string project_dir = 1;
+   * @generated from field: string project_id = 1;
    */
-  projectDir: string;
+  projectId: string;
 };
 
 /**
@@ -642,9 +645,11 @@ export type SuggestSessionNameRequest = Message<"gru.v1.SuggestSessionNameReques
   prompt: string;
 
   /**
-   * @generated from field: string project_dir = 2;
+   * absolute spec path
+   *
+   * @generated from field: string project_id = 2;
    */
-  projectDir: string;
+  projectId: string;
 };
 
 /**

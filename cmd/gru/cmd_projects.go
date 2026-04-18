@@ -35,24 +35,20 @@ func newProjectsCmd(s *rootState) *cobra.Command {
 			projects := resp.Msg.Projects
 
 			if jsonOut {
-				// Hand-render to keep the output stable and small — proto-json
-				// would include unset fields and protobuf-specific noise that
-				// callers don't need.
+				// Hand-render to keep the output stable and small.
 				type projectOut struct {
-					ID                 string   `json:"id"`
-					Name               string   `json:"name"`
-					Path               string   `json:"path"`
-					Runtime            string   `json:"runtime"`
-					AdditionalWorkdirs []string `json:"additional_workdirs,omitempty"`
+					ID      string `json:"id"`       // absolute spec path
+					Name    string `json:"name"`
+					Adapter string `json:"adapter"`
+					Runtime string `json:"runtime"`
 				}
 				list := make([]projectOut, 0, len(projects))
 				for _, p := range projects {
 					list = append(list, projectOut{
-						ID:                 p.Id,
-						Name:               p.Name,
-						Path:               p.Path,
-						Runtime:            p.Runtime,
-						AdditionalWorkdirs: p.AdditionalWorkdirs,
+						ID:      p.Id,
+						Name:    p.Name,
+						Adapter: p.Adapter,
+						Runtime: p.Runtime,
 					})
 				}
 				enc := json.NewEncoder(out)
@@ -64,10 +60,10 @@ func newProjectsCmd(s *rootState) *cobra.Command {
 				fmt.Fprintln(out, "no projects")
 				return nil
 			}
-			fmt.Fprintf(out, "%-36s  %-20s  %s\n", "ID", "NAME", "PATH")
+			fmt.Fprintf(out, "%-20s  %-10s  %s\n", "NAME", "ADAPTER", "SPEC")
 			fmt.Fprintln(out, hrule(80))
 			for _, p := range projects {
-				fmt.Fprintf(out, "%-36s  %-20s  %s\n", p.Id, p.Name, p.Path)
+				fmt.Fprintf(out, "%-20s  %-10s  %s\n", p.Name, p.Adapter, p.Id)
 			}
 			return nil
 		},

@@ -16,7 +16,6 @@ type Querier interface {
 	GetAssistantSession(ctx context.Context) (Session, error)
 	GetLatestEventForSession(ctx context.Context, sessionID string) (Event, error)
 	GetProject(ctx context.Context, id string) (Project, error)
-	GetProjectByPath(ctx context.Context, path string) (Project, error)
 	GetSession(ctx context.Context, id string) (Session, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]Event, error)
 	ListProjects(ctx context.Context) ([]Project, error)
@@ -25,7 +24,7 @@ type Querier interface {
 	// assistant-role singletons. Used by PruneSessions to delete in a single
 	// atomic loop without an extra ListSessions round-trip.
 	ListTerminalSessionIDs(ctx context.Context) ([]string, error)
-	UpdateProjectAdditionalWorkdirs(ctx context.Context, arg UpdateProjectAdditionalWorkdirsParams) (Project, error)
+	RenameProject(ctx context.Context, arg RenameProjectParams) (Project, error)
 	UpdateSessionAttentionScore(ctx context.Context, arg UpdateSessionAttentionScoreParams) (Session, error)
 	UpdateSessionLastEvent(ctx context.Context, arg UpdateSessionLastEventParams) error
 	UpdateSessionPID(ctx context.Context, arg UpdateSessionPIDParams) error

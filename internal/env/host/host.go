@@ -75,6 +75,31 @@ func (a *Adapter) RuntimeID() string { return adapterID }
 // lets us evolve the schema without breaking on-disk sessions.
 type providerRefPayload struct {
 	Workdirs []string `json:"workdirs"`
+	Worktree bool     `json:"worktree,omitempty"` // controls Claude Code's --worktree flag via AgentArgs
+	ID       string   `json:"id,omitempty"`       // echoed from spec.Name so AgentArgs can shortID it
+}
+
+// hostConfig is the optional EnvSpec.Config shape the host adapter reads.
+// All fields are optional; zero-values give v1-equivalent behavior.
+type hostConfig struct {
+	Worktree bool `json:"worktree"`
+}
+
+// parseHostConfig tolerates a nil or partial map. Extra keys are ignored so
+// future fields on other adapters that happen to share keys don't break.
+func parseHostConfig(raw map[string]any) (hostConfig, error) {
+	var cfg hostConfig
+	if raw == nil {
+		return cfg, nil
+	}
+	if v, ok := raw["worktree"]; ok {
+		b, ok := v.(bool)
+		if !ok {
+			return cfg, fmt.Errorf("host: config.worktree must be a bool, got %T", v)
+		}
+		cfg.Worktree = b
+	}
+	return cfg, nil
 }
 
 func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, error) {
@@ -94,7 +119,16 @@ func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, e
 		}
 	}
 
-	refBytes, err := json.Marshal(providerRefPayload{Workdirs: spec.Workdirs})
+	cfg, err := parseHostConfig(spec.Config)
+	if err != nil {
+		return env.Instance{}, err
+	}
+
+	refBytes, err := json.Marshal(providerRefPayload{
+		Workdirs: spec.Workdirs,
+		Worktree: cfg.Worktree,
+		ID:       spec.Name,
+	})
 	if err != nil {
 		return env.Instance{}, fmt.Errorf("host: marshal provider ref: %w", err)
 	}
@@ -263,6 +297,36 @@ func (a *Adapter) Status(ctx context.Context, inst env.Instance) (env.Status, er
 		DroppedEvents: dropped,
 		AdapterDetail: map[string]any{"workdir": wd},
 	}, nil
+}
+
+// AgentArgs declares --worktree when config.worktree was true. Cwd stays
+// empty so the controller uses spec.Workdirs[0] as the cwd.
+func (a *Adapter) AgentArgs(ctx context.Context, inst env.Instance) (env.AgentArgs, error) {
+	var payload providerRefPayload
+	if err := json.Unmarshal([]byte(inst.ProviderRef), &payload); err != nil {
+		return env.AgentArgs{}, fmt.Errorf("host: decode provider ref for AgentArgs: %w", err)
+	}
+	if !payload.Worktree {
+		return env.AgentArgs{}, nil
+	}
+	id := payload.ID
+	if id == "" {
+		id = inst.ID
+	}
+	return env.AgentArgs{
+		ExtraArgs: []string{"--worktree", shortID(id)},
+	}, nil
+}
+
+// shortID takes the first 8 hex chars of a UUID-ish session id (dashes
+// stripped). Used for --worktree <shortID>. Mirrors ClaudeController's
+// tmuxName helper so operator-facing identifiers agree.
+func shortID(sessionID string) string {
+	clean := strings.ReplaceAll(sessionID, "-", "")
+	if len(clean) >= 8 {
+		return clean[:8]
+	}
+	return clean
 }
 
 func primaryWorkdir(inst env.Instance) (string, error) {

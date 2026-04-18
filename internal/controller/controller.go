@@ -16,29 +16,24 @@ const (
 	CapInjectContext Capability = "inject_context"
 )
 
+// LaunchOptions is the controller-level payload for a session launch. The
+// env spec is load-bearing: it declares the adapter, the workdirs the agent
+// will see, and any adapter-specific config (worktree on/off, custom
+// mounts, command templates). The controller passes it verbatim to
+// env.Environment.Create — no workdir override, no add-dir merging.
 type LaunchOptions struct {
 	SessionID   string
-	ProjectDir  string
 	Prompt      string
 	Profile     string
-	Model       string   // optional; passed as --model to the agent runtime
-	Agent       string   // optional; passed as --agent to select a Claude Code agent
-	ExtraPrompt string   // optional extra system prompt content (skills, etc.)
-	AutoMode    bool     // pass --enable-auto-mode to use classifier-based auto-approval
-	NoWorktree  bool     // skip --worktree; ProjectDir is used as-is (non-git dirs like the journal)
-	// AddDirs is an ordered list of extra workdirs beyond ProjectDir. Each is
-	// passed to Claude Code as --add-dir <path> so the agent can read/edit
-	// files in secondary repos (kernel + uboot + buildroot, backend + infra,
-	// etc.). The primary cwd remains ProjectDir (v2 spec §Project).
-	AddDirs []string
-	Env     map[string]string
+	Model       string // optional; passed as --model to the agent runtime
+	Agent       string // optional; passed as --agent to select a Claude Code agent
+	ExtraPrompt string // optional extra system prompt content (skills, etc.)
+	AutoMode    bool   // pass --enable-auto-mode to use classifier-based auto-approval
+	Env         map[string]string
 
-	// EnvSpec, when non-nil, selects the env.Environment adapter for this
-	// launch (via its Adapter field) and carries adapter-specific Config
-	// through to env.Environment.Create. ProjectDir is always the primary
-	// workdir even when EnvSpec also sets Workdirs; AddDirs are appended.
-	// When nil, controllers fall back to their default adapter (host).
-	EnvSpec *env.EnvSpec
+	// EnvSpec carries the adapter name, Workdirs, and Config for this launch.
+	// Required — the controller does not synthesize a default spec.
+	EnvSpec env.EnvSpec
 }
 
 type SessionHandle struct {

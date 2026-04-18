@@ -16,12 +16,11 @@ type Event struct {
 }
 
 type Project struct {
-	ID                 string
-	Name               string
-	Path               string
-	Runtime            string
-	CreatedAt          string
-	AdditionalWorkdirs string
+	ID        string
+	Name      string
+	Adapter   string
+	Runtime   string
+	CreatedAt string
 }
 
 type SchemaMigration struct {

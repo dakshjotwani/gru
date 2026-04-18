@@ -98,8 +98,11 @@ func tmuxName(sessionID string) string {
 }
 
 func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
-	if _, err := os.Stat(opts.ProjectDir); err != nil {
-		return nil, fmt.Errorf("claude: project dir: %w", err)
+	if len(opts.EnvSpec.Workdirs) == 0 {
+		return nil, fmt.Errorf("claude: env spec has no workdirs")
+	}
+	if opts.EnvSpec.Adapter == "" {
+		return nil, fmt.Errorf("claude: env spec has no adapter")
 	}
 
 	sessionID := opts.SessionID
@@ -107,19 +110,19 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		sessionID = uuid.NewString()
 	}
 
-	// Build the ordered workdir list. env.Host enforces uniqueness on this
-	// exact ordered set — first launch wins, duplicates fail loudly.
-	workdirs := []string{opts.ProjectDir}
-	for _, d := range opts.AddDirs {
-		if d == "" {
-			continue
-		}
-		workdirs = append(workdirs, d)
+	adapter, err := c.envs.Get(opts.EnvSpec.Adapter)
+	if err != nil {
+		return nil, fmt.Errorf("claude: env adapter %q: %w", opts.EnvSpec.Adapter, err)
 	}
 
-	adapter, spec, err := c.resolveAdapterAndSpec(opts, sessionID, workdirs)
-	if err != nil {
-		return nil, err
+	// Take the spec verbatim; override only Name (session id lives in the
+	// controller, not in the spec file).
+	spec := opts.EnvSpec
+	spec.Name = sessionID
+
+	primaryWorkdir := spec.Workdirs[0]
+	if _, err := os.Stat(primaryWorkdir); err != nil {
+		return nil, fmt.Errorf("claude: primary workdir %q: %w", primaryWorkdir, err)
 	}
 
 	inst, err := adapter.Create(ctx, spec)
@@ -135,11 +138,36 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	c.live[sessionID] = liveSession{adapter: adapter, inst: inst}
 	c.mu.Unlock()
 
+	// Ask the adapter for per-launch flags (--worktree when opted in) and
+	// optional cwd override. Host with worktree=true returns ["--worktree",
+	// <shortID>]; command returns nothing by default.
+	agentArgs, err := adapter.AgentArgs(ctx, inst)
+	if err != nil {
+		c.mu.Lock()
+		delete(c.live, sessionID)
+		c.mu.Unlock()
+		_ = adapter.Destroy(context.Background(), inst)
+		return nil, fmt.Errorf("claude: env.AgentArgs: %w", err)
+	}
+	agentCwd := agentArgs.Cwd
+	if agentCwd == "" {
+		agentCwd = primaryWorkdir
+	}
+
+	// --add-dir <each extra workdir>. The spec's Workdirs[0] is the cwd;
+	// Workdirs[1..] become --add-dir flags for Claude Code.
+	addDirArgs := make([]string, 0, 2*(len(spec.Workdirs)-1))
+	for _, d := range spec.Workdirs[1:] {
+		if d == "" {
+			continue
+		}
+		addDirArgs = append(addDirArgs, "--add-dir", d)
+	}
+
 	name := tmuxName(sessionID)
-	shellCmd := buildClaudeCmd(opts, sessionID, c.apiKey, c.host, c.port, c.claudeBin)
-	if err := c.pty.Start(ctx, adapter, inst, name, opts.ProjectDir, shellCmd); err != nil {
-		// Best-effort rollback: release the env instance so the workdir-set
-		// claim doesn't leak and a retry with the same session ID works.
+	shellCmd := buildClaudeCmd(opts, sessionID, c.apiKey, c.host, c.port, c.claudeBin, agentArgs.ExtraArgs, addDirArgs)
+	if err := c.pty.Start(ctx, adapter, inst, name, agentCwd, shellCmd); err != nil {
+		// Best-effort rollback.
 		c.mu.Lock()
 		delete(c.live, sessionID)
 		c.mu.Unlock()
@@ -147,46 +175,26 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		return nil, fmt.Errorf("claude: persistentpty.Start: %w", err)
 	}
 
-	writeLookupFiles(opts.ProjectDir, sessionID, opts.NoWorktree)
+	writeLookupFiles(primaryWorkdir, sessionID, !containsWorktreeFlag(agentArgs.ExtraArgs))
 
 	return &controller.SessionHandle{
 		SessionID:   sessionID,
 		TmuxSession: name,
-		TmuxWindow:  "", // one-window session; callers target the session directly
+		TmuxWindow:  "",
 	}, nil
 }
 
-// resolveAdapterAndSpec picks the env adapter and builds the spec for this
-// launch. When opts.EnvSpec is nil, the default adapter gets a minimal spec
-// scoped to the session's workdirs. Otherwise the caller's spec is taken
-// verbatim, but Name and Workdirs are forced to the session's values — the
-// controller always owns the session identity and the workdir set, not the
-// spec file.
-func (c *ClaudeController) resolveAdapterAndSpec(opts controller.LaunchOptions, sessionID string, workdirs []string) (env.Environment, env.EnvSpec, error) {
-	if opts.EnvSpec == nil {
-		adapter, err := c.envs.Get(c.defaultAdapter)
-		if err != nil {
-			return nil, env.EnvSpec{}, fmt.Errorf("claude: default adapter %q: %w", c.defaultAdapter, err)
+// containsWorktreeFlag reports whether --worktree is in the adapter's
+// extra args. Used only to decide whether writeLookupFiles should also
+// drop a cwd-based session-id file (for the non-worktree path). This is
+// a file-placement heuristic, not a launch-behavior switch.
+func containsWorktreeFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--worktree" {
+			return true
 		}
-		return adapter, env.EnvSpec{
-			Name:     sessionID,
-			Adapter:  c.defaultAdapter,
-			Workdirs: workdirs,
-		}, nil
 	}
-	adapterID := opts.EnvSpec.Adapter
-	if adapterID == "" {
-		adapterID = c.defaultAdapter
-	}
-	adapter, err := c.envs.Get(adapterID)
-	if err != nil {
-		return nil, env.EnvSpec{}, fmt.Errorf("claude: env adapter %q: %w", adapterID, err)
-	}
-	spec := *opts.EnvSpec
-	spec.Name = sessionID
-	spec.Adapter = adapterID
-	spec.Workdirs = workdirs
-	return adapter, spec, nil
+	return false
 }
 
 // Kill tears down the tmux session and releases the env instance's resource
@@ -214,12 +222,15 @@ func (c *ClaudeController) Kill(ctx context.Context, sessionID string) error {
 
 // buildClaudeCmd constructs the shell command string tmux will run as the
 // first window's process. Env vars are inlined because tmux 3.0a does not
-// support `-e` on new-session.
-func buildClaudeCmd(opts controller.LaunchOptions, sessionID, apiKey, host, port, bin string) string {
+// support `-e` on new-session. Flag order: adapter-provided extras
+// (--worktree, etc.) first, then base flags, then --add-dirs, then prompt.
+func buildClaudeCmd(
+	opts controller.LaunchOptions,
+	sessionID, apiKey, host, port, bin string,
+	adapterArgs, addDirArgs []string,
+) string {
 	var args []string
-	if !opts.NoWorktree {
-		args = append(args, "--worktree", shortID(sessionID))
-	}
+	args = append(args, adapterArgs...)
 	if opts.AutoMode {
 		args = append(args, "--permission-mode", "auto")
 	}
@@ -229,12 +240,7 @@ func buildClaudeCmd(opts controller.LaunchOptions, sessionID, apiKey, host, port
 	if opts.Agent != "" {
 		args = append(args, "--agent", opts.Agent)
 	}
-	for _, d := range opts.AddDirs {
-		if d == "" {
-			continue
-		}
-		args = append(args, "--add-dir", d)
-	}
+	args = append(args, addDirArgs...)
 	if opts.ExtraPrompt != "" {
 		args = append(args, "--append-system-prompt", shellQuote(opts.ExtraPrompt))
 	}

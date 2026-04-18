@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -53,14 +54,15 @@ func (a *Adapter) RuntimeID() string { return adapterID }
 // even after Gru restart — the wrapper carries the spec so Rehydrate doesn't
 // need the caller to re-supply config.
 type providerRefPayload struct {
-	Version     int            `json:"v"`
-	UserRef     string         `json:"user_ref"`
-	PtyHolders  []string       `json:"pty_holders"`
-	SpecName    string         `json:"spec_name"`
-	ConfigJSON  map[string]any `json:"config"`
-	Workdirs    []string       `json:"workdirs"`
-	SessionID   string         `json:"session_id"`
-	ProjectID   string         `json:"project_id,omitempty"`
+	Version    int            `json:"v"`
+	UserRef    string         `json:"user_ref"`
+	PtyHolders []string       `json:"pty_holders"`
+	SpecName   string         `json:"spec_name"`
+	ConfigJSON map[string]any `json:"config"`
+	Workdirs   []string       `json:"workdirs"`
+	SessionID  string         `json:"session_id"`
+	ProjectID  string         `json:"project_id,omitempty"`
+	SourcePath string         `json:"source_path,omitempty"` // spec file path for {{.SpecDir}} on Rehydrate
 }
 
 // scriptOutput is what the user's create script emits on stdout.
@@ -86,6 +88,7 @@ func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, e
 		Workdir:       spec.Workdirs[0],
 		Workdirs:      shellEscapeList(spec.Workdirs),
 		EnvSpecConfig: jsonOrEmpty(spec.Config),
+		SpecDir:       specDirOf(spec),
 	}
 	createCmd, err := render(cfg.Create, tmplCtx)
 	if err != nil {
@@ -144,6 +147,7 @@ func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, e
 		ConfigJSON: spec.Config,
 		Workdirs:   spec.Workdirs,
 		SessionID:  spec.Name,
+		SourcePath: spec.SourcePath,
 	})
 	if err != nil {
 		a.bestEffortDestroy(ctx, cfg, spec, out.ProviderRef)
@@ -183,10 +187,11 @@ func (a *Adapter) Rehydrate(ctx context.Context, providerRef string) (env.Instan
 	// Probe liveness via the user's status script. If it exits non-zero or
 	// prints {"running": false}, treat the backing resource as gone.
 	spec := env.EnvSpec{
-		Name:     wrapped.SpecName,
-		Adapter:  adapterID,
-		Config:   wrapped.ConfigJSON,
-		Workdirs: wrapped.Workdirs,
+		Name:       wrapped.SpecName,
+		Adapter:    adapterID,
+		Config:     wrapped.ConfigJSON,
+		Workdirs:   wrapped.Workdirs,
+		SourcePath: wrapped.SourcePath,
 	}
 	if cfg.Status != "" {
 		alive, probeErr := a.probeAlive(ctx, cfg, spec, wrapped.UserRef)
@@ -331,6 +336,14 @@ func (a *Adapter) Status(ctx context.Context, inst env.Instance) (env.Status, er
 	}, nil
 }
 
+// AgentArgs for the command adapter is a no-op by default. If a future
+// version teaches create.sh to emit a "workdir" field for source-isolation
+// cases (e.g., it provisioned a fresh clone), this is where we'd surface
+// that as Cwd.
+func (a *Adapter) AgentArgs(ctx context.Context, inst env.Instance) (env.AgentArgs, error) {
+	return env.AgentArgs{}, nil
+}
+
 // trackInstance stores per-Instance state for later lookup.
 func (a *Adapter) trackInstance(id string, cfg Config, spec env.EnvSpec) {
 	a.mu.Lock()
@@ -377,10 +390,11 @@ func (a *Adapter) resolveRef(providerRef string) (Config, env.EnvSpec, string, e
 		return Config{}, env.EnvSpec{}, "", err
 	}
 	spec := env.EnvSpec{
-		Name:     wrapped.SpecName,
-		Adapter:  adapterID,
-		Config:   wrapped.ConfigJSON,
-		Workdirs: wrapped.Workdirs,
+		Name:       wrapped.SpecName,
+		Adapter:    adapterID,
+		Config:     wrapped.ConfigJSON,
+		Workdirs:   wrapped.Workdirs,
+		SourcePath: wrapped.SourcePath,
 	}
 	return cfg, spec, wrapped.UserRef, nil
 }
@@ -508,8 +522,18 @@ func renderWithRef(tmpl string, spec env.EnvSpec, userRef string) (string, error
 		Workdirs:      shellEscapeList(spec.Workdirs),
 		ProviderRef:   userRef,
 		EnvSpecConfig: jsonOrEmpty(spec.Config),
+		SpecDir:       specDirOf(spec),
 	}
 	return render(tmpl, ctx)
+}
+
+// specDirOf returns the directory of spec.SourcePath. Empty when the spec
+// has no source path (in-memory specs, e.g. conformance tests).
+func specDirOf(spec env.EnvSpec) string {
+	if spec.SourcePath == "" {
+		return ""
+	}
+	return filepath.Dir(spec.SourcePath)
 }
 
 func firstWorkdir(ws []string) string {

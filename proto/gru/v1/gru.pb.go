@@ -250,19 +250,19 @@ func (x *Session) GetRole() string {
 	return ""
 }
 
+// Project is a reference to an env spec on disk. Project.id is the absolute
+// path to the spec.yaml file; Project.name is the directory basename (used
+// for display). Workdirs, adapter config, and everything else about how a
+// session runs lives in the spec file itself — Gru stores only the pointer.
 type Project struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Path      string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Runtime   string                 `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"`
-	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// Extra workdirs passed to every session launched in this project as
-	// `--add-dir <path>`. Order is significant — the primary cwd is still
-	// `path`; these append as secondary read/edit dirs.
-	AdditionalWorkdirs []string `protobuf:"bytes,6,rep,name=additional_workdirs,json=additionalWorkdirs,proto3" json:"additional_workdirs,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`           // absolute path to spec.yaml (also the PK in SQLite)
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`       // display name (usually the directory basename)
+	Adapter       string                 `protobuf:"bytes,3,opt,name=adapter,proto3" json:"adapter,omitempty"` // cached from the spec for listing without a disk read
+	Runtime       string                 `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"` // agent runtime, e.g. "claude-code"
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -309,9 +309,9 @@ func (x *Project) GetName() string {
 	return ""
 }
 
-func (x *Project) GetPath() string {
+func (x *Project) GetAdapter() string {
 	if x != nil {
-		return x.Path
+		return x.Adapter
 	}
 	return ""
 }
@@ -326,13 +326,6 @@ func (x *Project) GetRuntime() string {
 func (x *Project) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
-	}
-	return nil
-}
-
-func (x *Project) GetAdditionalWorkdirs() []string {
-	if x != nil {
-		return x.AdditionalWorkdirs
 	}
 	return nil
 }
@@ -569,24 +562,18 @@ func (x *GetSessionRequest) GetId() string {
 	return ""
 }
 
+// LaunchSessionRequest picks an env spec and launches an agent in it. The
+// spec declares everything about where the session runs — workdirs,
+// adapter, source isolation, mounts — so the launch payload is minimal.
 type LaunchSessionRequest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	ProjectDir  string                 `protobuf:"bytes,1,opt,name=project_dir,json=projectDir,proto3" json:"project_dir,omitempty"`
-	Prompt      string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Profile     string                 `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
-	Name        string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`               // required, human-readable session name
-	Description string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"` // optional, what problem is being solved
-	// Extra workdirs for this specific launch. Merged with the project's
-	// saved `additional_workdirs` (project defaults come first, then these),
-	// deduped while preserving order. Each is passed to Claude Code as
-	// `--add-dir <path>`.
-	AddDirs []string `protobuf:"bytes,6,rep,name=add_dirs,json=addDirs,proto3" json:"add_dirs,omitempty"`
-	// Optional path to an env-spec YAML (see internal/env/spec). When set,
-	// the server resolves the spec and routes this launch through the
-	// adapter declared there (currently "host" or "command"). Relative
-	// paths are resolved against project_dir. Unset = the server's default
-	// adapter (host), preserving v1 behavior.
-	EnvSpecPath   *string `protobuf:"bytes,7,opt,name=env_spec_path,json=envSpecPath,proto3,oneof" json:"env_spec_path,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Required. Either an absolute path to a spec.yaml file, or a project
+	// name that resolves to ~/.gru/projects/<name>/spec.yaml.
+	EnvSpec       string `protobuf:"bytes,1,opt,name=env_spec,json=envSpec,proto3" json:"env_spec,omitempty"`
+	Prompt        string `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`           // required
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`               // required, human-readable session label
+	Description   string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"` // optional, what problem the session is solving
+	Profile       string `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`         // optional agent profile name
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -621,9 +608,9 @@ func (*LaunchSessionRequest) Descriptor() ([]byte, []int) {
 	return file_gru_v1_gru_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *LaunchSessionRequest) GetProjectDir() string {
+func (x *LaunchSessionRequest) GetEnvSpec() string {
 	if x != nil {
-		return x.ProjectDir
+		return x.EnvSpec
 	}
 	return ""
 }
@@ -631,13 +618,6 @@ func (x *LaunchSessionRequest) GetProjectDir() string {
 func (x *LaunchSessionRequest) GetPrompt() string {
 	if x != nil {
 		return x.Prompt
-	}
-	return ""
-}
-
-func (x *LaunchSessionRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
 	}
 	return ""
 }
@@ -656,16 +636,9 @@ func (x *LaunchSessionRequest) GetDescription() string {
 	return ""
 }
 
-func (x *LaunchSessionRequest) GetAddDirs() []string {
+func (x *LaunchSessionRequest) GetProfile() string {
 	if x != nil {
-		return x.AddDirs
-	}
-	return nil
-}
-
-func (x *LaunchSessionRequest) GetEnvSpecPath() string {
-	if x != nil && x.EnvSpecPath != nil {
-		return *x.EnvSpecPath
+		return x.Profile
 	}
 	return ""
 }
@@ -1056,14 +1029,15 @@ func (x *ListProjectsResponse) GetProjects() []*Project {
 	return nil
 }
 
+// UpdateProjectRequest lets the UI rename a project (rename the directory
+// under ~/.gru/projects/). Workdirs / adapter config are edited by hand in
+// the spec file, not through the API.
 type UpdateProjectRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// additional_workdirs replaces the project's saved list verbatim. Send the
-	// full intended list — this is not a patch. Empty list clears it.
-	AdditionalWorkdirs []string `protobuf:"bytes,2,rep,name=additional_workdirs,json=additionalWorkdirs,proto3" json:"additional_workdirs,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                          // absolute spec path
+	NewName       string                 `protobuf:"bytes,2,opt,name=new_name,json=newName,proto3" json:"new_name,omitempty"` // optional rename; empty = no change
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateProjectRequest) Reset() {
@@ -1103,11 +1077,11 @@ func (x *UpdateProjectRequest) GetId() string {
 	return ""
 }
 
-func (x *UpdateProjectRequest) GetAdditionalWorkdirs() []string {
+func (x *UpdateProjectRequest) GetNewName() string {
 	if x != nil {
-		return x.AdditionalWorkdirs
+		return x.NewName
 	}
-	return nil
+	return ""
 }
 
 type AgentProfile struct {
@@ -1170,9 +1144,12 @@ func (x *AgentProfile) GetModel() string {
 	return ""
 }
 
+// ListProfilesRequest asks for agent profiles associated with a project.
+// project_id is the spec path so the server can look at the spec's workdirs
+// for local profile files (e.g. .gru/profiles.yaml inside workdirs[0]).
 type ListProfilesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectDir    string                 `protobuf:"bytes,1,opt,name=project_dir,json=projectDir,proto3" json:"project_dir,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1207,9 +1184,9 @@ func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
 	return file_gru_v1_gru_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *ListProfilesRequest) GetProjectDir() string {
+func (x *ListProfilesRequest) GetProjectId() string {
 	if x != nil {
-		return x.ProjectDir
+		return x.ProjectId
 	}
 	return ""
 }
@@ -1417,7 +1394,7 @@ func (x *SubscribeEventsRequest) GetMinAttention() float64 {
 type SuggestSessionNameRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Prompt        string                 `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	ProjectDir    string                 `protobuf:"bytes,2,opt,name=project_dir,json=projectDir,proto3" json:"project_dir,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"` // absolute spec path
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1459,9 +1436,9 @@ func (x *SuggestSessionNameRequest) GetPrompt() string {
 	return ""
 }
 
-func (x *SuggestSessionNameRequest) GetProjectDir() string {
+func (x *SuggestSessionNameRequest) GetProjectId() string {
 	if x != nil {
-		return x.ProjectDir
+		return x.ProjectId
 	}
 	return ""
 }
@@ -1543,15 +1520,14 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x04name\x18\r \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x0e \x01(\tR\vdescription\x12\x16\n" +
 	"\x06prompt\x18\x0f \x01(\tR\x06prompt\x12\x12\n" +
-	"\x04role\x18\x10 \x01(\tR\x04role\"\xc7\x01\n" +
+	"\x04role\x18\x10 \x01(\tR\x04role\"\x9c\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x03 \x01(\tR\x04path\x12\x18\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\aadapter\x18\x03 \x01(\tR\aadapter\x12\x18\n" +
 	"\aruntime\x18\x04 \x01(\tR\aruntime\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12/\n" +
-	"\x13additional_workdirs\x18\x06 \x03(\tR\x12additionalWorkdirs\"\xde\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xde\x01\n" +
 	"\fSessionEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1569,17 +1545,13 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x14ListSessionsResponse\x12+\n" +
 	"\bsessions\x18\x01 \x03(\v2\x0f.gru.v1.SessionR\bsessions\"#\n" +
 	"\x11GetSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xf5\x01\n" +
-	"\x14LaunchSessionRequest\x12\x1f\n" +
-	"\vproject_dir\x18\x01 \x01(\tR\n" +
-	"projectDir\x12\x16\n" +
-	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x18\n" +
-	"\aprofile\x18\x03 \x01(\tR\aprofile\x12\x12\n" +
-	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
-	"\badd_dirs\x18\x06 \x03(\tR\aaddDirs\x12'\n" +
-	"\renv_spec_path\x18\a \x01(\tH\x00R\venvSpecPath\x88\x01\x01B\x10\n" +
-	"\x0e_env_spec_path\"B\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x99\x01\n" +
+	"\x14LaunchSessionRequest\x12\x19\n" +
+	"\benv_spec\x18\x01 \x01(\tR\aenvSpec\x12\x16\n" +
+	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x18\n" +
+	"\aprofile\x18\x05 \x01(\tR\aprofile\"B\n" +
 	"\x15LaunchSessionResponse\x12)\n" +
 	"\asession\x18\x01 \x01(\v2\x0f.gru.v1.SessionR\asession\"$\n" +
 	"\x12KillSessionRequest\x12\x0e\n" +
@@ -1595,17 +1567,17 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\rdeleted_count\x18\x01 \x01(\x05R\fdeletedCount\"\x15\n" +
 	"\x13ListProjectsRequest\"C\n" +
 	"\x14ListProjectsResponse\x12+\n" +
-	"\bprojects\x18\x01 \x03(\v2\x0f.gru.v1.ProjectR\bprojects\"W\n" +
+	"\bprojects\x18\x01 \x03(\v2\x0f.gru.v1.ProjectR\bprojects\"A\n" +
 	"\x14UpdateProjectRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
-	"\x13additional_workdirs\x18\x02 \x03(\tR\x12additionalWorkdirs\"Z\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bnew_name\x18\x02 \x01(\tR\anewName\"Z\n" +
 	"\fAgentProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x14\n" +
-	"\x05model\x18\x03 \x01(\tR\x05model\"6\n" +
-	"\x13ListProfilesRequest\x12\x1f\n" +
-	"\vproject_dir\x18\x01 \x01(\tR\n" +
-	"projectDir\"H\n" +
+	"\x05model\x18\x03 \x01(\tR\x05model\"4\n" +
+	"\x13ListProfilesRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\"H\n" +
 	"\x14ListProfilesResponse\x120\n" +
 	"\bprofiles\x18\x01 \x03(\v2\x14.gru.v1.AgentProfileR\bprofiles\"E\n" +
 	"\x10SendInputRequest\x12\x1d\n" +
@@ -1618,11 +1590,11 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x16SubscribeEventsRequest\x12\x1f\n" +
 	"\vproject_ids\x18\x01 \x03(\tR\n" +
 	"projectIds\x12#\n" +
-	"\rmin_attention\x18\x02 \x01(\x01R\fminAttention\"T\n" +
+	"\rmin_attention\x18\x02 \x01(\x01R\fminAttention\"R\n" +
 	"\x19SuggestSessionNameRequest\x12\x16\n" +
-	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12\x1f\n" +
-	"\vproject_dir\x18\x02 \x01(\tR\n" +
-	"projectDir\"R\n" +
+	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\"R\n" +
 	"\x1aSuggestSessionNameResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription*\xfa\x01\n" +
@@ -1744,7 +1716,6 @@ func file_gru_v1_gru_proto_init() {
 	if File_gru_v1_gru_proto != nil {
 		return
 	}
-	file_gru_v1_gru_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -10,7 +10,7 @@ import (
 )
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, runtime, created_at, additional_workdirs FROM projects WHERE id = ? LIMIT 1
+SELECT id, name, adapter, runtime, created_at FROM projects WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
@@ -19,34 +19,15 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Path,
+		&i.Adapter,
 		&i.Runtime,
 		&i.CreatedAt,
-		&i.AdditionalWorkdirs,
-	)
-	return i, err
-}
-
-const getProjectByPath = `-- name: GetProjectByPath :one
-SELECT id, name, path, runtime, created_at, additional_workdirs FROM projects WHERE path = ? LIMIT 1
-`
-
-func (q *Queries) GetProjectByPath(ctx context.Context, path string) (Project, error) {
-	row := q.db.QueryRowContext(ctx, getProjectByPath, path)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Path,
-		&i.Runtime,
-		&i.CreatedAt,
-		&i.AdditionalWorkdirs,
 	)
 	return i, err
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, runtime, created_at, additional_workdirs FROM projects ORDER BY name ASC
+SELECT id, name, adapter, runtime, created_at FROM projects ORDER BY name ASC
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -61,10 +42,9 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.Path,
+			&i.Adapter,
 			&i.Runtime,
 			&i.CreatedAt,
-			&i.AdditionalWorkdirs,
 		); err != nil {
 			return nil, err
 		}
@@ -79,45 +59,45 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 	return items, nil
 }
 
-const updateProjectAdditionalWorkdirs = `-- name: UpdateProjectAdditionalWorkdirs :one
+const renameProject = `-- name: RenameProject :one
 UPDATE projects
-SET additional_workdirs = ?1
+SET name = ?1
 WHERE id = ?2
-RETURNING id, name, path, runtime, created_at, additional_workdirs
+RETURNING id, name, adapter, runtime, created_at
 `
 
-type UpdateProjectAdditionalWorkdirsParams struct {
-	AdditionalWorkdirs string
-	ID                 string
+type RenameProjectParams struct {
+	Name string
+	ID   string
 }
 
-func (q *Queries) UpdateProjectAdditionalWorkdirs(ctx context.Context, arg UpdateProjectAdditionalWorkdirsParams) (Project, error) {
-	row := q.db.QueryRowContext(ctx, updateProjectAdditionalWorkdirs, arg.AdditionalWorkdirs, arg.ID)
+func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, renameProject, arg.Name, arg.ID)
 	var i Project
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Path,
+		&i.Adapter,
 		&i.Runtime,
 		&i.CreatedAt,
-		&i.AdditionalWorkdirs,
 	)
 	return i, err
 }
 
 const upsertProject = `-- name: UpsertProject :one
-INSERT INTO projects (id, name, path, runtime)
+INSERT INTO projects (id, name, adapter, runtime)
 VALUES (?, ?, ?, ?)
-ON CONFLICT(path) DO UPDATE SET
+ON CONFLICT(id) DO UPDATE SET
     name    = excluded.name,
+    adapter = excluded.adapter,
     runtime = excluded.runtime
-RETURNING id, name, path, runtime, created_at, additional_workdirs
+RETURNING id, name, adapter, runtime, created_at
 `
 
 type UpsertProjectParams struct {
 	ID      string
 	Name    string
-	Path    string
+	Adapter string
 	Runtime string
 }
 
@@ -125,17 +105,16 @@ func (q *Queries) UpsertProject(ctx context.Context, arg UpsertProjectParams) (P
 	row := q.db.QueryRowContext(ctx, upsertProject,
 		arg.ID,
 		arg.Name,
-		arg.Path,
+		arg.Adapter,
 		arg.Runtime,
 	)
 	var i Project
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Path,
+		&i.Adapter,
 		&i.Runtime,
 		&i.CreatedAt,
-		&i.AdditionalWorkdirs,
 	)
 	return i, err
 }

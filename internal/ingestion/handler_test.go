@@ -88,7 +88,7 @@ func TestHandler_storesEvent(t *testing.T) {
 	// Session pre-exists (created by launcher before tmux window starts).
 	ctx := context.Background()
 	_, err := s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "proj-1", Name: "test", Path: "/tmp/test", Runtime: "test-runtime",
+		ID: "proj-1", Name: "test", Adapter: "host", Runtime: "test-runtime",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestHandler_publishesToSubscribers(t *testing.T) {
 
 	ctx := context.Background()
 	_, _ = s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "proj-1", Name: "test", Path: "/tmp/test", Runtime: "test-runtime",
+		ID: "proj-1", Name: "test", Adapter: "host", Runtime: "test-runtime",
 	})
 	_, _ = s.Queries().CreateSession(ctx, store.CreateSessionParams{
 		ID: "sess-1", ProjectID: "proj-1", Runtime: "test-runtime", Status: "starting",

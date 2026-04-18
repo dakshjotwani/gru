@@ -83,7 +83,7 @@ func TestIntegration_PostEventAndListSession(t *testing.T) {
 	_, err := s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
 		ID:      "proj-int",
 		Name:    "integration-project",
-		Path:    "/tmp/integration-project",
+		Adapter: "host",
 		Runtime: "test-runtime",
 	})
 	if err != nil {

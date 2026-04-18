@@ -16,6 +16,7 @@ type templateContext struct {
 	Workdirs      string // shell-escaped space-joined list
 	ProviderRef   string
 	EnvSpecConfig string // full config as JSON
+	SpecDir       string // directory of the loaded spec file (empty for in-memory specs)
 }
 
 // render renders a command template with the given context. Returns the

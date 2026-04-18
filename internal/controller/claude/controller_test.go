@@ -83,6 +83,10 @@ func (f *fakeEnv) Status(_ context.Context, _ env.Instance) (env.Status, error) 
 	return env.Status{Running: true}, nil
 }
 
+func (f *fakeEnv) AgentArgs(_ context.Context, _ env.Instance) (env.AgentArgs, error) {
+	return env.AgentArgs{}, nil
+}
+
 func (f *fakeEnv) calls() [][]string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -122,10 +126,13 @@ func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) 
 	projectDir := t.TempDir()
 
 	handle, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  "abcd1234-0000-0000-0000-000000000001",
-		ProjectDir: projectDir,
-		Prompt:     "hello world",
-		Profile:    "feat-dev",
+		SessionID: "abcd1234-0000-0000-0000-000000000001",
+		Prompt:    "hello world",
+		Profile:   "feat-dev",
+		EnvSpec: env.EnvSpec{
+			Adapter:  "host",
+			Workdirs: []string{projectDir},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -149,7 +156,10 @@ func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) 
 	}
 }
 
-func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
+// TestClaudeController_Launch_WorkdirsAppendedAsAddDir verifies that
+// spec.Workdirs[1..] turn into --add-dir flags on the claude invocation.
+// (Workdirs[0] is the primary cwd and does NOT get a flag.)
+func TestClaudeController_Launch_WorkdirsAppendedAsAddDir(t *testing.T) {
 	fe := newFakeEnv()
 	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	primary := t.TempDir()
@@ -157,10 +167,12 @@ func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
 	tertiary := t.TempDir()
 
 	_, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  "abcd1234-0000-0000-0000-000000000001",
-		ProjectDir: primary,
-		Prompt:     "test",
-		AddDirs:    []string{secondary, "", tertiary}, // empty string skipped
+		SessionID: "abcd1234-0000-0000-0000-000000000001",
+		Prompt:    "test",
+		EnvSpec: env.EnvSpec{
+			Adapter:  "host",
+			Workdirs: []string{primary, secondary, tertiary},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -183,8 +195,9 @@ func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
 	if !strings.Contains(launched, "--add-dir "+tertiary) {
 		t.Errorf("expected --add-dir for tertiary workdir in %q", launched)
 	}
-	if strings.Contains(launched, "--add-dir \"\"") || strings.Contains(launched, "--add-dir ''") {
-		t.Errorf("empty AddDirs entry leaked into argv: %s", launched)
+	// primary must NOT appear as an --add-dir — it's the cwd.
+	if strings.Contains(launched, "--add-dir "+primary) {
+		t.Errorf("primary workdir leaked into --add-dir: %s", launched)
 	}
 }
 
@@ -202,11 +215,13 @@ func TestClaudeController_Launch_PicksAdapterFromEnvSpec(t *testing.T) {
 	c := claudectrl.NewClaudeController("key", "localhost", "7070", reg, "host")
 	projectDir := t.TempDir()
 
-	spec := env.EnvSpec{Adapter: "command", Config: map[string]any{"mode": "fullstack"}}
 	_, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  "abcd1234-0000-0000-0000-000000000777",
-		ProjectDir: projectDir,
-		EnvSpec:    &spec,
+		SessionID: "abcd1234-0000-0000-0000-000000000777",
+		EnvSpec: env.EnvSpec{
+			Adapter:  "command",
+			Workdirs: []string{projectDir},
+			Config:   map[string]any{"mode": "fullstack"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -236,11 +251,12 @@ func TestClaudeController_Launch_UnknownAdapter(t *testing.T) {
 	reg.Register(newFakeEnv())
 	c := claudectrl.NewClaudeController("key", "localhost", "7070", reg, "host")
 
-	spec := env.EnvSpec{Adapter: "kubernetes"}
 	_, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  "abcd1234-0000-0000-0000-000000000888",
-		ProjectDir: t.TempDir(),
-		EnvSpec:    &spec,
+		SessionID: "abcd1234-0000-0000-0000-000000000888",
+		EnvSpec: env.EnvSpec{
+			Adapter:  "kubernetes",
+			Workdirs: []string{t.TempDir()},
+		},
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown adapter, got nil")
@@ -287,8 +303,11 @@ func TestClaudeController_Kill_DestroysEnvInstance(t *testing.T) {
 	sessionID := "abcd1234-0000-0000-0000-000000000099"
 
 	if _, err := c.Launch(context.Background(), controller.LaunchOptions{
-		SessionID:  sessionID,
-		ProjectDir: projectDir,
+		SessionID: sessionID,
+		EnvSpec: env.EnvSpec{
+			Adapter:  "host",
+			Workdirs: []string{projectDir},
+		},
 	}); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}

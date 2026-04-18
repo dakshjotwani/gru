@@ -18,6 +18,7 @@ import (
 
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
+	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/google/uuid"
 )
@@ -80,14 +81,20 @@ func spawn(ctx context.Context, s *store.Store, reg *controller.Registry, cfg *c
 	sessionID := uuid.NewString()
 	envRoots := strings.Join(cfg.Journal.WorkspaceRoots, ":")
 
+	// Journal runs in host adapter against its own dir. worktree: false
+	// (default) — the journal's directory isn't a git repo and --worktree
+	// would be nonsensical.
 	handle, err := ctrl.Launch(ctx, controller.LaunchOptions{
 		SessionID:   sessionID,
-		ProjectDir:  dir,
 		Profile:     "journal",
 		ExtraPrompt: systemPrompt,
-		NoWorktree:  true,
 		Env: map[string]string{
 			"GRU_JOURNAL_WORKSPACE_ROOTS": envRoots,
+		},
+		EnvSpec: env.EnvSpec{
+			Name:     sessionID,
+			Adapter:  "host",
+			Workdirs: []string{dir},
 		},
 	})
 	if err != nil {
@@ -138,7 +145,7 @@ func upsertJournalProject(ctx context.Context, s *store.Store, dir string) (stri
 	row, err := s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
 		ID:      "journal",
 		Name:    "journal",
-		Path:    dir,
+		Adapter: "host",
 		Runtime: RuntimeID,
 	})
 	if err != nil {

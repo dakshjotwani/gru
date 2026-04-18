@@ -38,7 +38,7 @@ func TestStore_upsertAndGetProject(t *testing.T) {
 	p, err := q.UpsertProject(ctx, store.UpsertProjectParams{
 		ID:      "proj-1",
 		Name:    "my-project",
-		Path:    "/home/daksh/my-project",
+		Adapter: "host",
 		Runtime: "claude-code",
 	})
 	if err != nil {
@@ -52,7 +52,7 @@ func TestStore_upsertAndGetProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProject: %v", err)
 	}
-	if got.Path != "/home/daksh/my-project" {
-		t.Errorf("path = %q, want %q", got.Path, "/home/daksh/my-project")
+	if got.Adapter != "host" {
+		t.Errorf("adapter = %q, want %q", got.Adapter, "host")
 	}
 }

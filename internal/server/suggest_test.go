@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -46,7 +48,7 @@ func TestSuggestSessionName_disabled(t *testing.T) {
 
 	resp, err := svc.SuggestSessionName(context.Background(), connect.NewRequest(&gruv1.SuggestSessionNameRequest{
 		Prompt:     "fix the auth token expiry bug",
-		ProjectDir: "/home/user/myproject",
+		ProjectId: "/home/user/myproject/spec.yaml",
 	}))
 	if err != nil {
 		t.Fatalf("SuggestSessionName: unexpected error: %v", err)
@@ -65,9 +67,20 @@ func TestSuggestSessionName_success(t *testing.T) {
 	}
 	svc.setSuggester(mock)
 
+	// Write a real spec the server can load; the suggester should receive
+	// the spec's primary workdir.
+	workdir := t.TempDir()
+	specDir := t.TempDir()
+	specPath := filepath.Join(specDir, "spec.yaml")
+	if err := os.WriteFile(specPath, []byte(
+		"name: testspec\nadapter: host\nworkdirs:\n  - "+workdir+"\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	resp, err := svc.SuggestSessionName(context.Background(), connect.NewRequest(&gruv1.SuggestSessionNameRequest{
-		Prompt:     "fix the auth token expiry bug",
-		ProjectDir: "/home/user/myproject",
+		Prompt:    "fix the auth token expiry bug",
+		ProjectId: specPath,
 	}))
 	if err != nil {
 		t.Fatalf("SuggestSessionName: unexpected error: %v", err)
@@ -85,8 +98,8 @@ func TestSuggestSessionName_success(t *testing.T) {
 	if mock.calls[0].prompt != "fix the auth token expiry bug" {
 		t.Errorf("prompt passed to suggester = %q", mock.calls[0].prompt)
 	}
-	if mock.calls[0].projectDir != "/home/user/myproject" {
-		t.Errorf("projectDir passed to suggester = %q", mock.calls[0].projectDir)
+	if mock.calls[0].projectDir != workdir {
+		t.Errorf("projectDir passed to suggester = %q, want %q", mock.calls[0].projectDir, workdir)
 	}
 }
 

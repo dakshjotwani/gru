@@ -58,17 +58,16 @@ message Session {
   string         role            = 16;  // "" for normal sessions; "journal" marks the server-managed singleton
 }
 
+// Project is a reference to an env spec on disk. Project.id is the absolute
+// path to the spec.yaml file; Project.name is the directory basename (used
+// for display). Workdirs, adapter config, and everything else about how a
+// session runs lives in the spec file itself — Gru stores only the pointer.
 message Project {
-  string id      = 1;
-  string name    = 2;
-  string path    = 3;
-  string runtime = 4;
+  string id        = 1;  // absolute path to spec.yaml (also the PK in SQLite)
+  string name      = 2;  // display name (usually the directory basename)
+  string adapter   = 3;  // cached from the spec for listing without a disk read
+  string runtime   = 4;  // agent runtime, e.g. "claude-code"
   google.protobuf.Timestamp created_at = 5;
-
-  // Extra workdirs passed to every session launched in this project as
-  // `--add-dir <path>`. Order is significant — the primary cwd is still
-  // `path`; these append as secondary read/edit dirs.
-  repeated string additional_workdirs = 6;
 }
 
 message SessionEvent {
@@ -94,25 +93,18 @@ message GetSessionRequest {
   string id = 1;
 }
 
+// LaunchSessionRequest picks an env spec and launches an agent in it. The
+// spec declares everything about where the session runs — workdirs,
+// adapter, source isolation, mounts — so the launch payload is minimal.
 message LaunchSessionRequest {
-  string project_dir  = 1;
-  string prompt       = 2;
-  string profile      = 3;
-  string name         = 4;  // required, human-readable session name
-  string description  = 5;  // optional, what problem is being solved
+  // Required. Either an absolute path to a spec.yaml file, or a project
+  // name that resolves to ~/.gru/projects/<name>/spec.yaml.
+  string env_spec    = 1;
 
-  // Extra workdirs for this specific launch. Merged with the project's
-  // saved `additional_workdirs` (project defaults come first, then these),
-  // deduped while preserving order. Each is passed to Claude Code as
-  // `--add-dir <path>`.
-  repeated string add_dirs = 6;
-
-  // Optional path to an env-spec YAML (see internal/env/spec). When set,
-  // the server resolves the spec and routes this launch through the
-  // adapter declared there (currently "host" or "command"). Relative
-  // paths are resolved against project_dir. Unset = the server's default
-  // adapter (host), preserving v1 behavior.
-  optional string env_spec_path = 7;
+  string prompt      = 2;  // required
+  string name        = 3;  // required, human-readable session label
+  string description = 4;  // optional, what problem the session is solving
+  string profile     = 5;  // optional agent profile name
 }
 
 message LaunchSessionResponse {
@@ -153,12 +145,12 @@ message ListProjectsResponse {
   repeated Project projects = 1;
 }
 
+// UpdateProjectRequest lets the UI rename a project (rename the directory
+// under ~/.gru/projects/). Workdirs / adapter config are edited by hand in
+// the spec file, not through the API.
 message UpdateProjectRequest {
-  string id = 1;
-
-  // additional_workdirs replaces the project's saved list verbatim. Send the
-  // full intended list — this is not a patch. Empty list clears it.
-  repeated string additional_workdirs = 2;
+  string id       = 1;  // absolute spec path
+  string new_name = 2;  // optional rename; empty = no change
 }
 
 message AgentProfile {
@@ -167,8 +159,11 @@ message AgentProfile {
   string model       = 3;
 }
 
+// ListProfilesRequest asks for agent profiles associated with a project.
+// project_id is the spec path so the server can look at the spec's workdirs
+// for local profile files (e.g. .gru/profiles.yaml inside workdirs[0]).
 message ListProfilesRequest {
-  string project_dir = 1;
+  string project_id = 1;
 }
 
 message ListProfilesResponse {
@@ -191,8 +186,8 @@ message SubscribeEventsRequest {
 }
 
 message SuggestSessionNameRequest {
-  string prompt      = 1;
-  string project_dir = 2;
+  string prompt     = 1;
+  string project_id = 2;  // absolute spec path
 }
 
 message SuggestSessionNameResponse {

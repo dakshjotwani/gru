@@ -45,6 +45,31 @@ type Environment interface {
 
 	// Status returns a snapshot of the instance's state. Called on-demand.
 	Status(ctx context.Context, inst Instance) (Status, error)
+
+	// AgentArgs is called after Create() so the adapter can declare any
+	// per-launch flags it wants appended to the agent invocation (e.g.
+	// --worktree for the host adapter when config.worktree=true) and
+	// optionally override the cwd the agent is launched in (e.g. a
+	// command adapter that provisions a fresh clone in its create.sh).
+	// A zero AgentArgs value means "no extra args, use spec.Workdirs[0]
+	// as the cwd."
+	AgentArgs(ctx context.Context, inst Instance) (AgentArgs, error)
+}
+
+// AgentArgs is the adapter's per-launch contribution to how the agent
+// process is started. Returned from Environment.AgentArgs after Create.
+type AgentArgs struct {
+	// ExtraArgs are appended to the agent invocation, after the base flags
+	// (--model, --agent, etc.) and before the prompt. The strings are
+	// passed verbatim; the adapter is responsible for any shell escaping
+	// it needs done.
+	ExtraArgs []string
+
+	// Cwd overrides the working directory of the agent process. Empty =
+	// use spec.Workdirs[0]. Adapters that provision isolated source trees
+	// (clones, bind mounts, container volumes) point this at the
+	// isolated path.
+	Cwd string
 }
 
 // EnvSpec is the declarative description of what an adapter should provision.
@@ -65,6 +90,13 @@ type EnvSpec struct {
 
 	// Resources is advisory for v2 — adapters may ignore it.
 	Resources ResourceLimits
+
+	// SourcePath is the absolute path to the spec YAML file the spec was
+	// loaded from. Empty when the spec was built in memory (tests,
+	// synthetic specs). The command adapter surfaces this as the
+	// {{.SpecDir}} template var so scripts can reference their sibling
+	// paths without absolute-path gymnastics.
+	SourcePath string
 }
 
 // Instance is an adapter-provisioned, live environment. Adapters return it

@@ -20,6 +20,24 @@ import (
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
 )
 
+// writeHostSpec writes a minimal host-adapter spec into a sibling "spec"
+// directory next to workdir and returns the absolute spec path. Tests use
+// this when they want a real spec file to hand to LaunchSession but don't
+// care what's in it beyond "host, one workdir."
+func writeHostSpec(t *testing.T, workdir string) string {
+	t.Helper()
+	specDir := filepath.Join(workdir, ".gru-test-spec")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	specPath := filepath.Join(specDir, "spec.yaml")
+	body := "name: testspec\nadapter: host\nworkdirs:\n  - " + workdir + "\n"
+	if err := os.WriteFile(specPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return specPath
+}
+
 func newTestServer(t *testing.T) (gruv1connect.GruServiceClient, *store.Store) {
 	t.Helper()
 	s, err := store.Open(":memory:")
@@ -69,7 +87,7 @@ func TestListSessions_afterInsert(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "p1", Name: "proj", Path: "/tmp/proj", Runtime: "claude-code",
+		ID: "p1", Name: "proj", Adapter: "host", Runtime: "claude-code",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,10 +128,10 @@ func TestListProjects(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "p1", Name: "alpha", Path: "/a", Runtime: "claude-code",
+		ID: "p1", Name: "alpha", Adapter: "host", Runtime: "claude-code",
 	})
 	_, _ = s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "p2", Name: "beta", Path: "/b", Runtime: "claude-code",
+		ID: "p2", Name: "beta", Adapter: "host", Runtime: "claude-code",
 	})
 
 	resp, err := client.ListProjects(ctx, connect.NewRequest(&gruv1.ListProjectsRequest{}))
@@ -146,11 +164,12 @@ func TestService_LaunchSession(t *testing.T) {
 	svc.SetControllerRegistry(reg)
 
 	projectDir := t.TempDir()
+	specPath := writeHostSpec(t, projectDir)
 	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir: projectDir,
-		Prompt:     "write tests",
-		Profile:    "default",
-		Name:       "test-session",
+		EnvSpec: specPath,
+		Prompt:  "write tests",
+		Profile: "default",
+		Name:    "test-session",
 	})
 
 	resp, err := svc.LaunchSession(context.Background(), req)
@@ -224,10 +243,11 @@ func TestService_KillSession(t *testing.T) {
 	svc.SetControllerRegistry(reg)
 
 	projectDir := t.TempDir()
+	specPath := writeHostSpec(t, projectDir)
 	launchResp, err := svc.LaunchSession(context.Background(), connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir: projectDir,
-		Prompt:     "do work",
-		Name:       "kill-test",
+		EnvSpec: specPath,
+		Prompt:  "do work",
+		Name:    "kill-test",
 	}))
 	if err != nil {
 		t.Fatalf("LaunchSession: %v", err)
@@ -268,7 +288,7 @@ func TestService_KillSession_RejectsJournal(t *testing.T) {
 
 	ctx := context.Background()
 	if _, err := s.Queries().UpsertProject(ctx, store.UpsertProjectParams{
-		ID: "journal", Name: "journal", Path: "/tmp/journal", Runtime: "claude-code",
+		ID: "journal", Name: "journal", Adapter: "host", Runtime: "claude-code",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +334,7 @@ func TestService_LaunchSession_InvalidDir_DoesNotPersistProject(t *testing.T) {
 	svc.SetControllerRegistry(reg)
 
 	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir: "/nonexistent/path/that/does/not/exist",
+		EnvSpec: "/nonexistent/path/that/does/not/exist/spec.yaml",
 		Prompt:     "do something",
 		Name:       "bad-dir-test",
 	})
@@ -356,10 +376,11 @@ func TestService_LaunchSession_FileNotDir_DoesNotPersistProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Point EnvSpec at a file that isn't a yaml — spec.LoadFile should reject.
 	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir: filePath,
-		Prompt:     "do something",
-		Name:       "file-not-dir-test",
+		EnvSpec: filePath,
+		Prompt:  "do something",
+		Name:    "file-not-dir-test",
 	})
 
 	_, err := svc.LaunchSession(context.Background(), req)
@@ -392,8 +413,9 @@ func TestService_LaunchSession_ControllerError_DoesNotPersistProject(t *testing.
 	svc.SetControllerRegistry(reg)
 
 	projectDir := t.TempDir()
+	specPath := writeHostSpec(t, projectDir)
 	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir: projectDir,
+		EnvSpec: specPath,
 		Prompt:     "do something",
 		Name:       "fail-launch-test",
 	})
@@ -413,15 +435,13 @@ func TestService_LaunchSession_ControllerError_DoesNotPersistProject(t *testing.
 	}
 }
 
-// TestService_LaunchSession_WithEnvSpec verifies that an env_spec_path in
-// the request resolves to a loaded env.EnvSpec reaching the controller.
-// Guards the wiring between LaunchSession and the env.Registry-aware
-// controller that routes adapters per-launch.
+// TestService_LaunchSession_WithEnvSpec verifies the spec path flows through
+// LaunchSession to the controller's LaunchOptions.EnvSpec verbatim.
 func TestService_LaunchSession_WithEnvSpec(t *testing.T) {
 	svc, _ := newTestService(t)
 
 	reg := controller.NewRegistry()
-	var seen *env.EnvSpec
+	var seen env.EnvSpec
 	reg.Register(&fakeSessionController{
 		runtimeID: "claude-code",
 		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
@@ -434,24 +454,19 @@ func TestService_LaunchSession_WithEnvSpec(t *testing.T) {
 	projectDir := t.TempDir()
 	specPath := filepath.Join(projectDir, "spec.yaml")
 	if err := os.WriteFile(specPath, []byte(
-		"name: mini\nadapter: command\nworkdirs:\n  - .\nconfig:\n  mode: fullstack\n",
+		"name: mini\nadapter: command\nworkdirs:\n  - .\nconfig:\n  mode: fullstack\n  create: scripts/create.sh\n  exec: scripts/exec.sh\n  exec_pty: scripts/exec-pty.sh\n  destroy: scripts/destroy.sh\n",
 	), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
 
-	relSpec := "spec.yaml"
 	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir:  projectDir,
-		Prompt:      "hello",
-		Name:        "test-minion",
-		EnvSpecPath: &relSpec,
+		EnvSpec: specPath,
+		Prompt:  "hello",
+		Name:    "test-minion",
 	})
 
 	if _, err := svc.LaunchSession(context.Background(), req); err != nil {
 		t.Fatalf("LaunchSession: %v", err)
-	}
-	if seen == nil {
-		t.Fatal("controller did not receive an EnvSpec")
 	}
 	if seen.Adapter != "command" {
 		t.Errorf("EnvSpec.Adapter = %q, want command", seen.Adapter)
@@ -473,12 +488,10 @@ func TestService_LaunchSession_BadEnvSpecPath(t *testing.T) {
 	})
 	svc.SetControllerRegistry(reg)
 
-	projectDir := t.TempDir()
-	bad := "does-not-exist.yaml"
 	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
-		ProjectDir:  projectDir,
-		Name:        "x",
-		EnvSpecPath: &bad,
+		EnvSpec: "/nonexistent/spec.yaml",
+		Name:    "x",
+		Prompt:  "hello",
 	})
 	_, err := svc.LaunchSession(context.Background(), req)
 	if err == nil {

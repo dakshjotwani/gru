@@ -37,6 +37,10 @@ func LoadFile(path string) (env.EnvSpec, error) {
 	if sf.Adapter == "" {
 		return env.EnvSpec{}, fmt.Errorf("spec file %s is missing 'adapter'", path)
 	}
+	if !env.IsKnownAdapter(sf.Adapter) {
+		return env.EnvSpec{}, fmt.Errorf("spec file %s: unknown adapter %q; known: %s",
+			path, sf.Adapter, strings.Join(env.KnownAdapterIDs, ", "))
+	}
 	if len(sf.Workdirs) == 0 {
 		return env.EnvSpec{}, fmt.Errorf("spec file %s is missing 'workdirs' (need at least one)", path)
 	}
@@ -52,11 +56,16 @@ func LoadFile(path string) (env.EnvSpec, error) {
 	if name == "" {
 		name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
 	return env.EnvSpec{
-		Name:     name,
-		Adapter:  sf.Adapter,
-		Workdirs: sf.Workdirs,
-		Config:   sf.Config,
+		Name:       name,
+		Adapter:    sf.Adapter,
+		Workdirs:   sf.Workdirs,
+		Config:     sf.Config,
+		SourcePath: abs,
 	}, nil
 }
 
