@@ -235,11 +235,15 @@ Each step keeps `go test ./...` green independently.
 5. **The just-here shortcut is idempotent.** `gru launch ~/foo "task 1"` then `gru launch ~/foo "task 2"` produces one project row (two sessions), not two project rows.
 6. **Gru-on-gru minions still work via the canonical flow.** `gru launch gru-minion-fullstack "go do X"` succeeds, provisions `~/.gru-minions/<id>/`, passes conformance. The only change: the spec lives under `~/.gru/projects/gru-minion-fullstack/` instead of `~/workspace/gru/.gru/envs/`.
 
-## Open questions
+## Resolved decisions
 
-- **Auto-generated project names.** `host:<url-encoded-abs-path>` is ugly (`host:%2FUsers%2Fdak%2Fworkspace%2Fgru`). Alternatives: hash-based (`host-a1b2c3d4`), basename-with-tiebreaker (`gru`, `gru-2`, …), or just the basename (`gru`) with collision rejection. Hash is deterministic and uniqueness-free; basename is human-friendly but racy. My lean: basename + collision-tiebreak (`gru`, `gru-2`). Operator-changeable via `mv ~/.gru/projects/gru-2 ~/.gru/projects/my-gru-fork`.
-- **Spec validation.** Should `LoadFile` reject unknown adapter names up front, or defer to the controller? Up-front is friendlier (fail at `gru launch` time with a clear message rather than deep inside Create). Adds a coupling between the loader package and the registry.
-- **Inline specs in `LaunchSessionRequest`.** For the CLI shortcut, the server currently resolves `env_spec = <spec path>`. Could also carry an inline `env_spec_content` for truly ephemeral "don't persist this" launches. Probably not needed; the canonical location + slug-based caching covers the use case.
+Answers to the open questions from the draft, committed to before implementation:
+
+- **Auto-generated project names: `<basename>` with collision tiebreaker (`gru`, `gru-2`, `gru-3`).** Humans reading `gru projects list` need to recognize what a project *is* at a glance. URL-encoded paths are hostile to shell completion and the eye; hashes force an `ls` on `spec.yaml` to identify anything. Accepted tradeoff: `mv ~/workspace/gru ~/src/gru` creates a second `gru` row that the operator reconciles manually.
+
+- **`spec.LoadFile` validates adapter names up front.** A typo like `adapter: kuberntes` should fail at `gru launch` with "unknown adapter; known: host, command", not six frames deep in `controller.Launch` after a project row has already been upserted. Accepted tradeoff: `internal/env/spec` gains an import dependency on a small "known adapter names" accessor from `internal/env`; spec tests need the list populated.
+
+- **No `env_spec_content` inline field in `LaunchSessionRequest`.** The "just here" shortcut already writes a spec to `~/.gru/projects/<name>/spec.yaml` before launching, giving an audit trail the operator can `cat` or edit. Inline specs would split `LaunchSession` into two code paths for a use case (truly ephemeral launches) with no concrete consumer today. Re-open when a real one shows up.
 
 ## Out of scope
 
