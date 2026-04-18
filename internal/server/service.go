@@ -242,8 +242,22 @@ func (s *Service) LaunchSession(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create session row: %w", err))
 	}
 
+	sess := rowToSession(row)
+	if payload, err := sessionToJSON(sess); err == nil {
+		s.pub.Publish(&gruv1.SessionEvent{
+			Type:      "snapshot.session",
+			SessionId: sessionID,
+			ProjectId: projectID,
+			Runtime:   runtimeID,
+			Timestamp: timestamppb.Now(),
+			Payload:   payload,
+		})
+	} else {
+		log.Printf("LaunchSession: marshal session %s for publish: %v", sessionID, err)
+	}
+
 	return connect.NewResponse(&gruv1.LaunchSessionResponse{
-		Session: rowToSession(row),
+		Session: sess,
 	}), nil
 }
 

@@ -60,6 +60,14 @@ func newTestServer(t *testing.T) (gruv1connect.GruServiceClient, *store.Store) {
 // newTestService returns a *Service and the underlying *store.Store for direct method testing.
 func newTestService(t *testing.T) (*server.Service, *store.Store) {
 	t.Helper()
+	svc, s, _ := newTestServiceWithPub(t)
+	return svc, s
+}
+
+// newTestServiceWithPub is like newTestService but also returns the Publisher so
+// tests can subscribe and assert on broadcast events.
+func newTestServiceWithPub(t *testing.T) (*server.Service, *store.Store, *ingestion.Publisher) {
+	t.Helper()
 	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +75,7 @@ func newTestService(t *testing.T) (*server.Service, *store.Store) {
 	t.Cleanup(func() { s.Close() })
 	pub := ingestion.NewPublisher()
 	svc := server.NewService(s, pub)
-	return svc, s
+	return svc, s, pub
 }
 
 func TestListSessions_empty(t *testing.T) {
@@ -511,4 +519,51 @@ func (f *fakeSessionController) RuntimeID() string                      { return
 func (f *fakeSessionController) Capabilities() []controller.Capability { return nil }
 func (f *fakeSessionController) Launch(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
 	return f.launchFn(ctx, opts)
+}
+
+// TestService_LaunchSession_PublishesSnapshotEvent verifies that LaunchSession
+// broadcasts a snapshot.session event so that subscribers already connected via
+// SubscribeEvents see the new session without a page refresh.
+func TestService_LaunchSession_PublishesSnapshotEvent(t *testing.T) {
+	svc, _, pub := newTestServiceWithPub(t)
+
+	reg := controller.NewRegistry()
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			return &controller.SessionHandle{SessionID: opts.SessionID}, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	ch := make(chan *gruv1.SessionEvent, 4)
+	pub.Subscribe("test-subscriber", ch)
+	defer pub.Unsubscribe("test-subscriber")
+
+	projectDir := t.TempDir()
+	specPath := writeHostSpec(t, projectDir)
+	resp, err := svc.LaunchSession(context.Background(), connect.NewRequest(&gruv1.LaunchSessionRequest{
+		EnvSpec: specPath,
+		Prompt:  "hello",
+		Name:    "pub-test",
+	}))
+	if err != nil {
+		t.Fatalf("LaunchSession: %v", err)
+	}
+	sessionID := resp.Msg.Session.Id
+
+	select {
+	case evt := <-ch:
+		if evt.Type != "snapshot.session" {
+			t.Errorf("event type = %q, want snapshot.session", evt.Type)
+		}
+		if evt.SessionId != sessionID {
+			t.Errorf("event session_id = %q, want %q", evt.SessionId, sessionID)
+		}
+		if len(evt.Payload) == 0 {
+			t.Error("event payload is empty, want JSON-encoded Session")
+		}
+	default:
+		t.Error("no event published after LaunchSession; sidebar will not update without a page refresh")
+	}
 }
