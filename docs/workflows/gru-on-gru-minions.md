@@ -88,6 +88,15 @@ rm -rf ~/.gru-minions/<id>
 lsof -iTCP -sTCP:LISTEN -nP | grep -E '5[0-9]{4}'
 ```
 
+**Heads up: if you restart the parent Gru while minions are running**, the parent loses its in-memory handle on them. `gru kill` from a restarted parent will tear down the tmux session but *not* invoke the minion adapter's `destroy.sh` — the state dir and any lingering `make dev` children stick around. Clean up manually:
+
+```bash
+tmux kill-session -t gru-<shortID>     # if still alive
+rm -rf ~/.gru-minions/<id>
+```
+
+Wire-up for restart-survival (persisting `provider_ref` + rehydrating on startup) is tracked in the design spec's "Known limitations" section — it's deferred, not forgotten.
+
 ## Parallelism limits
 
 You're bound by:

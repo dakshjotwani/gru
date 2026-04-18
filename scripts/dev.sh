@@ -26,20 +26,33 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${GRU_STATE_DIR:-${HOME}/.gru}"
 LOG_DIR="${STATE_DIR}/logs"
+# Default web port is 3001 to match web/vite.config.ts (which defaults to
+# 3001 when GRU_WEB_PORT is unset). Keeping these in sync avoids a port
+# drift between the banner we print and the port vite actually binds.
 SERVER_PORT="${GRU_SERVER_PORT:-7777}"
-WEB_PORT="${GRU_WEB_PORT:-3000}"
+WEB_PORT="${GRU_WEB_PORT:-3001}"
 SKIP_SERVER="${GRU_SKIP_SERVER:-}"
+# Track whether the caller explicitly set GRU_SERVER_PORT. When they did NOT,
+# dev.sh leaves an existing server.yaml's addr: line alone — so a user who
+# customized their config (e.g. addr: 127.0.0.1:7777) keeps it across runs.
+SERVER_PORT_WAS_EXPLICIT="${GRU_SERVER_PORT+yes}"
 mkdir -p "$LOG_DIR"
 
 SERVER_PIPE="/tmp/gru-dev-server-$$"
 WEB_PIPE="/tmp/gru-dev-web-$$"
 PORT_FILE="${STATE_DIR}/server.port"
 URLS_FILE="${STATE_DIR}/urls.json"
+DEV_PIDFILE="${STATE_DIR}/dev.pid"
 
 SERVER_PID=""
 WEB_PID=""
 SERVER_LOG_PID=""
 WEB_LOG_PID=""
+
+# Record our own PID so destroy.sh can tear the whole tree down by
+# signaling us — our EXIT trap then cleans up both child processes.
+# The minion adapter's destroy.sh reads this file on kill.
+echo "$$" > "$DEV_PIDFILE"
 
 # prefix_log <label> <color_code> <logfile> <pipe>
 # Reads from a named pipe, prepends colored timestamp+label to each line,
@@ -60,11 +73,16 @@ cleanup() {
   echo "shutting down..."
   [[ -n "$SERVER_PID"     ]] && kill "$SERVER_PID"     2>/dev/null || true
   [[ -n "$WEB_PID"        ]] && kill "$WEB_PID"        2>/dev/null || true
+  # npm run dev forks vite — send SIGTERM to any vite spawned from OUR npm
+  # so it doesn't linger when the pane closes abruptly. Scoped to vite.
+  if [[ -n "$WEB_PID" ]]; then
+    pkill -P "$WEB_PID" 2>/dev/null || true
+  fi
   # closing the pipes unblocks the log readers
   [[ -n "$SERVER_LOG_PID" ]] && kill "$SERVER_LOG_PID" 2>/dev/null || true
   [[ -n "$WEB_LOG_PID"    ]] && kill "$WEB_LOG_PID"    2>/dev/null || true
   wait 2>/dev/null || true
-  rm -f "$SERVER_PIPE" "$WEB_PIPE"
+  rm -f "$SERVER_PIPE" "$WEB_PIPE" "$DEV_PIDFILE"
   echo "logs saved to $LOG_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -91,13 +109,12 @@ api_key: ${GENERATED_KEY}
 db_path: ${STATE_DIR}/gru.db
 YAML
   echo "created $GRU_CONFIG_FILE with new API key"
-else
-  # Existing file: make sure the addr matches the requested port. This
-  # lets a minion re-run with a different GRU_SERVER_PORT without nuking
-  # state, and lets the human flow add :0 support by editing server.yaml.
+elif [[ -n "${SERVER_PORT_WAS_EXPLICIT:-}" ]]; then
+  # Caller explicitly asked for a port via GRU_SERVER_PORT — that should
+  # win over whatever's in the file. We only touch addr in this branch,
+  # so a user who hand-edited their server.yaml keeps their addr line
+  # unless they explicitly ask for a different port.
   if grep -q "^addr:" "$GRU_CONFIG_FILE"; then
-    # macOS sed needs an explicit '' after -i; GNU sed doesn't. Use a
-    # portable pattern: write to a tmp file and mv.
     awk -v port="${SERVER_PORT}" \
       '/^addr:/ {print "addr: :" port; next} {print}' \
       "$GRU_CONFIG_FILE" > "$GRU_CONFIG_FILE.tmp"

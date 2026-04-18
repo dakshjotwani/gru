@@ -127,18 +127,25 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 		return nil, fmt.Errorf("claude: env.Create (%s): %w", spec.Adapter, err)
 	}
 
+	// Register the live session BEFORE starting the pty. If a concurrent
+	// Kill(sessionID) arrives in the middle of launch, it needs to find the
+	// adapter/instance pair so it can Destroy them — not fall through to the
+	// bare tmux-kill-session branch and leak the env's resource claim.
+	c.mu.Lock()
+	c.live[sessionID] = liveSession{adapter: adapter, inst: inst}
+	c.mu.Unlock()
+
 	name := tmuxName(sessionID)
 	shellCmd := buildClaudeCmd(opts, sessionID, c.apiKey, c.host, c.port, c.claudeBin)
 	if err := c.pty.Start(ctx, adapter, inst, name, opts.ProjectDir, shellCmd); err != nil {
 		// Best-effort rollback: release the env instance so the workdir-set
 		// claim doesn't leak and a retry with the same session ID works.
+		c.mu.Lock()
+		delete(c.live, sessionID)
+		c.mu.Unlock()
 		_ = adapter.Destroy(context.Background(), inst)
 		return nil, fmt.Errorf("claude: persistentpty.Start: %w", err)
 	}
-
-	c.mu.Lock()
-	c.live[sessionID] = liveSession{adapter: adapter, inst: inst}
-	c.mu.Unlock()
 
 	writeLookupFiles(opts.ProjectDir, sessionID, opts.NoWorktree)
 

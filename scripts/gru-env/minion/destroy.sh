@@ -4,40 +4,47 @@
 #
 # Idempotent per the command-adapter contract: returns 0 whether or not the
 # state dir existed. May be called:
-#   - on normal session end (all good)
+#   - on normal session end (all good — tmux kill already ended the pane
+#     and with it make dev; this just rm's the state dir)
 #   - after a failed create (state-dir may be ""; nothing to do)
 #   - on Gru restart mid-teardown (state-dir may be half-gone)
+#   - when the minion's `make dev` is running detached from the pane (rare —
+#     relies on the pidfile scripts/dev.sh drops for us)
+#
+# Teardown order:
+#   1. Read $STATE_DIR/dev.pid (written by dev.sh on startup). If the PID is
+#      still alive, send SIGTERM — dev.sh's EXIT trap kills both child
+#      processes and cleans up. Wait up to 3s, then SIGKILL.
+#   2. rm -rf the state dir.
+#
+# We don't use `pgrep -f "$STATE_DIR"` here because it would match any
+# unrelated process (e.g. `tail -f $STATE_DIR/logs/server.log`) a user
+# might be running, and killing those is a footgun. The pidfile is
+# narrower and was written by the exact process we want to stop.
 set -euo pipefail
 
 STATE_DIR="${1:-}"
 
-# Empty or missing: nothing to do. Success.
 if [[ -z "$STATE_DIR" || ! -d "$STATE_DIR" ]]; then
   exit 0
 fi
 
-# Try to kill any processes the minion's own `make dev` left behind. The
-# server and web pid files are written by the gru server (--port-file is
-# not a pid file, but we can find the PID by port) and by vite. Since we
-# don't currently write pidfiles from the minion's dev stack, use pgrep
-# against the state dir path — the server's cfgPath argument contains
-# GRU_STATE_DIR and so does vite's cwd.
-if command -v pgrep >/dev/null 2>&1; then
-  # Match any process whose command line or cwd contains the state dir.
-  pids="$(pgrep -f "${STATE_DIR}" 2>/dev/null || true)"
-  if [[ -n "$pids" ]]; then
-    # Send TERM, wait up to 2s, then KILL.
-    # shellcheck disable=SC2086
-    kill $pids 2>/dev/null || true
-    for _ in 1 2 3 4; do
-      # shellcheck disable=SC2086
-      if ! kill -0 $pids 2>/dev/null; then
+DEV_PIDFILE="$STATE_DIR/dev.pid"
+if [[ -f "$DEV_PIDFILE" ]]; then
+  dev_pid="$(cat "$DEV_PIDFILE" 2>/dev/null || true)"
+  if [[ -n "$dev_pid" ]] && kill -0 "$dev_pid" 2>/dev/null; then
+    kill "$dev_pid" 2>/dev/null || true
+    # Poll for up to 3s for the EXIT trap to clean up.
+    for _ in 1 2 3 4 5 6; do
+      if ! kill -0 "$dev_pid" 2>/dev/null; then
         break
       fi
       sleep 0.5
     done
-    # shellcheck disable=SC2086
-    kill -9 $pids 2>/dev/null || true
+    # Force-kill if still alive (its trap failed).
+    if kill -0 "$dev_pid" 2>/dev/null; then
+      kill -9 "$dev_pid" 2>/dev/null || true
+    fi
   fi
 fi
 

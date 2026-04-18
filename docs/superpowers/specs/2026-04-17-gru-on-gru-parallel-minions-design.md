@@ -159,7 +159,7 @@ message LaunchSessionRequest {
 1. Parent session or CLI: `gru launch --env-spec .gru/envs/minion-fullstack.yaml --name "fix-bug-X" ~/workspace/gru "fix bug X"`.
 2. Server loads the YAML, constructs `EnvSpec{Adapter: "command", Config: {mode: fullstack, create: "...", ...}}`, passes to `ClaudeController.Launch`.
 3. Controller calls `envRegistry.Get("command").Create(spec)` → runs `create.sh <session-id> <config-json>` → creates `~/.gru-minions/<id>/`, writes `server.yaml`, `minion-env.sh`; returns `provider_ref = "~/.gru-minions/<id>"`.
-4. Controller persists `provider_ref` in SQLite (for rehydration across Gru restarts), then `PersistentPty.Start` → adapter's `Exec(["tmux", "new-session", "-d", "-s", "gru-<shortID>", shellCmd])` where `shellCmd = "GRU_SESSION_ID=... GRU_API_KEY=<parent> ... claude --worktree <shortID> ..."`.
+4. Controller records the `(adapter, instance)` pair in its in-memory `live` map (keyed by sessionID), then `PersistentPty.Start` → adapter's `Exec(["tmux", "new-session", "-d", "-s", "gru-<shortID>", shellCmd])` where `shellCmd = "GRU_SESSION_ID=... GRU_API_KEY=<parent> ... claude --worktree <shortID> ..."`. **This branch does not persist `provider_ref` in SQLite** — see [Known limitations](#known-limitations) below.
 5. tmux's pane runs `exec-pty.sh <provider_ref> <shellCmd>` which sources `minion-env.sh` (the exports **override** parent `GRU_API_KEY` and set `GRU_STATE_DIR` etc. — see "Env var precedence" below), then wraps in `script(1)`, then execs the shellCmd.
 6. Claude Code launches inside the worktree. The agent's shell sees `$GRU_STATE_DIR`, `$GRU_SERVER_PORT=0`, `$GRU_WEB_PORT=0`. `make dev` honors them.
 7. `dev.sh` boots `gru server --port-file $GRU_STATE_DIR/server.port` + `vite --port 0`, captures bound ports, writes `$GRU_STATE_DIR/urls.json`, prints URLs.
@@ -186,7 +186,7 @@ message LaunchSessionRequest {
 |---|---|
 | `create.sh` fails partway (e.g., disk full after mkdir) | Exits non-zero. Adapter calls `destroy.sh` with `provider_ref=""` per spec contract. `destroy.sh` with empty ref is a no-op. State dir may leak; operator cleans `~/.gru-minions/` manually. Documented in the skill. |
 | `make dev` inside the minion dies | Minion's `gru server` + vite exit; their pidfiles go stale. `urls.json` may lie. Agent re-runs `make dev`, `dev.sh` overwrites the pidfiles and `urls.json`. |
-| Parent Gru restarts mid-minion | Controller rehydrates the `command` adapter via `Rehydrate(provider_ref)`. `command` adapter's `Rehydrate` stat()s the state dir; existence = alive. Events pump re-spawns `events.sh`. Minion's child processes are orphaned (they outlived their invoker); the next `destroy.sh` cleans them if pidfiles are intact. Acceptable for a personal tool. |
+| Parent Gru restarts mid-minion | **Not handled in this branch.** The controller only holds live adapter+instance pairs in memory, and Gru has no session-level `provider_ref` column to recover from. A restarted parent Gru cannot `gru kill` the minion cleanly — Kill falls through to the bare `tmux kill-session` branch, and `destroy.sh` is never invoked. Operator recourse: `tmux kill-session -t gru-<shortID>` + `rm -rf ~/.gru-minions/<id>` by hand. Rehydration support is a follow-up — see [Known limitations](#known-limitations). |
 | Operator manually `rm -rf ~/.gru-minions/<id>` while session is live | Next `status.sh` reports `running: false`; adapter surfaces this; session transitions to `errored`. Child processes may linger if pidfiles were inside the deleted dir — operator's fault, documented. |
 | Two minions accidentally point at the same `GRU_STATE_DIR` | Second one overwrites `server.yaml`, possibly corrupts sqlite. Mitigation: `create.sh` uses `<session-id>` as the dir name — session IDs are UUIDs, collision is ignorable in practice. Additionally, a short `mkdir` + `[[ -d ]]` check in `create.sh` errors on existing dir, so re-using a session id fails fast. |
 
@@ -221,8 +221,16 @@ This design ships when all of:
 1. **Two full-stack minions + parent all run `make dev` concurrently**, each with its own state dir + ephemeral ports, no collisions.
 2. **Frontend-only minion points at parent's backend** and the dashboard loads with session data from the parent's DB.
 3. **`gru env test .gru/envs/minion-fullstack.yaml`** passes 8/9 conformance cases (rehydrate-after-kill skipped).
-4. **Kill from the parent Gru tears down everything** — state dir gone, child processes gone, no port still bound.
+4. **Kill from the parent Gru tears down everything** — state dir gone, child processes gone, no port still bound. (Scope: so long as the parent Gru that launched the minion is still the process calling Kill — restart-survival is explicitly [a Known Limitation](#known-limitations).)
 5. **The minion skill is discoverable** — `ls skills/gru/` shows it; a parent agent that reads `CLAUDE.md` and spawns a minion can follow the rules without additional prompting.
+
+## Known limitations
+
+These are gaps between the intended design and what actually ships in this branch. Each is deliberately deferred:
+
+- **No Gru-restart rehydration for `command` adapter sessions.** Adapter+instance pairs are held only in `ClaudeController.live` (in-memory map). A parent Gru restart loses that map; subsequent `gru kill` for a minion session falls through to bare `tmux kill-session`, and `destroy.sh` is never called — the `~/.gru-minions/<id>/` dir and the (now orphaned) `make dev` children linger until the operator cleans them by hand. Fix requires: (1) a `provider_ref` column on `sessions`; (2) server startup code that calls `adapter.Rehydrate(provider_ref)` for every live session; (3) repopulating `ClaudeController.live` from the rehydrated pairs. None of this is urgent for the day-one dogfood path.
+- **No `scaffold-env` skill for minion-on-Gru.** The existing `skills/gru/scaffold-env` covers general `command`-adapter setup. A dedicated wizard could streamline first use; not required.
+- **Frontend-minion parent URL is hardcoded in the YAML spec.** `.gru/envs/minion-frontend.yaml` bakes `http://localhost:7777` into its `create:` template. A user running their parent on a non-default port needs to edit that line or swap to the fullstack variant.
 
 ## What's explicitly out of scope
 
