@@ -193,9 +193,11 @@ if [[ ! -d node_modules ]]; then
   "$NPM" install --no-fund --no-audit >/dev/null 2>&1
 fi
 
-# Pass --port to vite. Port 0 asks vite for an ephemeral port; its stdout
-# (`Local:   http://localhost:XXXXX/`) carries the actual bound port.
-"$NPM" run dev -- --port "$WEB_PORT" > "$WEB_PIPE" 2>&1 &
+# Vite reads GRU_WEB_PORT in its config (web/vite.config.ts). Port 0 asks
+# vite for an ephemeral port; its stdout ("Local: http://localhost:XXXXX/")
+# carries the actual bound port, which we scrape into urls.json below.
+export GRU_WEB_PORT
+"$NPM" run dev > "$WEB_PIPE" 2>&1 &
 WEB_PID=$!
 prefix_log "web   " "\033[0;32m" "$LOG_DIR/web.log" "$WEB_PIPE" &
 WEB_LOG_PID=$!
@@ -203,10 +205,14 @@ WEB_LOG_PID=$!
 # Capture the bound web port by grepping the web log. Vite prints one
 # "Local:   http://localhost:XXXX/" line on startup. Poll the log file
 # with a 15s cap (vite's first build on a cold cache can be slow).
+#
+# The `|| true` is load-bearing: pipefail + grep exit 1 on no-match would
+# otherwise trip set -e during the early iterations before vite has
+# written anything.
 WEB_BOUND_PORT=""
 for i in $(seq 1 150); do
   if [[ -f "$LOG_DIR/web.log" ]]; then
-    WEB_BOUND_PORT="$(grep -oE 'localhost:[0-9]+' "$LOG_DIR/web.log" | head -1 | awk -F: '{print $2}')"
+    WEB_BOUND_PORT="$(grep -oE 'localhost:[0-9]+' "$LOG_DIR/web.log" 2>/dev/null | head -1 | awk -F: '{print $2}' || true)"
     if [[ -n "$WEB_BOUND_PORT" ]]; then
       break
     fi
