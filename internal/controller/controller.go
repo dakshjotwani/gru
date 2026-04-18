@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"fmt"
+
+	"github.com/dakshjotwani/gru/internal/env"
 )
 
 type Capability string
@@ -30,6 +32,13 @@ type LaunchOptions struct {
 	// etc.). The primary cwd remains ProjectDir (v2 spec §Project).
 	AddDirs []string
 	Env     map[string]string
+
+	// EnvSpec, when non-nil, selects the env.Environment adapter for this
+	// launch (via its Adapter field) and carries adapter-specific Config
+	// through to env.Environment.Create. ProjectDir is always the primary
+	// workdir even when EnvSpec also sets Workdirs; AddDirs are appended.
+	// When nil, controllers fall back to their default adapter (host).
+	EnvSpec *env.EnvSpec
 }
 
 type SessionHandle struct {

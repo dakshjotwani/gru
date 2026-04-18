@@ -1,25 +1,58 @@
 #!/usr/bin/env bash
 # dev.sh — start gru server + web dashboard with prefixed, tee'd logs.
 #
-# Logs are written to:
-#   ~/.gru/logs/server.log
-#   ~/.gru/logs/web.log
+# The default path (no env vars set) matches v1 behavior:
+#   state dir: ~/.gru
+#   server port: 7777
+#   web port:    3000
 #
-# An agent monitoring gru can tail those files or grep them for issues:
-#   tail -f ~/.gru/logs/server.log
+# Env overrides (used by the gru-on-gru minion flow — see
+# docs/workflows/gru-on-gru-minions.md):
+#
+#   GRU_STATE_DIR      override the state dir (server.yaml, logs, default db)
+#   GRU_SERVER_PORT    server port; 0 = ephemeral, bound port published to
+#                      $GRU_STATE_DIR/server.port via `gru server --port-file`
+#   GRU_WEB_PORT       vite port; 0 = ephemeral, URL captured from vite stdout
+#   GRU_SKIP_SERVER=1  skip `gru server` entirely (frontend-only mode); the
+#                      dashboard will talk to whatever VITE_GRU_SERVER_URL
+#                      already points at
+#   VITE_GRU_SERVER_URL   pre-set to point the web at an existing backend;
+#                         never overwritten when already present
+#
+# When ports are ephemeral the resolved URLs are also written to
+# $GRU_STATE_DIR/urls.json so the minion agent (or a human) can `cat` them.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOG_DIR="${HOME}/.gru/logs"
+STATE_DIR="${GRU_STATE_DIR:-${HOME}/.gru}"
+LOG_DIR="${STATE_DIR}/logs"
+# Default web port is 3001 to match web/vite.config.ts (which defaults to
+# 3001 when GRU_WEB_PORT is unset). Keeping these in sync avoids a port
+# drift between the banner we print and the port vite actually binds.
+SERVER_PORT="${GRU_SERVER_PORT:-7777}"
+WEB_PORT="${GRU_WEB_PORT:-3001}"
+SKIP_SERVER="${GRU_SKIP_SERVER:-}"
+# Track whether the caller explicitly set GRU_SERVER_PORT. When they did NOT,
+# dev.sh leaves an existing server.yaml's addr: line alone — so a user who
+# customized their config (e.g. addr: 127.0.0.1:7777) keeps it across runs.
+SERVER_PORT_WAS_EXPLICIT="${GRU_SERVER_PORT+yes}"
 mkdir -p "$LOG_DIR"
 
 SERVER_PIPE="/tmp/gru-dev-server-$$"
 WEB_PIPE="/tmp/gru-dev-web-$$"
+PORT_FILE="${STATE_DIR}/server.port"
+URLS_FILE="${STATE_DIR}/urls.json"
+DEV_PIDFILE="${STATE_DIR}/dev.pid"
 
 SERVER_PID=""
 WEB_PID=""
 SERVER_LOG_PID=""
 WEB_LOG_PID=""
+
+# Record our own PID so destroy.sh can tear the whole tree down by
+# signaling us — our EXIT trap then cleans up both child processes.
+# The minion adapter's destroy.sh reads this file on kill.
+echo "$$" > "$DEV_PIDFILE"
 
 # prefix_log <label> <color_code> <logfile> <pipe>
 # Reads from a named pipe, prepends colored timestamp+label to each line,
@@ -40,11 +73,16 @@ cleanup() {
   echo "shutting down..."
   [[ -n "$SERVER_PID"     ]] && kill "$SERVER_PID"     2>/dev/null || true
   [[ -n "$WEB_PID"        ]] && kill "$WEB_PID"        2>/dev/null || true
+  # npm run dev forks vite — send SIGTERM to any vite spawned from OUR npm
+  # so it doesn't linger when the pane closes abruptly. Scoped to vite.
+  if [[ -n "$WEB_PID" ]]; then
+    pkill -P "$WEB_PID" 2>/dev/null || true
+  fi
   # closing the pipes unblocks the log readers
   [[ -n "$SERVER_LOG_PID" ]] && kill "$SERVER_LOG_PID" 2>/dev/null || true
   [[ -n "$WEB_LOG_PID"    ]] && kill "$WEB_LOG_PID"    2>/dev/null || true
   wait 2>/dev/null || true
-  rm -f "$SERVER_PIPE" "$WEB_PIPE"
+  rm -f "$SERVER_PIPE" "$WEB_PIPE" "$DEV_PIDFILE"
   echo "logs saved to $LOG_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -55,42 +93,44 @@ mkfifo "$SERVER_PIPE" "$WEB_PIPE"
 : > "$LOG_DIR/server.log"
 : > "$LOG_DIR/web.log"
 
-# Ensure ~/.gru/server.yaml exists with a stable API key.
+# Ensure the state dir has a server.yaml with a stable API key.
 # The key is created once and reused across restarts so the web dashboard
 # and hook scripts always talk to the same server with the same credentials.
-GRU_CONFIG_FILE="${HOME}/.gru/server.yaml"
+# When GRU_STATE_DIR is a non-default minion dir, this file is the first one
+# written there — matches the minion-env.sh contract.
+GRU_CONFIG_FILE="${STATE_DIR}/server.yaml"
 mkdir -p "$(dirname "$GRU_CONFIG_FILE")"
 if [[ ! -f "$GRU_CONFIG_FILE" ]] || ! grep -q "^api_key:" "$GRU_CONFIG_FILE"; then
   GENERATED_KEY="$(openssl rand -hex 16 2>/dev/null || \
     od -vN 16 -A n -t x1 /dev/urandom | tr -d ' \n')"
   cat > "$GRU_CONFIG_FILE" <<YAML
-addr: :7777
+addr: :${SERVER_PORT}
 api_key: ${GENERATED_KEY}
-db_path: ${HOME}/.gru/gru.db
+db_path: ${STATE_DIR}/gru.db
 YAML
   echo "created $GRU_CONFIG_FILE with new API key"
+elif [[ -n "${SERVER_PORT_WAS_EXPLICIT:-}" ]]; then
+  # Caller explicitly asked for a port via GRU_SERVER_PORT — that should
+  # win over whatever's in the file. We only touch addr in this branch,
+  # so a user who hand-edited their server.yaml keeps their addr line
+  # unless they explicitly ask for a different port.
+  if grep -q "^addr:" "$GRU_CONFIG_FILE"; then
+    awk -v port="${SERVER_PORT}" \
+      '/^addr:/ {print "addr: :" port; next} {print}' \
+      "$GRU_CONFIG_FILE" > "$GRU_CONFIG_FILE.tmp"
+    mv "$GRU_CONFIG_FILE.tmp" "$GRU_CONFIG_FILE"
+  else
+    echo "addr: :${SERVER_PORT}" >> "$GRU_CONFIG_FILE"
+  fi
 fi
 GRU_API_KEY="$(grep '^api_key:' "$GRU_CONFIG_FILE" | awk '{print $2}' | tr -d '"'\''[:space:]')"
 export VITE_GRU_API_KEY="${GRU_API_KEY}"
 
-# Honor the port in the config rather than hardcoding 7777 — the operator may
-# have moved the server (e.g. 7777 taken by another process). Strip a leading
-# colon so "addr: :17777" becomes just "17777". Defaults to 7777 if nothing
-# matches so a malformed config still boots the frontend somewhere sane.
-GRU_PORT="$(grep '^addr:' "$GRU_CONFIG_FILE" | awk '{print $2}' | sed 's/^://' | tr -d '[:space:]')"
-GRU_PORT="${GRU_PORT:-7777}"
-
 # Detect the Tailscale IP so the frontend (running in a remote browser) can
-# reach the gRPC server directly.  Falls back to localhost if tailscale isn't
+# reach the gRPC server directly. Falls back to localhost if tailscale isn't
 # running or isn't on PATH.
 TAILSCALE_IP="$(tailscale ip -4 2>/dev/null | head -1 || true)"
-if [[ -n "$TAILSCALE_IP" ]]; then
-  export VITE_GRU_SERVER_URL="http://${TAILSCALE_IP}:${GRU_PORT}"
-else
-  export VITE_GRU_SERVER_URL="http://localhost:${GRU_PORT}"
-fi
 
-# Build the server binary first so we catch compile errors early.
 # Ensure nvm-managed node/npm is on PATH if not already present.
 NVM_BIN="${HOME}/.nvm/alias/default"
 if [[ -f "$NVM_BIN" ]]; then
@@ -106,20 +146,61 @@ if [[ -f "$NVM_BIN" ]]; then
   fi
 fi
 
-echo "building gru..."
 cd "$ROOT"
 GO="${GO:-$(command -v go 2>/dev/null)}"
-"$GO" build -o /tmp/gru-dev ./cmd/gru
 
-echo "starting gru server..."
-# Strip TMUX/TMUX_PANE so the server's tmux subcommands (for agent sessions)
-# don't inherit a $TMUX from the shell that ran this script. Gru's agent
-# sessions are siblings, not nested — without this, tmux warns about nesting
-# when make dev is launched from inside a tmux pane.
-env -u TMUX -u TMUX_PANE /tmp/gru-dev server > "$SERVER_PIPE" 2>&1 &
-SERVER_PID=$!
-prefix_log "server" "\033[0;34m" "$LOG_DIR/server.log" "$SERVER_PIPE" &
-SERVER_LOG_PID=$!
+RESOLVED_SERVER_URL=""
+
+if [[ -z "$SKIP_SERVER" ]]; then
+  echo "building gru..."
+  "$GO" build -o /tmp/gru-dev ./cmd/gru
+
+  echo "starting gru server..."
+  # Remove any stale port file so our poll-for-existence loop below only
+  # succeeds on the fresh bind.
+  rm -f "$PORT_FILE"
+  # Strip TMUX/TMUX_PANE so the server's tmux subcommands (for agent sessions)
+  # don't inherit a $TMUX from the shell that ran this script. Gru's agent
+  # sessions are siblings, not nested — without this, tmux warns about nesting
+  # when make dev is launched from inside a tmux pane.
+  env -u TMUX -u TMUX_PANE /tmp/gru-dev server --port-file "$PORT_FILE" > "$SERVER_PIPE" 2>&1 &
+  SERVER_PID=$!
+  prefix_log "server" "\033[0;34m" "$LOG_DIR/server.log" "$SERVER_PIPE" &
+  SERVER_LOG_PID=$!
+
+  # Poll for the port file (max 10s). The server writes it immediately after
+  # net.Listen succeeds, so normally this resolves in <500ms.
+  for i in $(seq 1 100); do
+    if [[ -f "$PORT_FILE" ]]; then
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ ! -f "$PORT_FILE" ]]; then
+    echo "ERROR: gru server did not produce a port file at $PORT_FILE within 10s"
+    exit 1
+  fi
+  BOUND_ADDR="$(cat "$PORT_FILE")"
+  BOUND_PORT="${BOUND_ADDR##*:}"
+  RESOLVED_SERVER_URL="http://localhost:${BOUND_PORT}"
+  echo "gru server bound to ${BOUND_ADDR}"
+fi
+
+# Only overwrite VITE_GRU_SERVER_URL when the caller didn't pre-set it.
+# The minion-frontend env spec sets this to the parent's URL; respecting
+# that lets frontend-only minions point their dashboard at the parent.
+if [[ -z "${VITE_GRU_SERVER_URL:-}" ]]; then
+  if [[ -n "$RESOLVED_SERVER_URL" ]]; then
+    if [[ -n "$TAILSCALE_IP" && "${GRU_STATE_DIR:-}" == "" ]]; then
+      # Preserve v1 tailnet behavior for the default path.
+      export VITE_GRU_SERVER_URL="http://${TAILSCALE_IP}:${BOUND_PORT}"
+    else
+      export VITE_GRU_SERVER_URL="$RESOLVED_SERVER_URL"
+    fi
+  else
+    export VITE_GRU_SERVER_URL="http://localhost:7777"
+  fi
+fi
 
 echo "starting web dashboard..."
 cd "$ROOT/web"
@@ -128,25 +209,73 @@ if [[ ! -d node_modules ]]; then
   echo "installing web dependencies..."
   "$NPM" install --no-fund --no-audit >/dev/null 2>&1
 fi
+
+# Vite reads GRU_WEB_PORT in its config (web/vite.config.ts). Port 0 asks
+# vite for an ephemeral port; its stdout ("Local: http://localhost:XXXXX/")
+# carries the actual bound port, which we scrape into urls.json below.
+export GRU_WEB_PORT
 "$NPM" run dev > "$WEB_PIPE" 2>&1 &
 WEB_PID=$!
 prefix_log "web   " "\033[0;32m" "$LOG_DIR/web.log" "$WEB_PIPE" &
 WEB_LOG_PID=$!
 
-echo ""
-echo "gru server:    http://localhost:${GRU_PORT}"
-if [[ -n "$TAILSCALE_IP" ]]; then
-  echo "web dashboard: http://localhost:3000  (local)"
-  echo "               http://${TAILSCALE_IP}:3000  (tailnet)"
-  echo "gRPC backend:  ${VITE_GRU_SERVER_URL}  (baked into frontend)"
-else
-  echo "web dashboard: http://localhost:3000"
+# Capture the bound web port by grepping the web log. Vite prints one
+# "Local:   http://localhost:XXXX/" line on startup. Poll the log file
+# with a 15s cap (vite's first build on a cold cache can be slow).
+#
+# The `|| true` is load-bearing: pipefail + grep exit 1 on no-match would
+# otherwise trip set -e during the early iterations before vite has
+# written anything.
+WEB_BOUND_PORT=""
+for i in $(seq 1 150); do
+  if [[ -f "$LOG_DIR/web.log" ]]; then
+    WEB_BOUND_PORT="$(grep -oE 'localhost:[0-9]+' "$LOG_DIR/web.log" 2>/dev/null | head -1 | awk -F: '{print $2}' || true)"
+    if [[ -n "$WEB_BOUND_PORT" ]]; then
+      break
+    fi
+  fi
+  sleep 0.1
+done
+WEB_URL=""
+if [[ -n "$WEB_BOUND_PORT" ]]; then
+  WEB_URL="http://localhost:${WEB_BOUND_PORT}"
 fi
+
+# Publish urls.json so tooling (and the minion agent) can discover the
+# resolved endpoints without parsing our stdout.
+SERVER_URL_FOR_JSON="${RESOLVED_SERVER_URL:-${VITE_GRU_SERVER_URL:-}}"
+cat > "$URLS_FILE" <<JSON
+{
+  "server_url": "${SERVER_URL_FOR_JSON}",
+  "web_url": "${WEB_URL}",
+  "state_dir": "${STATE_DIR}",
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSON
+
+echo ""
+if [[ -z "$SKIP_SERVER" ]]; then
+  echo "gru server:    ${RESOLVED_SERVER_URL}"
+fi
+if [[ -n "$WEB_URL" ]]; then
+  if [[ -n "$TAILSCALE_IP" && "${GRU_STATE_DIR:-}" == "" ]]; then
+    echo "web dashboard: ${WEB_URL}  (local)"
+    echo "               http://${TAILSCALE_IP}:${WEB_BOUND_PORT}  (tailnet)"
+  else
+    echo "web dashboard: ${WEB_URL}"
+  fi
+fi
+echo "gRPC backend:  ${VITE_GRU_SERVER_URL}  (baked into frontend)"
 echo "logs:          $LOG_DIR/"
+echo "urls.json:     $URLS_FILE"
 echo ""
 echo "  tail -f $LOG_DIR/server.log"
 echo "  tail -f $LOG_DIR/web.log"
 echo ""
 echo "press Ctrl+C to stop both"
 
-wait "$SERVER_PID" "$WEB_PID"
+if [[ -n "$SERVER_PID" ]]; then
+  wait "$SERVER_PID" "$WEB_PID"
+else
+  wait "$WEB_PID"
+fi

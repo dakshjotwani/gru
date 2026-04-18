@@ -91,15 +91,25 @@ func (f *fakeEnv) calls() [][]string {
 	return out
 }
 
+// registryWith returns an env.Registry containing one adapter. Every existing
+// controller test used a fakeEnv with RuntimeID="host", which is also the
+// default adapter name the controller looks up when LaunchOptions.EnvSpec is
+// nil — so these tests stay functionally unchanged.
+func registryWith(e env.Environment) *env.Registry {
+	r := env.NewRegistry()
+	r.Register(e)
+	return r
+}
+
 func TestClaudeController_RuntimeID(t *testing.T) {
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", newFakeEnv())
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(newFakeEnv()), "host")
 	if got := c.RuntimeID(); got != "claude-code" {
 		t.Errorf("RuntimeID = %q, want %q", got, "claude-code")
 	}
 }
 
 func TestClaudeController_Capabilities(t *testing.T) {
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", newFakeEnv())
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(newFakeEnv()), "host")
 	caps := c.Capabilities()
 	if len(caps) != 1 || caps[0] != controller.CapKill {
 		t.Errorf("Capabilities = %v, want [kill]", caps)
@@ -108,7 +118,7 @@ func TestClaudeController_Capabilities(t *testing.T) {
 
 func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) {
 	fe := newFakeEnv()
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	projectDir := t.TempDir()
 
 	handle, err := c.Launch(context.Background(), controller.LaunchOptions{
@@ -141,7 +151,7 @@ func TestClaudeController_Launch_StartsTmuxSessionAndWritesLookup(t *testing.T) 
 
 func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
 	fe := newFakeEnv()
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	primary := t.TempDir()
 	secondary := t.TempDir()
 	tertiary := t.TempDir()
@@ -178,9 +188,101 @@ func TestClaudeController_Launch_AddDirsForwardedToClaudeCLI(t *testing.T) {
 	}
 }
 
+// TestClaudeController_Launch_PicksAdapterFromEnvSpec verifies that when
+// LaunchOptions.EnvSpec is set, the controller resolves the adapter by
+// EnvSpec.Adapter instead of falling back to the default. Regression guard
+// for the refactor that turned a single envAdp into an env.Registry.
+func TestClaudeController_Launch_PicksAdapterFromEnvSpec(t *testing.T) {
+	hostFake := newFakeEnv() // RuntimeID "host"
+	cmdFake := &fakeEnvNamed{fakeEnv: newFakeEnv(), id: "command"}
+	reg := env.NewRegistry()
+	reg.Register(hostFake)
+	reg.Register(cmdFake)
+
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", reg, "host")
+	projectDir := t.TempDir()
+
+	spec := env.EnvSpec{Adapter: "command", Config: map[string]any{"mode": "fullstack"}}
+	_, err := c.Launch(context.Background(), controller.LaunchOptions{
+		SessionID:  "abcd1234-0000-0000-0000-000000000777",
+		ProjectDir: projectDir,
+		EnvSpec:    &spec,
+	})
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	// Command adapter should have been used, not host.
+	if len(cmdFake.created) != 1 {
+		t.Errorf("command adapter Create calls = %d, want 1", len(cmdFake.created))
+	}
+	hostFake.mu.Lock()
+	if len(hostFake.created) != 0 {
+		t.Errorf("host adapter Create calls = %d, want 0 (should not have been used)", len(hostFake.created))
+	}
+	hostFake.mu.Unlock()
+
+	// Spec.Name is overridden by the controller — spec file identity
+	// should not leak into the instance ID.
+	if _, ok := cmdFake.created["abcd1234-0000-0000-0000-000000000777"]; !ok {
+		t.Errorf("expected session id as instance name, got creates: %v", cmdFake.created)
+	}
+}
+
+// TestClaudeController_Launch_UnknownAdapter verifies that asking for an
+// adapter not in the registry fails cleanly rather than panicking.
+func TestClaudeController_Launch_UnknownAdapter(t *testing.T) {
+	reg := env.NewRegistry()
+	reg.Register(newFakeEnv())
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", reg, "host")
+
+	spec := env.EnvSpec{Adapter: "kubernetes"}
+	_, err := c.Launch(context.Background(), controller.LaunchOptions{
+		SessionID:  "abcd1234-0000-0000-0000-000000000888",
+		ProjectDir: t.TempDir(),
+		EnvSpec:    &spec,
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown adapter, got nil")
+	}
+	if !strings.Contains(err.Error(), "kubernetes") {
+		t.Errorf("error %q should mention the adapter name", err)
+	}
+}
+
+// TestClaudeController_NewPanicsOnUnknownDefault guards the constructor's
+// fail-fast contract: a default adapter that isn't in the registry is a
+// deployment bug and should surface immediately, not on first Launch.
+func TestClaudeController_NewPanicsOnUnknownDefault(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic when defaultAdapter is not in registry")
+		}
+	}()
+	reg := env.NewRegistry() // empty
+	_ = claudectrl.NewClaudeController("key", "localhost", "7070", reg, "host")
+}
+
+// fakeEnvNamed lets a fakeEnv be registered under a runtime ID other than
+// "host" — useful for the multi-adapter tests above.
+type fakeEnvNamed struct {
+	*fakeEnv
+	id string
+}
+
+func (f *fakeEnvNamed) RuntimeID() string { return f.id }
+
+func (f *fakeEnvNamed) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, error) {
+	inst, err := f.fakeEnv.Create(ctx, spec)
+	if err == nil {
+		inst.Adapter = f.id
+	}
+	return inst, err
+}
+
 func TestClaudeController_Kill_DestroysEnvInstance(t *testing.T) {
 	fe := newFakeEnv()
-	c := claudectrl.NewClaudeController("key", "localhost", "7070", fe)
+	c := claudectrl.NewClaudeController("key", "localhost", "7070", registryWith(fe), "host")
 	projectDir := t.TempDir()
 	sessionID := "abcd1234-0000-0000-0000-000000000099"
 

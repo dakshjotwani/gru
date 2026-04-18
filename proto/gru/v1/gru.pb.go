@@ -580,7 +580,13 @@ type LaunchSessionRequest struct {
 	// saved `additional_workdirs` (project defaults come first, then these),
 	// deduped while preserving order. Each is passed to Claude Code as
 	// `--add-dir <path>`.
-	AddDirs       []string `protobuf:"bytes,6,rep,name=add_dirs,json=addDirs,proto3" json:"add_dirs,omitempty"`
+	AddDirs []string `protobuf:"bytes,6,rep,name=add_dirs,json=addDirs,proto3" json:"add_dirs,omitempty"`
+	// Optional path to an env-spec YAML (see internal/env/spec). When set,
+	// the server resolves the spec and routes this launch through the
+	// adapter declared there (currently "host" or "command"). Relative
+	// paths are resolved against project_dir. Unset = the server's default
+	// adapter (host), preserving v1 behavior.
+	EnvSpecPath   *string `protobuf:"bytes,7,opt,name=env_spec_path,json=envSpecPath,proto3,oneof" json:"env_spec_path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -655,6 +661,13 @@ func (x *LaunchSessionRequest) GetAddDirs() []string {
 		return x.AddDirs
 	}
 	return nil
+}
+
+func (x *LaunchSessionRequest) GetEnvSpecPath() string {
+	if x != nil && x.EnvSpecPath != nil {
+		return *x.EnvSpecPath
+	}
+	return ""
 }
 
 type LaunchSessionResponse struct {
@@ -1556,7 +1569,7 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x14ListSessionsResponse\x12+\n" +
 	"\bsessions\x18\x01 \x03(\v2\x0f.gru.v1.SessionR\bsessions\"#\n" +
 	"\x11GetSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xba\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xf5\x01\n" +
 	"\x14LaunchSessionRequest\x12\x1f\n" +
 	"\vproject_dir\x18\x01 \x01(\tR\n" +
 	"projectDir\x12\x16\n" +
@@ -1564,7 +1577,9 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\aprofile\x18\x03 \x01(\tR\aprofile\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
-	"\badd_dirs\x18\x06 \x03(\tR\aaddDirs\"B\n" +
+	"\badd_dirs\x18\x06 \x03(\tR\aaddDirs\x12'\n" +
+	"\renv_spec_path\x18\a \x01(\tH\x00R\venvSpecPath\x88\x01\x01B\x10\n" +
+	"\x0e_env_spec_path\"B\n" +
 	"\x15LaunchSessionResponse\x12)\n" +
 	"\asession\x18\x01 \x01(\v2\x0f.gru.v1.SessionR\asession\"$\n" +
 	"\x12KillSessionRequest\x12\x0e\n" +
@@ -1729,6 +1744,7 @@ func file_gru_v1_gru_proto_init() {
 	if File_gru_v1_gru_proto != nil {
 		return
 	}
+	file_gru_v1_gru_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

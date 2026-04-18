@@ -106,6 +106,13 @@ message LaunchSessionRequest {
   // deduped while preserving order. Each is passed to Claude Code as
   // `--add-dir <path>`.
   repeated string add_dirs = 6;
+
+  // Optional path to an env-spec YAML (see internal/env/spec). When set,
+  // the server resolves the spec and routes this launch through the
+  // adapter declared there (currently "host" or "command"). Relative
+  // paths are resolved against project_dir. Unset = the server's default
+  // adapter (host), preserving v1 behavior.
+  optional string env_spec_path = 7;
 }
 
 message LaunchSessionResponse {

@@ -1,0 +1,19 @@
+name: minion-fullstack
+adapter: command
+# The Gru server overrides Workdirs to the session's (primary project dir +
+# any --add-dir). This list is a placeholder so the spec validates standalone
+# and `gru env test` has somewhere to run from.
+workdirs:
+  - ../..
+config:
+  # create.sh <session-id> <mode>
+  # Provisions ~/.gru-minions/<session-id>/ with its own server.yaml,
+  # db path, api key, and minion-env.sh exports. Ports default to 0
+  # (ephemeral) — scripts/dev.sh captures real ports via --port-file
+  # and vite stdout.
+  create:   "scripts/gru-env/minion/create.sh {{.SessionID}} fullstack"
+  exec:     "scripts/gru-env/minion/exec.sh {{.ProviderRef}}"
+  exec_pty: "scripts/gru-env/minion/exec-pty.sh {{.ProviderRef}}"
+  destroy:  "scripts/gru-env/minion/destroy.sh {{.ProviderRef}}"
+  status:   "scripts/gru-env/minion/status.sh {{.ProviderRef}}"
+  events:   "scripts/gru-env/minion/events.sh {{.ProviderRef}}"

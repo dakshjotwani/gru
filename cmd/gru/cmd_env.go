@@ -3,58 +3,17 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/env/command"
 	"github.com/dakshjotwani/gru/internal/env/conformance"
 	"github.com/dakshjotwani/gru/internal/env/host"
+	"github.com/dakshjotwani/gru/internal/env/spec"
 )
-
-// specFile is the on-disk representation of an EnvSpec.
-type specFile struct {
-	Name     string         `yaml:"name"`
-	Adapter  string         `yaml:"adapter"`
-	Workdirs []string       `yaml:"workdirs"`
-	Config   map[string]any `yaml:"config"`
-}
-
-func loadSpecFile(path string) (env.EnvSpec, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return env.EnvSpec{}, fmt.Errorf("read spec file: %w", err)
-	}
-	var sf specFile
-	if err := yaml.Unmarshal(data, &sf); err != nil {
-		return env.EnvSpec{}, fmt.Errorf("parse spec file %s: %w", path, err)
-	}
-	if sf.Adapter == "" {
-		return env.EnvSpec{}, fmt.Errorf("spec file %s is missing 'adapter'", path)
-	}
-	if len(sf.Workdirs) == 0 {
-		return env.EnvSpec{}, fmt.Errorf("spec file %s is missing 'workdirs' (need at least one)", path)
-	}
-	for i, wd := range sf.Workdirs {
-		if !filepath.IsAbs(wd) {
-			sf.Workdirs[i] = filepath.Join(filepath.Dir(path), wd)
-		}
-	}
-	name := sf.Name
-	if name == "" {
-		name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	}
-	return env.EnvSpec{
-		Name:     name,
-		Adapter:  sf.Adapter,
-		Workdirs: sf.Workdirs,
-		Config:   sf.Config,
-	}, nil
-}
 
 // buildEnvRegistry returns a Registry populated with the adapters Gru ships.
 func buildEnvRegistry() *env.Registry {
@@ -141,33 +100,33 @@ func newEnvTestCmd() *cobra.Command {
 Exit code 0 on pass; non-zero with a summary on fail.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			spec, err := loadSpecFile(args[0])
+			loaded, err := spec.LoadFile(args[0])
 			if err != nil {
 				return err
 			}
 			reg := buildEnvRegistry()
-			adapter, err := reg.Get(spec.Adapter)
+			adapter, err := reg.Get(loaded.Adapter)
 			if err != nil {
 				return err
 			}
 			counter := 0
 			mkSpec := func(r conformance.Reporter) env.EnvSpec {
 				counter++
-				out := spec
-				out.Name = fmt.Sprintf("%s-%d-%s", spec.Name, counter, time.Now().Format("150405"))
+				out := loaded
+				out.Name = fmt.Sprintf("%s-%d-%s", loaded.Name, counter, time.Now().Format("150405"))
 				return out
 			}
 
 			suite := conformance.Suite{
-				Name:    spec.Adapter,
+				Name:    loaded.Adapter,
 				Adapter: adapter,
 				NewSpec: mkSpec,
 				// No KillBackingResource for the generic runner — it would
 				// need adapter-specific knowledge to simulate loss.
-				SupportsEventsRespawn: spec.Adapter == "command",
+				SupportsEventsRespawn: loaded.Adapter == "command",
 			}
 
-			fmt.Printf("conformance run for adapter=%s spec=%s\n", spec.Adapter, spec.Name)
+			fmt.Printf("conformance run for adapter=%s spec=%s\n", loaded.Adapter, loaded.Name)
 			var passed, failed, skipped int
 			for _, c := range conformance.Cases() {
 				rep := conformance.RunOne(c.Fn, suite)

@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/controller"
+	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
@@ -409,6 +410,82 @@ func TestService_LaunchSession_ControllerError_DoesNotPersistProject(t *testing.
 	}
 	if len(projects) != 0 {
 		t.Errorf("projects = %d, want 0 — project was persisted despite failed launch", len(projects))
+	}
+}
+
+// TestService_LaunchSession_WithEnvSpec verifies that an env_spec_path in
+// the request resolves to a loaded env.EnvSpec reaching the controller.
+// Guards the wiring between LaunchSession and the env.Registry-aware
+// controller that routes adapters per-launch.
+func TestService_LaunchSession_WithEnvSpec(t *testing.T) {
+	svc, _ := newTestService(t)
+
+	reg := controller.NewRegistry()
+	var seen *env.EnvSpec
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			seen = opts.EnvSpec
+			return &controller.SessionHandle{SessionID: opts.SessionID}, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	projectDir := t.TempDir()
+	specPath := filepath.Join(projectDir, "spec.yaml")
+	if err := os.WriteFile(specPath, []byte(
+		"name: mini\nadapter: command\nworkdirs:\n  - .\nconfig:\n  mode: fullstack\n",
+	), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	relSpec := "spec.yaml"
+	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir:  projectDir,
+		Prompt:      "hello",
+		Name:        "test-minion",
+		EnvSpecPath: &relSpec,
+	})
+
+	if _, err := svc.LaunchSession(context.Background(), req); err != nil {
+		t.Fatalf("LaunchSession: %v", err)
+	}
+	if seen == nil {
+		t.Fatal("controller did not receive an EnvSpec")
+	}
+	if seen.Adapter != "command" {
+		t.Errorf("EnvSpec.Adapter = %q, want command", seen.Adapter)
+	}
+	if got, want := seen.Config["mode"], "fullstack"; got != want {
+		t.Errorf("EnvSpec.Config[mode] = %v, want %v", got, want)
+	}
+}
+
+func TestService_LaunchSession_BadEnvSpecPath(t *testing.T) {
+	svc, _ := newTestService(t)
+	reg := controller.NewRegistry()
+	reg.Register(&fakeSessionController{
+		runtimeID: "claude-code",
+		launchFn: func(ctx context.Context, opts controller.LaunchOptions) (*controller.SessionHandle, error) {
+			t.Fatal("Launch should not be called when env spec fails to load")
+			return nil, nil
+		},
+	})
+	svc.SetControllerRegistry(reg)
+
+	projectDir := t.TempDir()
+	bad := "does-not-exist.yaml"
+	req := connect.NewRequest(&gruv1.LaunchSessionRequest{
+		ProjectDir:  projectDir,
+		Name:        "x",
+		EnvSpecPath: &bad,
+	})
+	_, err := svc.LaunchSession(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("error code = %v, want InvalidArgument", connect.CodeOf(err))
 	}
 }
 

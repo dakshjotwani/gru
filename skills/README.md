@@ -21,3 +21,4 @@ cp -r skills/gru .claude/skills/gru
 | Skill | When to invoke |
 |---|---|
 | [`gru/scaffold-env`](./gru/scaffold-env/SKILL.md) | Setting up a new Gru environment spec, or auditing an existing project's env for Gru compatibility |
+| [`gru/gru-on-gru-minion`](./gru/gru-on-gru-minion/SKILL.md) | You are a minion spawned to work on the Gru codebase itself via `.gru/envs/minion-*.yaml`. Tells you how your ports/state dir are set up and what the ground rules are. |
