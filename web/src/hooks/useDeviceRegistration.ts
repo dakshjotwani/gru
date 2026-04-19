@@ -18,10 +18,9 @@
 // the backend serves the static shell).
 
 import { useCallback, useEffect, useState } from 'react';
+import { resolveServerUrl } from '../utils/serverUrl';
 
 const DEVICE_ID_KEY = 'gru.deviceId';
-
-const serverUrl = import.meta.env.VITE_GRU_SERVER_URL ?? '';
 
 export type PushPermission = 'default' | 'granted' | 'denied' | 'unsupported';
 
@@ -58,7 +57,7 @@ export function useDeviceRegistration(): DeviceRegistration {
       try {
         const sub = await getFreshSubscription();
         if (!sub) return;
-        await fetch(`${serverUrl}/devices/${encodeURIComponent(id)}`, {
+        await fetch(`${resolveServerUrl()}/devices/${encodeURIComponent(id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(subscriptionToBody(sub)),
@@ -84,7 +83,7 @@ export function useDeviceRegistration(): DeviceRegistration {
       if (perm !== 'granted') return;
 
       // Server's VAPID public key is fetched once per registration.
-      const keyResp = await fetch(`${serverUrl}/push/public-key`);
+      const keyResp = await fetch(`${resolveServerUrl()}/push/public-key`);
       if (!keyResp.ok) {
         setError('server has no VAPID key configured');
         return;
@@ -97,7 +96,7 @@ export function useDeviceRegistration(): DeviceRegistration {
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
 
-      const resp = await fetch(`${serverUrl}/devices`, {
+      const resp = await fetch(`${resolveServerUrl()}/devices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -2,10 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { Session } from '../types';
+import { resolveWebSocketUrl } from '../utils/serverUrl';
 import styles from './TerminalPanel.module.css';
 import '@xterm/xterm/css/xterm.css';
-
-const serverUrl = import.meta.env.VITE_GRU_SERVER_URL ?? 'http://localhost:7777';
 
 // iPad Safari silently stalls WebSocket connections when a previous connection
 // to the same endpoint is still closing (common when cycling between sessions).
@@ -110,8 +109,7 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
     const connectWs = (attempt: number) => {
       if (disposed || !term) return;
 
-      const wsBase = serverUrl.replace(/^http/, 'ws');
-      const socket = new WebSocket(`${wsBase}/terminal/${session.id}`);
+      const socket = new WebSocket(`${resolveWebSocketUrl()}/terminal/${session.id}`);
       socket.binaryType = 'arraybuffer';
       ws = socket;
 
