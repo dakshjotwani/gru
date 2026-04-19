@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AttentionQueue } from './components/AttentionQueue';
 import { ChatPanel } from './components/ChatPanel';
-import { LaunchModal } from './components/LaunchModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { TerminalPanel } from './components/TerminalPanel';
-import { useDeviceRegistration } from './hooks/useDeviceRegistration';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
@@ -42,9 +40,8 @@ function writeSessionView(id: string, v: SessionView) {
 }
 
 export function App() {
-  const { projects, refetch: refetchProjects } = useProjects();
+  const { projects } = useProjects();
   const { sessions, events, connected } = useSessionStream(undefined, projects);
-  const [showLaunch, setShowLaunch] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [sidebarFocused, setSidebarFocused] = useState(false);
 
@@ -123,16 +120,10 @@ export function App() {
 
       // Non-capture shortcuts (sidebar not focused, no special modifier).
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (e.key === 'n') {
-          const tag = (e.target as HTMLElement).tagName;
-          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-          setShowLaunch(true);
-        }
         // Esc deselects the current minion and returns the main pane to Gru.
-        // Guard against stealing Escape from inputs/modals — if focus is in a
-        // form element or the Launch modal is open, let the host component
-        // handle it (e.g. modal closes itself on Escape).
-        if (e.key === 'Escape' && selectedSessionId && !showLaunch) {
+        // Guard against stealing Escape from inputs — if focus is in a
+        // form element, let it handle its own Escape.
+        if (e.key === 'Escape' && selectedSessionId) {
           const tag = (e.target as HTMLElement).tagName;
           if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
           e.preventDefault();
@@ -144,7 +135,7 @@ export function App() {
     // capture: true so we intercept before xterm sees the event.
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [sidebarFocused, selectedSessionId, showLaunch]);
+  }, [sidebarFocused, selectedSessionId]);
 
   // Register service worker.
   useEffect(() => {
@@ -185,14 +176,6 @@ export function App() {
           <span className={styles.sessionCount}>
             {activeCount} active minion{activeCount !== 1 ? 's' : ''}
           </span>
-          <NotificationsButton />
-          <button
-            className={styles.launchBtn}
-            onClick={() => setShowLaunch(true)}
-            title="Launch a new minion (n)"
-          >
-            Launch
-          </button>
         </div>
       </header>
 
@@ -248,51 +231,7 @@ export function App() {
         </main>
       </div>
 
-      {showLaunch && (
-        <LaunchModal
-          projects={projects}
-          onClose={() => setShowLaunch(false)}
-          onLaunched={() => refetchProjects()}
-        />
-      )}
     </div>
-  );
-}
-
-// NotificationsButton is the operator's always-visible control for
-// Web Push registration. It shows the current state on its face
-// (🔔 enable / 🔕 unsupported / ✓ registered) so there's never any
-// ambiguity about why notifications aren't working. Tapping it
-// triggers (or retries) the permission + subscribe flow.
-function NotificationsButton() {
-  const { permission, registered, requestSubscription, error } = useDeviceRegistration();
-  let label: string;
-  let title: string;
-  if (permission === 'unsupported') {
-    label = '🔕 n/a';
-    title = 'Web Push not supported in this browser (iOS 16.4+ PWA required)';
-  } else if (permission === 'denied') {
-    label = '🔕 blocked';
-    title = 'Notifications denied — re-enable in iOS Settings → Gru';
-  } else if (registered && permission === 'granted') {
-    label = '🔔 on';
-    title = 'Registered. Tap to re-register on this device.';
-  } else if (permission === 'granted') {
-    label = '🔔 register';
-    title = 'Notifications granted but this device isn\'t registered yet.';
-  } else {
-    label = '🔔 enable';
-    title = 'Enable push notifications on this device';
-  }
-  if (error) title = `${title} (error: ${error})`;
-  return (
-    <button
-      className={styles.launchBtn}
-      onClick={() => requestSubscription()}
-      title={title}
-    >
-      {label}
-    </button>
   );
 }
 
