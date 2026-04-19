@@ -65,7 +65,12 @@ func (c *Config) withDefaults() {
 		c.ActionTokenTTL = 5 * time.Minute
 	}
 	if c.Subject == "" {
-		c.Subject = "mailto:operator@gru.local"
+		// Apple's push endpoint rejects VAPID JWTs whose `sub` claim
+		// isn't a resolvable mailto: address or https: URL
+		// (returns 403 BadJwtToken). The project's public GitHub URL
+		// is a safe default — no PII, always reachable. Operators who
+		// want to override it can set push.subject in server.yaml.
+		c.Subject = "https://github.com/dakshjotwani/gru"
 	}
 }
 
