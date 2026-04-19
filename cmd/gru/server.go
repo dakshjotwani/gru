@@ -235,6 +235,18 @@ func runServer(portFilePath string) error {
 	}, deviceReg, pub, s)
 	go pushDispatcher.Run(serverCtx)
 
+	// Static frontend: if a built web/dist exists, serve it under "/"
+	// so the whole app (backend + PWA shell) is reachable on a single
+	// port. This is what lets `tailscale serve --https=443 -> :7777`
+	// front everything with one proxy rule and one cert. Must be
+	// registered LAST so more-specific API handlers above win.
+	if webDist := server.FindWebDist(); webDist != "" {
+		mux.Handle("/", server.NewSPAHandler(webDist))
+		server.LogServingStatic(webDist)
+	} else {
+		server.LogServingStatic("")
+	}
+
 	// First listener follows cfg.Addr directly so --port-file + :0 flows
 	// keep working (the bound port is captured from it). Additional
 	// listeners on the same mux are opened on the resolved bind addresses
