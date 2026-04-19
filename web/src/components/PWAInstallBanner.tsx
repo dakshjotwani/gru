@@ -12,12 +12,20 @@ import { useEffect, useState } from 'react';
 import { useDeviceRegistration } from '../hooks/useDeviceRegistration';
 import styles from './PWAInstallBanner.module.css';
 
-const DISMISSED_KEY = 'gru.installBannerDismissed';
+// Two separate dismiss keys — otherwise tapping "Not now" on the
+// install hint in Safari would also suppress the post-install
+// notifications prompt (they were one key before and it caused a
+// "where's my Enable banner?" report on 2026-04-19).
+const INSTALL_DISMISSED_KEY = 'gru.installHintDismissed';
+const NOTIF_DISMISSED_KEY = 'gru.notifBannerDismissed';
 
 export function PWAInstallBanner() {
   const { permission, registered, requestSubscription, error } = useDeviceRegistration();
-  const [dismissed, setDismissed] = useState<boolean>(
-    () => localStorage.getItem(DISMISSED_KEY) === '1'
+  const [installDismissed, setInstallDismissed] = useState<boolean>(
+    () => localStorage.getItem(INSTALL_DISMISSED_KEY) === '1'
+  );
+  const [notifDismissed, setNotifDismissed] = useState<boolean>(
+    () => localStorage.getItem(NOTIF_DISMISSED_KEY) === '1'
   );
   const [standalone, setStandalone] = useState<boolean>(false);
   const [isIOS, setIsIOS] = useState<boolean>(false);
@@ -31,16 +39,17 @@ export function PWAInstallBanner() {
     setIsIOS(/iPhone|iPad|iPod/i.test(navigator.userAgent));
   }, []);
 
-  if (dismissed) return null;
-
   // Case 1: on iOS Safari, not installed → "Add to Home Screen" hint.
-  if (isIOS && !standalone) {
+  if (isIOS && !standalone && !installDismissed) {
     return (
       <div className={styles.banner}>
         <span className={styles.msg}>
           Install Gru: tap <b>Share</b> → <b>Add to Home Screen</b>.
         </span>
-        <button className={styles.dismiss} onClick={() => dismiss(setDismissed)}>
+        <button
+          className={styles.dismiss}
+          onClick={() => setPersistent(INSTALL_DISMISSED_KEY, setInstallDismissed)}
+        >
           Not now
         </button>
       </div>
@@ -49,7 +58,13 @@ export function PWAInstallBanner() {
 
   // Case 2: installed (or not-iOS PWA-capable), notifications not yet
   // enabled → offer to enable.
-  if (standalone && permission !== 'granted' && permission !== 'unsupported' && !registered) {
+  if (
+    standalone &&
+    permission !== 'granted' &&
+    permission !== 'unsupported' &&
+    !registered &&
+    !notifDismissed
+  ) {
     return (
       <div className={styles.banner}>
         <span className={styles.msg}>
@@ -59,7 +74,10 @@ export function PWAInstallBanner() {
         <button className={styles.primary} onClick={() => requestSubscription()}>
           Enable
         </button>
-        <button className={styles.dismiss} onClick={() => dismiss(setDismissed)}>
+        <button
+          className={styles.dismiss}
+          onClick={() => setPersistent(NOTIF_DISMISSED_KEY, setNotifDismissed)}
+        >
           Not now
         </button>
       </div>
@@ -69,7 +87,11 @@ export function PWAInstallBanner() {
   return null;
 }
 
-function dismiss(setDismissed: (b: boolean) => void) {
-  localStorage.setItem(DISMISSED_KEY, '1');
-  setDismissed(true);
+function setPersistent(key: string, setter: (b: boolean) => void) {
+  try {
+    localStorage.setItem(key, '1');
+  } catch {
+    // ignore
+  }
+  setter(true);
 }
