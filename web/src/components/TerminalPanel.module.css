@@ -1,7 +1,12 @@
 .panel {
+  /* flex:1 + min-height:0 — the panel lives inside .sessionViewShell
+   * next to the view toggle; claiming remaining space (instead of
+   * height:100%) keeps the terminal properly sized without clipping
+   * neighbors. */
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
   background: #0d1117;
 }
 

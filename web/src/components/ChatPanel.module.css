@@ -1,7 +1,13 @@
 .panel {
+  /* flex:1 + min-height:0 instead of height:100% — the panel sits
+   * inside .sessionViewShell (flex column) next to a toggle row,
+   * so "claim the remaining space" is what we actually want.
+   * height:100% over-claimed and pushed the input bar off-screen on
+   * iPhone (home-indicator clipped it). */
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
   background: #0d1117;
   color: #c9d1d9;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
