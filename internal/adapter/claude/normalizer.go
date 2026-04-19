@@ -71,6 +71,8 @@ func mapEventType(p hookPayload) (adapter.EventType, error) {
 	switch p.HookEventName {
 	case "SessionStart":
 		return adapter.EventSessionStart, nil
+	case "UserPromptSubmit":
+		return adapter.EventUserPrompt, nil
 	case "PreToolUse":
 		return adapter.EventToolPre, nil
 	case "PostToolUse":

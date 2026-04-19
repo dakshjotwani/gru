@@ -16,6 +16,9 @@ const (
 	EventSessionEnd   EventType = "session.end"    // Session terminated (process exited)
 	EventSessionCrash EventType = "session.crash"  // Fatal error ended the session (StopFailure hook)
 
+	// User turn.
+	EventUserPrompt EventType = "user.prompt" // UserPromptSubmit — user submitted a prompt
+
 	// Tool execution.
 	EventToolPre   EventType = "tool.pre"   // PreToolUse
 	EventToolPost  EventType = "tool.post"  // PostToolUse

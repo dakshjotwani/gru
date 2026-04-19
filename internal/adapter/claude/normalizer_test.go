@@ -188,6 +188,18 @@ func TestClaudeNormalizer_SubagentStop(t *testing.T) {
 	}
 }
 
+func TestClaudeNormalizer_UserPromptSubmit(t *testing.T) {
+	n := claude.NewNormalizer()
+	raw := json.RawMessage(`{"hook_event_name":"UserPromptSubmit","session_id":"s1","cwd":"/p","prompt":"write a haiku"}`)
+	ev, err := n.Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ev.Type != adapter.EventUserPrompt {
+		t.Errorf("Type = %q; want %q", ev.Type, adapter.EventUserPrompt)
+	}
+}
+
 func TestClaudeNormalizer_UnknownEvent(t *testing.T) {
 	n := claude.NewNormalizer()
 	raw := json.RawMessage(`{"hook_event_name":"WhateverNew","session_id":"s1","cwd":"/p"}`)
