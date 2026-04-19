@@ -38,6 +38,14 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
 
+	// In-memory DBs are per-connection; pin the pool to a single conn so
+	// every goroutine sees the same schema/data. (Harmless for on-disk
+	// paths too — SQLite serializes writes internally — but we only
+	// enable it for :memory: to avoid impacting prod concurrency.)
+	if path == ":memory:" {
+		conn.SetMaxOpenConns(1)
+	}
+
 	// WAL mode for concurrent read/write.
 	if _, err := conn.Exec(`PRAGMA journal_mode=WAL`); err != nil {
 		conn.Close()

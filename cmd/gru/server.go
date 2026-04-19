@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -24,6 +25,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/env/host"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/journal"
+	"github.com/dakshjotwani/gru/internal/push"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/supervisor"
@@ -179,8 +181,9 @@ func runServer(portFilePath string) error {
 	// Device registry + action endpoints for Web Push notifications.
 	// The action resolver re-uses the gRPC SendInput handler so approve/
 	// deny from the lock screen maps to a normal tmux send-keys.
+	deviceReg := devices.NewRegistry(s.Queries())
 	devices.Register(mux, devices.HandlerDeps{
-		Registry: devices.NewRegistry(s.Queries()),
+		Registry: deviceReg,
 		Resolve: func(ctx context.Context, sessionID, text string) error {
 			_, err := svc.SendInput(ctx, connect.NewRequest(&gruv1.SendInputRequest{
 				SessionId: sessionID,
@@ -196,6 +199,41 @@ func runServer(portFilePath string) error {
 			return row.SessionID, true
 		},
 	})
+
+	// Auto-generate VAPID keys on first boot. The keys are written back
+	// to server.yaml so they survive restarts; rotating them would
+	// invalidate every registered device, so we keep them stable.
+	if cfg.Push.VAPIDPrivate == "" || cfg.Push.VAPIDPublic == "" {
+		priv, pub, err := push.GenerateVAPIDKeys()
+		if err != nil {
+			return fmt.Errorf("generate VAPID keys: %w", err)
+		}
+		cfg.Push.VAPIDPrivate = priv
+		cfg.Push.VAPIDPublic = pub
+		if err := cfg.Save(cfgPath); err != nil {
+			log.Printf("warning: persist VAPID keys to %s: %v (they'll regenerate on next boot)", cfgPath, err)
+		} else {
+			log.Printf("generated VAPID keys and wrote to %s", cfgPath)
+		}
+	}
+
+	// /push/public-key: the PWA fetches this during registration to
+	// pass as applicationServerKey to pushManager.subscribe().
+	mux.HandleFunc("GET /push/public-key", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"publicKey": cfg.Push.VAPIDPublic})
+	})
+
+	// Push dispatcher: fan out qualifying events to registered devices.
+	rateLimit := time.Duration(cfg.Push.RateLimitS) * time.Second
+	pushDispatcher := push.NewDispatcher(push.Config{
+		VAPIDPrivateKey: cfg.Push.VAPIDPrivate,
+		VAPIDPublicKey:  cfg.Push.VAPIDPublic,
+		Subject:         cfg.Push.Subject,
+		Threshold:       cfg.Push.Threshold,
+		RateLimit:       rateLimit,
+	}, deviceReg, pub, s)
+	go pushDispatcher.Run(serverCtx)
 
 	// First listener follows cfg.Addr directly so --port-file + :0 flows
 	// keep working (the bound port is captured from it). Additional

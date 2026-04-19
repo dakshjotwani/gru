@@ -37,6 +37,7 @@ require (
 	connectrpc.com/otelconnect v0.9.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/SherClockHolmes/webpush-go v1.4.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bufbuild/buf v1.67.0 // indirect
 	github.com/bufbuild/protocompile v0.14.2-0.20260319203231-019757e4c592 // indirect
@@ -62,6 +63,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/google/cel-go v0.27.0 // indirect
 	github.com/google/go-containerregistry v0.21.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

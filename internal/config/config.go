@@ -17,6 +17,19 @@ type Config struct {
 	DBPath    string          `yaml:"db_path"`
 	Journal   JournalConfig   `yaml:"journal"`
 	Attention AttentionConfig `yaml:"attention"`
+	Push      PushConfig      `yaml:"push"`
+}
+
+// PushConfig tunes the Web Push dispatcher (internal/push).
+// Zero values fall back to documented defaults. VAPID keys are
+// auto-generated on first server start and written back to
+// server.yaml, so the operator never has to handle them.
+type PushConfig struct {
+	VAPIDPrivate string  `yaml:"vapid_private"`
+	VAPIDPublic  string  `yaml:"vapid_public"`
+	Subject      string  `yaml:"subject"`      // "mailto:..." identifying the push sender
+	Threshold    float64 `yaml:"threshold"`    // attention_score above which idle events push
+	RateLimitS   int     `yaml:"rate_limit_s"` // minimum seconds between pushes per session
 }
 
 // AttentionConfig tunes the attention-score engine (weights only for v2).
@@ -111,6 +124,10 @@ func Load(path string) (*Config, error) {
 
 	return cfg, nil
 }
+
+// Save writes the config back to path in YAML form. Used to persist
+// auto-generated fields (VAPID keys) on first server start.
+func (c *Config) Save(path string) error { return c.save(path) }
 
 func (c *Config) save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
