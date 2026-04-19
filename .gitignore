@@ -4,3 +4,7 @@
 /gru
 # Runtime session lookup files (created by ClaudeController, not project config)
 .gru/sessions/
+.gru/session-id
+node_modules/
+# Vite / vitest caches
+**/.vite/
