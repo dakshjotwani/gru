@@ -15,6 +15,7 @@ import { useSessionStream } from './useSessionStream';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
+    $typeName: 'gru.v1.Session',
     id: 'session-uuid-1234',
     projectId: 'proj-1',
     runtime: 'claude-code',
@@ -27,9 +28,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     pid: BigInt(1234) as any,
     tmuxSession: 'gru-test',
     tmuxWindow: 'feat-dev·a1b2c3d4',
-    pgid: BigInt(1234) as any,
     ...overrides,
-  };
+  } as Session;
 }
 
 function makeSnapshotEvent(session: Session): SessionEvent {
@@ -65,12 +65,12 @@ async function* makeStream(events: SessionEvent[]): AsyncIterable<SessionEvent> 
 describe('useSessionStream', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty(global, 'Notification', {
+    Object.defineProperty(globalThis, 'Notification', {
       value: { permission: 'default', requestPermission: vi.fn().mockResolvedValue('denied') },
       writable: true,
       configurable: true,
     });
-    Object.defineProperty(global.document, 'hasFocus', {
+    Object.defineProperty(globalThis.document, 'hasFocus', {
       value: () => true,
       writable: true,
       configurable: true,

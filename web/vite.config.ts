@@ -1,4 +1,6 @@
-import { defineConfig } from 'vite';
+// defineConfig from 'vitest/config' accepts the `test:` block;
+// 'vite'.defineConfig does not. Same runtime, stricter types.
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 // GRU_WEB_PORT lets the gru-on-gru minion flow start on an ephemeral port
