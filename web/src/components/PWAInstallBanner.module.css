@@ -2,13 +2,19 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 10px
+    calc(14px + env(safe-area-inset-left));
   background: #1a2332;
   border-bottom: 1px solid #30363d;
   font-size: 0.85rem;
   color: #c9d1d9;
   flex-wrap: wrap;
 }
+
+/* When the banner appears above the header, the header no longer
+ * needs its own safe-area-top padding. We can't know at CSS-time
+ * whether the banner is visible, so the header keeps its padding
+ * too — a tiny double-inset is fine here (the banner covers it). */
 
 .msg {
   flex: 1 1 240px;

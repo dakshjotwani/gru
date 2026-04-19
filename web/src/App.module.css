@@ -280,18 +280,50 @@ kbd {
   border-color: #30363d;
 }
 
-/* ── Responsive breakpoints ── */
-/* iPhone portrait: collapse the sidebar into a drawer (for now, hide
- * the sidebar entirely and keep the main pane full-bleed; a proper
- * drawer is future polish). */
+/* ── Safe-area handling (iPhone Dynamic Island / notch) ──
+ * apple-mobile-web-app-status-bar-style=black-translucent puts the
+ * PWA behind the status bar, so we reserve inset space on the edges
+ * that render chrome. The header's background extends under the
+ * status bar, with its padding-top pushing the content below it. */
+.header {
+  padding-top: calc(10px + env(safe-area-inset-top));
+  padding-left: calc(20px + env(safe-area-inset-left));
+  padding-right: calc(20px + env(safe-area-inset-right));
+}
+
+/* ── Responsive breakpoints (iPhone portrait ≤600px) ──
+ * Stack the workspace vertically: header → session list (short
+ * scrollable band) → main pane (chat/terminal). The sidebar was
+ * previously hidden outright, which left the operator unable to
+ * select a session on iPhone (fix for 2026-04-19 report). */
 @media (max-width: 600px) {
+  .workspace {
+    flex-direction: column;
+  }
   .sidebar {
-    display: none;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid #21262d;
+    flex-shrink: 0;
+  }
+  .main {
+    flex: 1;
+    min-height: 0;
   }
   .header {
-    padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+    padding-bottom: 8px;
   }
   .title {
     font-size: 1rem;
+  }
+  /* sessionCount gets truncated on narrow screens otherwise. */
+  .sessionCount {
+    display: none;
   }
 }
