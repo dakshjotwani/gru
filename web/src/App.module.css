@@ -237,3 +237,61 @@ kbd {
   border: 1px solid #30363d;
   border-radius: 3px;
 }
+
+/* ── Per-session terminal/chat view toggle ── */
+
+.sessionViewShell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.viewToggle {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+.viewToggleBtn,
+.viewToggleActive {
+  appearance: none;
+  background: transparent;
+  color: #8b949e;
+  border: 1px solid transparent;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.viewToggleBtn:hover {
+  background: #21262d;
+  color: #c9d1d9;
+}
+
+.viewToggleActive {
+  background: #21262d;
+  color: #f0f6fc;
+  border-color: #30363d;
+}
+
+/* ── Responsive breakpoints ── */
+/* iPhone portrait: collapse the sidebar into a drawer (for now, hide
+ * the sidebar entirely and keep the main pane full-bleed; a proper
+ * drawer is future polish). */
+@media (max-width: 600px) {
+  .sidebar {
+    display: none;
+  }
+  .header {
+    padding: 8px 12px;
+  }
+  .title {
+    font-size: 1rem;
+  }
+}

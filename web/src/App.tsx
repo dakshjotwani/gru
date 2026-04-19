@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AttentionQueue } from './components/AttentionQueue';
+import { ChatPanel } from './components/ChatPanel';
 import { LaunchModal } from './components/LaunchModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -7,6 +8,37 @@ import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
 import styles from './App.module.css';
+
+// Per-session view preference (terminal vs chat). Persisted to
+// localStorage so flipping a session to chat on iPhone survives a
+// reload. Default picks a sensible mode based on viewport: narrow
+// screens prefer chat; wider (iPad landscape / desktop) prefer
+// terminal. iPad portrait sits in between and matches whatever the
+// user last chose globally.
+type SessionView = 'terminal' | 'chat';
+
+function defaultView(): SessionView {
+  if (typeof window === 'undefined') return 'terminal';
+  return window.matchMedia('(max-width: 600px)').matches ? 'chat' : 'terminal';
+}
+
+function readSessionView(id: string): SessionView {
+  try {
+    const raw = localStorage.getItem(`gru.view.${id}`);
+    if (raw === 'chat' || raw === 'terminal') return raw;
+  } catch {
+    // ignore
+  }
+  return defaultView();
+}
+
+function writeSessionView(id: string, v: SessionView) {
+  try {
+    localStorage.setItem(`gru.view.${id}`, v);
+  } catch {
+    // ignore
+  }
+}
 
 export function App() {
   const { projects, refetch: refetchProjects } = useProjects();
@@ -196,9 +228,9 @@ export function App() {
 
         <main className={styles.main}>
           {mainSession ? (
-            <TerminalPanel
-              key={mainSession.id}
+            <SessionView
               session={mainSession}
+              events={events.get(mainSession.id) ?? []}
               focusRef={focusTerminalRef}
             />
           ) : (
@@ -220,6 +252,55 @@ export function App() {
           onClose={() => setShowLaunch(false)}
           onLaunched={() => refetchProjects()}
         />
+      )}
+    </div>
+  );
+}
+
+// SessionView picks between the terminal (full fidelity, iPad/desktop
+// default) and the chat-style renderer (touch-friendly, iPhone default)
+// for a single session. The chosen view is per-session and sticky in
+// localStorage. The toggle lives as a small tab row above the panel.
+interface SessionViewProps {
+  session: import('./types').Session;
+  events: import('./types').SessionEvent[];
+  focusRef?: React.RefObject<(() => void) | null>;
+}
+
+function SessionView({ session, events, focusRef }: SessionViewProps) {
+  const [view, setView] = useState<SessionView>(() => readSessionView(session.id));
+
+  // Persist + refocus terminal when flipping back to it.
+  const flipTo = (v: SessionView) => {
+    setView(v);
+    writeSessionView(session.id, v);
+    if (v === 'terminal') {
+      setTimeout(() => focusRef?.current?.(), 60);
+    }
+  };
+
+  return (
+    <div className={styles.sessionViewShell}>
+      <div className={styles.viewToggle}>
+        <button
+          type="button"
+          className={view === 'terminal' ? styles.viewToggleActive : styles.viewToggleBtn}
+          onClick={() => flipTo('terminal')}
+        >
+          Terminal
+        </button>
+        <button
+          type="button"
+          className={view === 'chat' ? styles.viewToggleActive : styles.viewToggleBtn}
+          onClick={() => flipTo('chat')}
+        >
+          Chat
+        </button>
+      </div>
+      {view === 'terminal' ? (
+        <TerminalPanel key={session.id} session={session} focusRef={focusRef} />
+      ) : (
+        <ChatPanel session={session} events={events} />
       )}
     </div>
   );
