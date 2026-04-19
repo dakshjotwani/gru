@@ -3,6 +3,9 @@ INSERT INTO events (id, session_id, project_id, runtime, type, timestamp, payloa
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
+-- name: GetEvent :one
+SELECT * FROM events WHERE id = ? LIMIT 1;
+
 -- name: ListEventsBySession :many
 SELECT * FROM events
 WHERE session_id = ?

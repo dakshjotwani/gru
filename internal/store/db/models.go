@@ -4,6 +4,25 @@
 
 package db
 
+type ActionLog struct {
+	EventID    string
+	Action     string
+	DeviceID   string
+	ResolvedAt string
+}
+
+type Device struct {
+	ID                string
+	Label             string
+	PushEndpoint      string
+	PushP256dh        string
+	PushAuth          string
+	ActionTokenSecret string
+	CreatedAt         string
+	LastSeenAt        string
+	Stale             int64
+}
+
 type Event struct {
 	ID        string
 	SessionID string

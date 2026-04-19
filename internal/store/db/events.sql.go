@@ -49,6 +49,26 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	return i, err
 }
 
+const getEvent = `-- name: GetEvent :one
+SELECT id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events WHERE id = ? LIMIT 1
+`
+
+func (q *Queries) GetEvent(ctx context.Context, id string) (Event, error) {
+	row := q.db.QueryRowContext(ctx, getEvent, id)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.ProjectID,
+		&i.Runtime,
+		&i.Type,
+		&i.Timestamp,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getLatestEventForSession = `-- name: GetLatestEventForSession :one
 SELECT id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events
 WHERE session_id = ?

@@ -18,6 +18,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
+	"github.com/dakshjotwani/gru/internal/devices"
 	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/env/command"
 	"github.com/dakshjotwani/gru/internal/env/host"
@@ -174,6 +175,27 @@ func runServer(portFilePath string) error {
 
 	// WebSocket terminal: streams a tmux pane over a PTY.
 	mux.Handle("GET /terminal/{session_id}", server.NewTerminalHandler(s))
+
+	// Device registry + action endpoints for Web Push notifications.
+	// The action resolver re-uses the gRPC SendInput handler so approve/
+	// deny from the lock screen maps to a normal tmux send-keys.
+	devices.Register(mux, devices.HandlerDeps{
+		Registry: devices.NewRegistry(s.Queries()),
+		Resolve: func(ctx context.Context, sessionID, text string) error {
+			_, err := svc.SendInput(ctx, connect.NewRequest(&gruv1.SendInputRequest{
+				SessionId: sessionID,
+				Text:      text,
+			}))
+			return err
+		},
+		Lookup: func(ctx context.Context, eventID string) (string, bool) {
+			row, err := s.Queries().GetEvent(ctx, eventID)
+			if err != nil {
+				return "", false
+			}
+			return row.SessionID, true
+		},
+	})
 
 	// First listener follows cfg.Addr directly so --port-file + :0 flows
 	// keep working (the bound port is captured from it). Additional
