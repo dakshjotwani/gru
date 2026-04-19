@@ -4,6 +4,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { LaunchModal } from './components/LaunchModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { TerminalPanel } from './components/TerminalPanel';
+import { useDeviceRegistration } from './hooks/useDeviceRegistration';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
@@ -184,6 +185,7 @@ export function App() {
           <span className={styles.sessionCount}>
             {activeCount} active minion{activeCount !== 1 ? 's' : ''}
           </span>
+          <EnableNotificationsButton />
           <button
             className={styles.launchBtn}
             onClick={() => setShowLaunch(true)}
@@ -254,6 +256,27 @@ export function App() {
         />
       )}
     </div>
+  );
+}
+
+// EnableNotificationsButton is a permanent, never-dismissible escape
+// hatch that lives in the header. If the install / enable banner is
+// buggy, dismissed, or invisible for any reason, the operator always
+// has this button to register the device. Once registered (or the
+// API isn't available at all), it disappears.
+function EnableNotificationsButton() {
+  const { permission, registered, requestSubscription, error } = useDeviceRegistration();
+  if (permission === 'unsupported') return null;
+  if (registered && permission === 'granted') return null;
+  const label = registered ? '🔔 Re-register' : '🔔 Enable';
+  return (
+    <button
+      className={styles.launchBtn}
+      onClick={() => requestSubscription()}
+      title={error || 'Enable push notifications on this device'}
+    >
+      {label}
+    </button>
   );
 }
 

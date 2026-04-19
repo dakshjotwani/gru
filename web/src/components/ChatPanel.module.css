@@ -144,8 +144,9 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
+  /* Home-indicator inset is reserved by .app (App.module.css) — no
+   * double-padding here. */
   padding: 10px;
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
   background: #161b22;
   border-top: 1px solid #30363d;
   flex-shrink: 0;

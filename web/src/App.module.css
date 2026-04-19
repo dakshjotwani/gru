@@ -3,6 +3,11 @@
   display: flex;
   flex-direction: column;
   background: #0d1117;
+  /* Reserve the home-indicator inset at the app level so the chat
+   * input bar (and any other bottom chrome) is pushed into the
+   * viewable area. With box-sizing: border-box (set globally in
+   * index.css), the padding is consumed inside 100vh — no overflow. */
+  padding-bottom: env(safe-area-inset-bottom);
   font-family:
     -apple-system,
     BlinkMacSystemFont,
