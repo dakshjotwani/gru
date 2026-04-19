@@ -185,7 +185,7 @@ export function App() {
           <span className={styles.sessionCount}>
             {activeCount} active minion{activeCount !== 1 ? 's' : ''}
           </span>
-          <EnableNotificationsButton />
+          <NotificationsButton />
           <button
             className={styles.launchBtn}
             onClick={() => setShowLaunch(true)}
@@ -259,21 +259,37 @@ export function App() {
   );
 }
 
-// EnableNotificationsButton is a permanent, never-dismissible escape
-// hatch that lives in the header. If the install / enable banner is
-// buggy, dismissed, or invisible for any reason, the operator always
-// has this button to register the device. Once registered (or the
-// API isn't available at all), it disappears.
-function EnableNotificationsButton() {
+// NotificationsButton is the operator's always-visible control for
+// Web Push registration. It shows the current state on its face
+// (🔔 enable / 🔕 unsupported / ✓ registered) so there's never any
+// ambiguity about why notifications aren't working. Tapping it
+// triggers (or retries) the permission + subscribe flow.
+function NotificationsButton() {
   const { permission, registered, requestSubscription, error } = useDeviceRegistration();
-  if (permission === 'unsupported') return null;
-  if (registered && permission === 'granted') return null;
-  const label = registered ? '🔔 Re-register' : '🔔 Enable';
+  let label: string;
+  let title: string;
+  if (permission === 'unsupported') {
+    label = '🔕 n/a';
+    title = 'Web Push not supported in this browser (iOS 16.4+ PWA required)';
+  } else if (permission === 'denied') {
+    label = '🔕 blocked';
+    title = 'Notifications denied — re-enable in iOS Settings → Gru';
+  } else if (registered && permission === 'granted') {
+    label = '🔔 on';
+    title = 'Registered. Tap to re-register on this device.';
+  } else if (permission === 'granted') {
+    label = '🔔 register';
+    title = 'Notifications granted but this device isn\'t registered yet.';
+  } else {
+    label = '🔔 enable';
+    title = 'Enable push notifications on this device';
+  }
+  if (error) title = `${title} (error: ${error})`;
   return (
     <button
       className={styles.launchBtn}
       onClick={() => requestSubscription()}
-      title={error || 'Enable push notifications on this device'}
+      title={title}
     >
       {label}
     </button>
