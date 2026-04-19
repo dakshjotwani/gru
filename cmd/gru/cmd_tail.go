@@ -20,7 +20,6 @@ func newTailCmd(s *rootState) *cobra.Command {
 			req := connect.NewRequest(&gruv1.SubscribeEventsRequest{
 				ProjectIds: []string{args[0]},
 			})
-			s.authReq(req)
 
 			stream, err := s.client.SubscribeEvents(ctx, req)
 			if err != nil {

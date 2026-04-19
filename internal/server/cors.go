@@ -4,9 +4,6 @@ import "net/http"
 
 // CORS wraps a handler and adds cross-origin headers so the web dashboard
 // (served on a different port) can reach the gRPC/Connect server.
-//
-// OPTIONS preflight requests are answered immediately without reaching
-// BearerAuth — the browser does not send credentials on preflights.
 func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")

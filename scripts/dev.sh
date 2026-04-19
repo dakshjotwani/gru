@@ -93,27 +93,19 @@ mkfifo "$SERVER_PIPE" "$WEB_PIPE"
 : > "$LOG_DIR/server.log"
 : > "$LOG_DIR/web.log"
 
-# Ensure the state dir has a server.yaml with a stable API key.
-# The key is created once and reused across restarts so the web dashboard
-# and hook scripts always talk to the same server with the same credentials.
-# When GRU_STATE_DIR is a non-default minion dir, this file is the first one
-# written there — matches the minion-env.sh contract.
+# Ensure the state dir has a server.yaml. The server has no app-level
+# auth (tailnet bind is the boundary), so this file carries only
+# addr / db_path / bind-mode.
 GRU_CONFIG_FILE="${STATE_DIR}/server.yaml"
 mkdir -p "$(dirname "$GRU_CONFIG_FILE")"
-if [[ ! -f "$GRU_CONFIG_FILE" ]] || ! grep -q "^api_key:" "$GRU_CONFIG_FILE"; then
-  GENERATED_KEY="$(openssl rand -hex 16 2>/dev/null || \
-    od -vN 16 -A n -t x1 /dev/urandom | tr -d ' \n')"
+if [[ ! -f "$GRU_CONFIG_FILE" ]]; then
   cat > "$GRU_CONFIG_FILE" <<YAML
 addr: :${SERVER_PORT}
-api_key: ${GENERATED_KEY}
+bind: loopback
 db_path: ${STATE_DIR}/gru.db
 YAML
-  echo "created $GRU_CONFIG_FILE with new API key"
+  echo "created $GRU_CONFIG_FILE"
 elif [[ -n "${SERVER_PORT_WAS_EXPLICIT:-}" ]]; then
-  # Caller explicitly asked for a port via GRU_SERVER_PORT — that should
-  # win over whatever's in the file. We only touch addr in this branch,
-  # so a user who hand-edited their server.yaml keeps their addr line
-  # unless they explicitly ask for a different port.
   if grep -q "^addr:" "$GRU_CONFIG_FILE"; then
     awk -v port="${SERVER_PORT}" \
       '/^addr:/ {print "addr: :" port; next} {print}' \
@@ -123,8 +115,6 @@ elif [[ -n "${SERVER_PORT_WAS_EXPLICIT:-}" ]]; then
     echo "addr: :${SERVER_PORT}" >> "$GRU_CONFIG_FILE"
   fi
 fi
-GRU_API_KEY="$(grep '^api_key:' "$GRU_CONFIG_FILE" | awk '{print $2}' | tr -d '"'\''[:space:]')"
-export VITE_GRU_API_KEY="${GRU_API_KEY}"
 
 # Detect the Tailscale IP so the frontend (running in a remote browser) can
 # reach the gRPC server directly. Falls back to localhost if tailscale isn't

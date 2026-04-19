@@ -32,26 +32,23 @@ fi
 
 mkdir -p "$STATE_DIR/logs"
 
-# Generate a minion-local API key. The minion's own gru server will accept it;
-# it's never the same as the parent's.
-MINION_API_KEY="$(openssl rand -hex 16 2>/dev/null || \
-  od -vN 16 -A n -t x1 /dev/urandom | tr -d ' \n')"
-
 # server.yaml is created even for frontend-only mode so `make dev` has a
 # consistent config to read; the SKIP_SERVER env var is what actually
-# prevents the server from starting.
+# prevents the server from starting. bind: loopback keeps the minion's
+# own server reachable only from the minion's host — the parent never
+# talks to it.
 cat > "$STATE_DIR/server.yaml" <<YAML
 addr: :0
-api_key: ${MINION_API_KEY}
+bind: loopback
 db_path: ${STATE_DIR}/gru.db
 YAML
 
 # minion-env.sh is sourced by exec.sh / exec-pty.sh before every command.
 # All vars here override the parent's env for anything the agent's shell
-# runs — including `make dev`. NOTE: we never export GRU_API_KEY, GRU_HOST,
-# or GRU_PORT here. Those are the hook-reporting env vars the parent Gru
-# sets on `claude`'s launch line so the minion's hook events flow back to
-# the parent dashboard. If we overrode them the minion would vanish from
+# runs — including `make dev`. NOTE: we never export GRU_HOST or GRU_PORT
+# here. Those are the hook-reporting env vars the parent Gru sets on
+# `claude`'s launch line so the minion's hook events flow back to the
+# parent dashboard. If we overrode them the minion would vanish from
 # the parent's queue.
 {
   printf 'export GRU_STATE_DIR=%q\n' "$STATE_DIR"

@@ -27,7 +27,6 @@ func newProjectsCmd(s *rootState) *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			req := connect.NewRequest(&gruv1.ListProjectsRequest{})
-			s.authReq(req)
 			resp, err := s.client.ListProjects(ctx, req)
 			if err != nil {
 				return fmt.Errorf("list projects: %w", err)

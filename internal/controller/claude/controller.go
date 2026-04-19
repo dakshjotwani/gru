@@ -28,7 +28,6 @@ import (
 // otherwise it uses defaultAdapter (typically "host"). Each live session
 // remembers which adapter provisioned it so Kill can tear down correctly.
 type ClaudeController struct {
-	apiKey         string
 	host           string
 	port           string
 	claudeBin      string
@@ -52,7 +51,7 @@ type liveSession struct {
 // adapters. defaultAdapter is the runtime ID used when a launch doesn't
 // specify its own EnvSpec. Panics if registry is nil or defaultAdapter is
 // not registered — a controller with no provisioning substrate is useless.
-func NewClaudeController(apiKey, host, port string, envs *env.Registry, defaultAdapter string) *ClaudeController {
+func NewClaudeController(host, port string, envs *env.Registry, defaultAdapter string) *ClaudeController {
 	if envs == nil {
 		panic("claude: NewClaudeController requires a non-nil env.Registry")
 	}
@@ -64,7 +63,6 @@ func NewClaudeController(apiKey, host, port string, envs *env.Registry, defaultA
 		bin = "claude" // fall back; let the shell report at launch time
 	}
 	return &ClaudeController{
-		apiKey:         apiKey,
 		host:           host,
 		port:           port,
 		claudeBin:      bin,
@@ -165,7 +163,7 @@ func (c *ClaudeController) Launch(ctx context.Context, opts controller.LaunchOpt
 	}
 
 	name := tmuxName(sessionID)
-	shellCmd := buildClaudeCmd(opts, sessionID, c.apiKey, c.host, c.port, c.claudeBin, agentArgs.ExtraArgs, addDirArgs)
+	shellCmd := buildClaudeCmd(opts, sessionID, c.host, c.port, c.claudeBin, agentArgs.ExtraArgs, addDirArgs)
 	if err := c.pty.Start(ctx, adapter, inst, name, agentCwd, shellCmd); err != nil {
 		// Best-effort rollback.
 		c.mu.Lock()
@@ -226,7 +224,7 @@ func (c *ClaudeController) Kill(ctx context.Context, sessionID string) error {
 // (--worktree, etc.) first, then base flags, then --add-dirs, then prompt.
 func buildClaudeCmd(
 	opts controller.LaunchOptions,
-	sessionID, apiKey, host, port, bin string,
+	sessionID, host, port, bin string,
 	adapterArgs, addDirArgs []string,
 ) string {
 	var args []string
@@ -247,8 +245,8 @@ func buildClaudeCmd(
 	if opts.Prompt != "" {
 		args = append(args, shellQuote(opts.Prompt))
 	}
-	return fmt.Sprintf("GRU_SESSION_ID=%s GRU_API_KEY=%s GRU_HOST=%s GRU_PORT=%s %s %s",
-		sessionID, apiKey, host, port, bin, strings.Join(args, " "))
+	return fmt.Sprintf("GRU_SESSION_ID=%s GRU_HOST=%s GRU_PORT=%s %s %s",
+		sessionID, host, port, bin, strings.Join(args, " "))
 }
 
 func shellQuote(s string) string {

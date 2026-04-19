@@ -19,7 +19,6 @@ func newAttachCmd(s *rootState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			req := connect.NewRequest(&gruv1.GetSessionRequest{Id: args[0]})
-			s.authReq(req)
 			resp, err := s.client.GetSession(ctx, req)
 			if err != nil {
 				tmuxSession := "gru-" + sanitizeProjectName(args[0])

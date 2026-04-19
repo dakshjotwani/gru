@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,8 +21,9 @@ var wsUpgrader = websocket.Upgrader{
 
 // TerminalHandler streams a tmux pane over WebSocket using a PTY.
 //
-// Auth: browsers cannot set custom headers on WebSocket upgrades, so we accept
-// the API key via the ?token= query parameter instead of Authorization header.
+// The server binds to the tailnet interface (see internal/server/bind.go),
+// so network reachability is itself the authentication boundary — no token
+// is required on the WebSocket upgrade.
 //
 // Protocol (after upgrade):
 //   - Server → client: binary frames containing raw PTY output bytes.
@@ -31,22 +31,14 @@ var wsUpgrader = websocket.Upgrader{
 //   - Client → server: text frames containing JSON resize events:
 //     {"type":"resize","cols":N,"rows":N}
 type TerminalHandler struct {
-	apiKey string
-	store  *store.Store
+	store *store.Store
 }
 
-func NewTerminalHandler(apiKey string, s *store.Store) http.Handler {
-	return &TerminalHandler{apiKey: apiKey, store: s}
+func NewTerminalHandler(s *store.Store) http.Handler {
+	return &TerminalHandler{store: s}
 }
 
 func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Auth via query param.
-	token := r.URL.Query().Get("token")
-	if subtle.ConstantTimeCompare([]byte(token), []byte(h.apiKey)) != 1 {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	sessionID := r.PathValue("session_id")
 	if sessionID == "" {
 		http.Error(w, "missing session_id", http.StatusBadRequest)

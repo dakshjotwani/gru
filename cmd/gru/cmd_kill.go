@@ -15,7 +15,6 @@ func newKillCmd(s *rootState) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req := connect.NewRequest(&gruv1.KillSessionRequest{Id: args[0]})
-			s.authReq(req)
 			resp, err := s.client.KillSession(cmd.Context(), req)
 			if err != nil {
 				return fmt.Errorf("kill session: %w", err)

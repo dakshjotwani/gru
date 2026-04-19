@@ -6,7 +6,6 @@ import styles from './TerminalPanel.module.css';
 import '@xterm/xterm/css/xterm.css';
 
 const serverUrl = import.meta.env.VITE_GRU_SERVER_URL ?? 'http://localhost:7777';
-const apiKey = import.meta.env.VITE_GRU_API_KEY ?? '';
 
 // iPad Safari silently stalls WebSocket connections when a previous connection
 // to the same endpoint is still closing (common when cycling between sessions).
@@ -112,9 +111,7 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
       if (disposed || !term) return;
 
       const wsBase = serverUrl.replace(/^http/, 'ws');
-      const socket = new WebSocket(
-        `${wsBase}/terminal/${session.id}?token=${encodeURIComponent(apiKey)}`
-      );
+      const socket = new WebSocket(`${wsBase}/terminal/${session.id}`);
       socket.binaryType = 'arraybuffer';
       ws = socket;
 

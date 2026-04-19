@@ -69,7 +69,7 @@ func runCLI(t *testing.T, serverURL string, args ...string) string {
 	root := newRootCmd()
 	root.SetOut(&buf)
 	root.SetErr(&buf)
-	fullArgs := append([]string{"--server", serverURL, "--api-key", "test-key"}, args...)
+	fullArgs := append([]string{"--server", serverURL}, args...)
 	root.SetArgs(fullArgs)
 	if err := root.Execute(); err != nil {
 		t.Fatalf("CLI error: %v", err)
@@ -83,7 +83,7 @@ func runCLIErr(t *testing.T, serverURL string, args ...string) string {
 	root := newRootCmd()
 	root.SetOut(&buf)
 	root.SetErr(&buf)
-	fullArgs := append([]string{"--server", serverURL, "--api-key", "test-key"}, args...)
+	fullArgs := append([]string{"--server", serverURL}, args...)
 	root.SetArgs(fullArgs)
 	_ = root.Execute()
 	return buf.String()

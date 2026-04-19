@@ -17,7 +17,6 @@ import (
 
 type rootState struct {
 	serverURL string
-	apiKey    string
 	client    gruv1connect.GruServiceClient
 }
 
@@ -43,10 +42,14 @@ func newRootCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("load config: %w", err)
 				}
-				state.serverURL = "http://" + cfg.Addr
-				if state.apiKey == "" {
-					state.apiKey = cfg.APIKey
+				// cfg.Addr is typically ":7777" — the CLI reaches the
+				// server over loopback regardless of how the server is
+				// bound externally (tailnet/all).
+				addr := cfg.Addr
+				if strings.HasPrefix(addr, ":") {
+					addr = "127.0.0.1" + addr
 				}
+				state.serverURL = "http://" + addr
 			}
 			state.client = gruv1connect.NewGruServiceClient(
 				&http.Client{Timeout: 30 * time.Second},
@@ -57,7 +60,6 @@ func newRootCmd() *cobra.Command {
 	}
 
 	root.PersistentFlags().StringVar(&state.serverURL, "server", "", "gru server URL (default: from ~/.gru/server.yaml)")
-	root.PersistentFlags().StringVar(&state.apiKey, "api-key", "", "API key (default: from ~/.gru/server.yaml)")
 
 	root.AddCommand(
 		newServerCmd(),
@@ -73,10 +75,6 @@ func newRootCmd() *cobra.Command {
 	)
 
 	return root
-}
-
-func (s *rootState) authReq(req interface{ Header() http.Header }) {
-	req.Header().Set("Authorization", "Bearer "+s.apiKey)
 }
 
 func defaultConfigPath() string {

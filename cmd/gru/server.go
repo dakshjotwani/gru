@@ -104,7 +104,7 @@ func runServer(portFilePath string) error {
 	}
 
 	ctrlReg := controller.NewRegistry()
-	ctrlReg.Register(claudecontroller.NewClaudeController(cfg.APIKey, "localhost", listenPort, envReg, "host"))
+	ctrlReg.Register(claudecontroller.NewClaudeController("localhost", listenPort, envReg, "host"))
 
 	svc := server.NewService(s, pub)
 	svc.SetControllerRegistry(ctrlReg)
@@ -167,40 +167,70 @@ func runServer(portFilePath string) error {
 	grpcPath, grpcHandler := gruv1connect.NewGruServiceHandler(svc,
 		connect.WithCompressMinBytes(1024),
 	)
-	mux.Handle(grpcPath, server.BearerAuth(cfg.APIKey, grpcHandler))
+	mux.Handle(grpcPath, grpcHandler)
 
 	// Hook event ingestion (plain HTTP POST).
-	mux.Handle("POST /events", server.BearerAuth(cfg.APIKey, ingestionHandler))
+	mux.Handle("POST /events", ingestionHandler)
 
 	// WebSocket terminal: streams a tmux pane over a PTY.
-	// Auth via ?token= query param (browsers can't set headers on WS upgrades).
-	mux.Handle("GET /terminal/{session_id}", server.NewTerminalHandler(cfg.APIKey, s))
+	mux.Handle("GET /terminal/{session_id}", server.NewTerminalHandler(s))
 
-	// Bind the listener explicitly so we can read the bound port (and
-	// optionally publish it to --port-file) before serving. Required for
-	// ephemeral-port flows where cfg.Addr is ":0".
-	ln, err := net.Listen("tcp", cfg.Addr)
+	// First listener follows cfg.Addr directly so --port-file + :0 flows
+	// keep working (the bound port is captured from it). Additional
+	// listeners on the same mux are opened on the resolved bind addresses
+	// using the first listener's port.
+	firstLn, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Addr, err)
 	}
-	boundPort := ln.Addr().(*net.TCPAddr).Port
+	boundPort := firstLn.Addr().(*net.TCPAddr).Port
 
 	if portFilePath != "" {
 		if err := writePortFile(portFilePath, boundPort); err != nil {
-			_ = ln.Close()
+			_ = firstLn.Close()
 			return fmt.Errorf("write port file: %w", err)
 		}
 	}
 
 	// h2c enables HTTP/2 cleartext (required for gRPC without TLS).
-	// CORS wraps the mux so OPTIONS preflights are answered before BearerAuth runs.
+	// CORS wraps the mux so OPTIONS preflights are answered first.
 	httpServer := &http.Server{
 		Handler: h2c.NewHandler(server.CORS(mux), &http2.Server{}),
 	}
 
-	log.Printf("gru server listening on 127.0.0.1:%d (db: %s)", boundPort, cfg.DBPath)
-	log.Printf("API key: %s", cfg.APIKey)
-	return httpServer.Serve(ln)
+	log.Printf("gru server bound on %s (mode=%s, db=%s)", firstLn.Addr(), cfg.Bind, cfg.DBPath)
+
+	// Fan out to additional interfaces per cfg.Bind, reusing the bound port.
+	extra, err := server.ResolveBindAddrs(serverCtx, cfg.Bind, fmt.Sprintf("%d", boundPort))
+	if err != nil {
+		_ = firstLn.Close()
+		return fmt.Errorf("resolve bind addrs: %w", err)
+	}
+	for _, a := range extra {
+		// Skip if it's the same IP we already bound (e.g. cfg.Addr was
+		// 127.0.0.1:<port>). A listen on an already-bound address
+		// would fail; better to detect via the first listener's address.
+		if a == firstLn.Addr().String() {
+			continue
+		}
+		ln, err := net.Listen("tcp", a)
+		if err != nil {
+			// An extra interface failing is a warning, not a fatal — the
+			// first listener is still good. Typical failure: tailscale
+			// detected but the returned IP isn't bindable (e.g. the
+			// operator has `tailscale up` pending).
+			log.Printf("warning: skip extra listener on %s: %v", a, err)
+			continue
+		}
+		log.Printf("gru server also listening on %s", ln.Addr())
+		go func(ln net.Listener) {
+			if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("extra listener %s exited: %v", ln.Addr(), err)
+			}
+		}(ln)
+	}
+
+	return httpServer.Serve(firstLn)
 }
 
 // supervisorStoreAdapter adapts *store.Store to supervisor.SessionStore.

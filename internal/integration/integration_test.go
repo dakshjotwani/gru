@@ -42,11 +42,10 @@ func (s *stubNormalizer) Normalize(_ context.Context, raw json.RawMessage) (*ada
 	}, nil
 }
 
-// startTestServer starts an in-process server using httptest and returns its URL and API key.
+// startTestServer starts an in-process server using httptest and returns its URL.
 // It also returns the store so the caller can seed data.
-func startTestServer(t *testing.T) (url string, apiKey string, s *store.Store) {
+func startTestServer(t *testing.T) (url string, s *store.Store) {
 	t.Helper()
-	const key = "integration-test-key"
 
 	var err error
 	s, err = store.Open(":memory:")
@@ -64,18 +63,18 @@ func startTestServer(t *testing.T) (url string, apiKey string, s *store.Store) {
 
 	mux := http.NewServeMux()
 	grpcPath, grpcHandler := gruv1connect.NewGruServiceHandler(svc)
-	mux.Handle(grpcPath, grpcHandler) // no auth on gRPC in test for simplicity
-	mux.Handle("POST /events", server.BearerAuth(key, ingestionHandler))
+	mux.Handle(grpcPath, grpcHandler)
+	mux.Handle("POST /events", ingestionHandler)
 
 	ts := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
 	ts.Start()
 	t.Cleanup(ts.Close)
 
-	return ts.URL, key, s
+	return ts.URL, s
 }
 
 func TestIntegration_PostEventAndListSession(t *testing.T) {
-	url, apiKey, s := startTestServer(t)
+	url, s := startTestServer(t)
 	ctx := context.Background()
 
 	// Pre-seed project + session — sessions must pre-exist before any hook fires.
@@ -109,7 +108,6 @@ func TestIntegration_PostEventAndListSession(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gru-Runtime", "test-runtime")
 	req.Header.Set("X-Gru-Session-ID", "sess-int")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

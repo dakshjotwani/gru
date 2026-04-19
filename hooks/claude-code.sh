@@ -33,9 +33,9 @@ fi
 [ -n "$GRU_SESSION_ID" ] || exit 0
 
 # Read connection config from ~/.gru/server.yaml.
-# addr is "host:port" or ":port" (host-only listen); api_key is a bare value.
+# addr is "host:port" or ":port" (host-only listen).
+# No auth token is required — the server binds tailnet/loopback only.
 CONFIG="$HOME/.gru/server.yaml"
-GRU_API_KEY=$(grep 'api_key' "$CONFIG" 2>/dev/null | awk '{print $2}')
 ADDR=$(grep '^addr' "$CONFIG" 2>/dev/null | awk '{print $2}')
 GRU_PORT="${ADDR##*:}"
 GRU_HOST="${ADDR%:*}"
@@ -45,7 +45,6 @@ GRU_PORT="${GRU_PORT:-7777}"
 
 curl -s -m 2 -X POST \
   "http://$GRU_HOST:$GRU_PORT/events" \
-  -H "Authorization: Bearer $GRU_API_KEY" \
   -H "Content-Type: application/json" \
   -H "X-Gru-Runtime: claude-code" \
   -H "X-Gru-Session-ID: $GRU_SESSION_ID" \

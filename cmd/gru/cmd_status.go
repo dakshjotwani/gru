@@ -19,7 +19,6 @@ func newStatusCmd(s *rootState) *cobra.Command {
 
 			if len(args) == 1 {
 				req := connect.NewRequest(&gruv1.GetSessionRequest{Id: args[0]})
-				s.authReq(req)
 				resp, err := s.client.GetSession(ctx, req)
 				if err != nil {
 					return fmt.Errorf("get session: %w", err)
@@ -42,7 +41,6 @@ func newStatusCmd(s *rootState) *cobra.Command {
 			}
 
 			req := connect.NewRequest(&gruv1.ListSessionsRequest{})
-			s.authReq(req)
 			resp, err := s.client.ListSessions(ctx, req)
 			if err != nil {
 				return fmt.Errorf("list sessions: %w", err)

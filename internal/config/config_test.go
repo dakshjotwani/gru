@@ -9,8 +9,6 @@ import (
 )
 
 func TestLoad_defaults(t *testing.T) {
-	// No config file at path — Load returns defaults and auto-persists
-	// a generated API key. Use a writable temp path so the persist step succeeds.
 	dir := t.TempDir()
 	cfg, err := config.Load(filepath.Join(dir, "server.yaml"))
 	if err != nil {
@@ -19,15 +17,15 @@ func TestLoad_defaults(t *testing.T) {
 	if cfg.Addr != ":7777" {
 		t.Errorf("default addr = %q, want %q", cfg.Addr, ":7777")
 	}
-	if cfg.APIKey == "" {
-		t.Error("default APIKey should not be empty (auto-generated)")
+	if cfg.Bind != "tailnet" {
+		t.Errorf("default bind = %q, want %q", cfg.Bind, "tailnet")
 	}
 }
 
-func TestLoad_emptyAPIKey(t *testing.T) {
+func TestLoad_ignoresLegacyAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.yaml")
-	content := "addr: \":8080\"\napi_key: \"\"\n"
+	content := "addr: \":8080\"\napi_key: \"old-key\"\n"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -36,15 +34,18 @@ func TestLoad_emptyAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.APIKey == "" {
-		t.Error("APIKey should be auto-generated when api_key field is empty")
+	if cfg.Addr != ":8080" {
+		t.Errorf("addr = %q, want %q", cfg.Addr, ":8080")
+	}
+	if cfg.Bind != "tailnet" {
+		t.Errorf("default bind should fill in to tailnet when absent, got %q", cfg.Bind)
 	}
 }
 
 func TestLoad_fromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.yaml")
-	content := "addr: \":9090\"\napi_key: \"test-key-123\"\ndb_path: \"/tmp/gru.db\"\n"
+	content := "addr: \":9090\"\nbind: \"loopback\"\ndb_path: \"/tmp/gru.db\"\n"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,10 @@ func TestLoad_fromFile(t *testing.T) {
 	if cfg.Addr != ":9090" {
 		t.Errorf("addr = %q, want %q", cfg.Addr, ":9090")
 	}
-	if cfg.APIKey != "test-key-123" {
-		t.Errorf("api_key = %q, want %q", cfg.APIKey, "test-key-123")
+	if cfg.Bind != "loopback" {
+		t.Errorf("bind = %q, want %q", cfg.Bind, "loopback")
+	}
+	if cfg.DBPath != "/tmp/gru.db" {
+		t.Errorf("db_path = %q, want %q", cfg.DBPath, "/tmp/gru.db")
 	}
 }

@@ -48,7 +48,6 @@ full addressing model.`,
 				Description: description,
 			}
 			req := connect.NewRequest(msg)
-			s.authReq(req)
 			resp, err := s.client.LaunchSession(cmd.Context(), req)
 			if err != nil {
 				return fmt.Errorf("launch session: %w", err)
