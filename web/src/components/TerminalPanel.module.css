@@ -36,6 +36,12 @@
   flex: 1;
   overflow: hidden;
   padding: 8px;
+  border: 1px solid transparent;
+  transition: border-color 120ms ease;
+}
+
+.terminal:focus-within {
+  border-color: #30363d;
 }
 
 /* xterm.js renders into a canvas/div — make sure it fills the container */

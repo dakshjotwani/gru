@@ -40,7 +40,7 @@ export function App() {
   // Enter — confirm selection and return focus to terminal.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Ctrl+\ toggles sidebar nav mode from anywhere.
+      // Ctrl+\ toggles sidebar nav mode from anywhere — always active.
       if (e.key === '\\' && e.ctrlKey && !e.altKey && !e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
@@ -54,6 +54,11 @@ export function App() {
         });
         return;
       }
+
+      // Yield to the terminal when it has focus: xterm's custom key
+      // handler claims Ctrl+C / Tab / Escape / arrows etc. in that case.
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest('[data-gru-terminal]')) return;
 
       // Navigation and confirmation only active while sidebar is focused.
       if (sidebarFocused) {

@@ -79,6 +79,28 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
       fitAddon.fit();
       term.focus();
 
+      // Claim keys the browser/React-app would otherwise steal from the
+      // terminal: Ctrl+C (browser copies selection), Tab (focus move),
+      // Escape (app deselects minion), Ctrl+Z/D, arrows.
+      // Ctrl+\ is deliberately NOT claimed — App.tsx uses it as a
+      // global "toggle sidebar nav mode" shortcut.
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type !== 'keydown') return true;
+        const { key, ctrlKey, metaKey, altKey } = e;
+        const isClaimed =
+          key === 'Tab' ||
+          key === 'Escape' ||
+          key === 'ArrowUp' || key === 'ArrowDown' ||
+          key === 'ArrowLeft' || key === 'ArrowRight' ||
+          (ctrlKey && !metaKey && !altKey &&
+            (key === 'c' || key === 'd' || key === 'z'));
+        if (isClaimed) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return true;
+      });
+
       if (focusRef) focusRef.current = () => term?.focus();
     };
 
@@ -196,7 +218,7 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
           <span className={styles.tmuxTarget}>{session.tmuxSession}</span>
         )}
       </div>
-      <div ref={containerRef} className={styles.terminal} />
+      <div ref={containerRef} className={styles.terminal} data-gru-terminal />
     </div>
   );
 }
