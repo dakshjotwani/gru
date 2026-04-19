@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AttentionQueue } from './components/AttentionQueue';
 import { LaunchModal } from './components/LaunchModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { TerminalPanel } from './components/TerminalPanel';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
@@ -130,6 +131,7 @@ export function App() {
 
   return (
     <div className={styles.app}>
+      <PWAInstallBanner />
       <header className={styles.header}>
         <div className={styles.brand}>
           <button
