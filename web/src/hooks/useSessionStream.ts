@@ -166,6 +166,14 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
 
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
   const abortRef = useRef<AbortController | null>(null);
+  // Tracks the pending backoff reconnect timer so resume-triggered reconnects
+  // can cancel it and retry immediately. Without this, an iOS/Android PWA
+  // that was suspended mid-backoff may be stuck waiting up to MAX_BACKOFF_MS
+  // after resume because background timers are heavily throttled.
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks whether we currently believe the stream is live. Used by the
+  // resume handler to decide whether to force-reconnect.
+  const isConnectedRef = useRef(false);
   const prevStatusRef = useRef<Map<string, SessionStatus>>(new Map());
   const projectsRef = useRef<Project[]>(projects ?? []);
   projectsRef.current = projects ?? [];
@@ -175,12 +183,18 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     const abort = new AbortController();
     abortRef.current = abort;
 
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
     try {
       const stream = gruClient.subscribeEvents(
         { projectIds: projectId ? [projectId] : [], minAttention: 0 },
         { signal: abort.signal }
       );
 
+      isConnectedRef.current = true;
       dispatch({ type: 'CONNECTED' });
       for await (const event of stream) {
         dispatch({ type: 'EVENT', event });
@@ -190,12 +204,17 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     } catch (err) {
       if (abort.signal.aborted) return;
       const msg = err instanceof Error ? err.message : String(err);
+      isConnectedRef.current = false;
       dispatch({ type: 'DISCONNECTED', error: msg });
     }
 
+    isConnectedRef.current = false;
     const delay = backoffRef.current;
     backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
-    setTimeout(connect, delay);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      void connect();
+    }, delay);
   }, [projectId]);
 
   useEffect(() => {
@@ -208,6 +227,42 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     connect();
     return () => {
       abortRef.current?.abort();
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [connect]);
+
+  // Resume-aware reconnect: when the PWA comes back to the foreground (or the
+  // network comes back), mobile browsers may have silently killed the stream
+  // while we were suspended. Force an immediate reconnect instead of waiting
+  // out whatever backoff was pending when the tab was frozen.
+  useEffect(() => {
+    const reconnectNow = () => {
+      if (isConnectedRef.current) return;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      backoffRef.current = INITIAL_BACKOFF_MS;
+      void connect();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') reconnectNow();
+    };
+    const onPageShow = () => reconnectNow();
+    const onOnline = () => reconnectNow();
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('online', onOnline);
     };
   }, [connect]);
 

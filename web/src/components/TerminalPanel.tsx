@@ -17,6 +17,14 @@ import '@xterm/xterm/css/xterm.css';
 const WS_CONNECT_TIMEOUT_MS = 250;
 const WS_MAX_RETRIES = 3;
 
+// Mobile PWA resume: iOS/Android aggressively suspend backgrounded tabs,
+// which drops the WebSocket. In-flight retry timers can also be paused or
+// throttled while suspended, so on resume we both (a) let any scheduled
+// backoff continue and (b) actively force an immediate reconnect on
+// visibilitychange / pageshow / focus / online events.
+const WS_RECONNECT_INITIAL_BACKOFF_MS = 500;
+const WS_RECONNECT_MAX_BACKOFF_MS = 8000;
+
 interface TerminalPanelProps {
   session: Session;
   /** Parent sets this ref to call focus() on the terminal from outside. */
@@ -35,6 +43,13 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
     let fitAddon: FitAddon | null = null;
     let ws: WebSocket | null = null;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectBackoffMs = WS_RECONNECT_INITIAL_BACKOFF_MS;
+    // Once the socket has opened at least once, any subsequent close is
+    // treated as a transient drop (backoff reconnect). Before that, we
+    // preserve the original "give up after WS_MAX_RETRIES initial attempts"
+    // behavior so dead sessions don't retry forever.
+    let hasEverOpened = false;
 
     const termTheme = {
       background: '#0d1117',
@@ -100,14 +115,47 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
       });
 
       if (focusRef) focusRef.current = () => term?.focus();
+
+      // Attach input/resize forwarding ONCE. These close over `ws`, which is
+      // reassigned on every (re)connect — so keystrokes always flow to the
+      // currently-live socket. If we re-added these per connectWs() call
+      // (as an earlier version did), each reconnect would stack another
+      // listener and the terminal would echo each keystroke N times.
+      term.onData((data) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(new TextEncoder().encode(data));
+        }
+      });
+
+      term.onResize(({ cols, rows }) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+        }
+      });
     };
 
     // ── WebSocket with connect timeout + retry ──
     // iPad Safari can silently stall WebSocket connections during rapid
     // open/close cycles. A connect timeout + retry makes this recoverable.
 
+    const scheduleReconnect = (delayMs: number) => {
+      if (disposed) return;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        if (disposed) return;
+        reconnectBackoffMs = Math.min(
+          reconnectBackoffMs * 2,
+          WS_RECONNECT_MAX_BACKOFF_MS,
+        );
+        connectWs(1);
+      }, delayMs);
+    };
+
     const connectWs = (attempt: number) => {
       if (disposed || !term) return;
+
+      clearTimeout(connectTimer);
+      clearTimeout(reconnectTimer);
 
       const socket = new WebSocket(`${resolveWebSocketUrl()}/terminal/${session.id}`);
       socket.binaryType = 'arraybuffer';
@@ -121,14 +169,18 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
           if (attempt < WS_MAX_RETRIES && !disposed) {
             term?.write(`\r\n\x1b[2m[reconnecting…]\x1b[0m\r\n`);
             connectWs(attempt + 1);
-          } else {
+          } else if (!hasEverOpened) {
             term?.write(`\r\n\x1b[31m[connection timed out]\x1b[0m\r\n`);
           }
+          // If hasEverOpened is true, the onclose handler below will take
+          // over and schedule a backoff reconnect.
         }
       }, WS_CONNECT_TIMEOUT_MS);
 
       socket.onopen = () => {
         clearTimeout(connectTimer);
+        hasEverOpened = true;
+        reconnectBackoffMs = WS_RECONNECT_INITIAL_BACKOFF_MS;
         if (fitAddon) {
           const dims = fitAddon.proposeDimensions();
           if (dims) {
@@ -147,31 +199,53 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
 
       socket.onclose = () => {
         clearTimeout(connectTimer);
-        if (!disposed) {
-          term?.write('\r\n\x1b[2m[connection closed]\x1b[0m\r\n');
+        if (disposed) return;
+        // Stale close from a socket we've already replaced (e.g. the
+        // connect-timeout path swapped in a new attempt before this one
+        // finished closing). Ignore — the live socket owns the retry policy.
+        if (ws !== socket) return;
+        if (hasEverOpened) {
+          // Mid-session drop — typically PWA suspend/resume on iOS/Android,
+          // or a transient network blip. Schedule a backoff reconnect; a
+          // visibilitychange / pageshow / focus / online event will short-
+          // circuit the backoff and retry immediately.
+          term?.write(`\r\n\x1b[2m[reconnecting…]\x1b[0m\r\n`);
+          scheduleReconnect(reconnectBackoffMs);
+        } else if (attempt >= WS_MAX_RETRIES) {
+          // Never opened and exhausted initial attempts — give up so dead
+          // sessions don't reconnect forever.
+          term?.write('\r\n\x1b[31m[connection closed]\x1b[0m\r\n');
         }
       };
 
       socket.onerror = () => {
         clearTimeout(connectTimer);
-        if (!disposed) {
-          // Don't write error here — onclose always fires after onerror, so
-          // the retry logic in the timeout handler or the close message covers it.
-        }
+        // onclose always fires after onerror — let it make the retry call.
       };
-
-      term!.onData((data) => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(new TextEncoder().encode(data));
-        }
-      });
-
-      term!.onResize(({ cols, rows }) => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'resize', cols, rows }));
-        }
-      });
     };
+
+    // Force an immediate reconnect if the socket is not currently healthy.
+    // Called from resume-style events below.
+    const reconnectNowIfNeeded = () => {
+      if (disposed || !term) return;
+      if (!hasEverOpened) return; // preserve initial-attempt semantics
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      clearTimeout(reconnectTimer);
+      reconnectBackoffMs = WS_RECONNECT_INITIAL_BACKOFF_MS;
+      connectWs(1);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') reconnectNowIfNeeded();
+    };
+    const onPageShow = () => reconnectNowIfNeeded();
+    const onFocus = () => reconnectNowIfNeeded();
+    const onOnline = () => reconnectNowIfNeeded();
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
 
     // ── Boot: wait for container dimensions, then init terminal + connect ──
 
@@ -198,6 +272,11 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
     return () => {
       disposed = true;
       clearTimeout(connectTimer);
+      clearTimeout(reconnectTimer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
       if (focusRef) focusRef.current = null;
       observer.disconnect();
       ws?.close();

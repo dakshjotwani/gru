@@ -166,6 +166,66 @@ describe('useSessionStream', () => {
     expect(callCount).toBeGreaterThan(countAfterMount);
   });
 
+  it('force-reconnects on visibilitychange when disconnected, without waiting for backoff', async () => {
+    // Regression test for mobile PWA resume: when iOS/Android re-foregrounds
+    // the app after suspending it, we must reconnect immediately — the
+    // already-scheduled backoff timer may be throttled or already-elapsed
+    // while frozen.
+    vi.useFakeTimers();
+    let callCount = 0;
+
+    vi.mocked(gruClient.subscribeEvents).mockImplementation(() => {
+      callCount++;
+      throw new Error('connection refused');
+    });
+
+    renderHook(() => useSessionStream());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const countAfterMount = callCount;
+    expect(countAfterMount).toBeGreaterThanOrEqual(1);
+
+    // Fire visibilitychange WITHOUT advancing timers. If the resume handler
+    // is wired up, it cancels the pending backoff and reconnects now.
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    expect(callCount).toBeGreaterThan(countAfterMount);
+  });
+
+  it('force-reconnects on pageshow and online events', async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+
+    vi.mocked(gruClient.subscribeEvents).mockImplementation(() => {
+      callCount++;
+      throw new Error('connection refused');
+    });
+
+    renderHook(() => useSessionStream());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const countAfterMount = callCount;
+
+    await act(async () => {
+      window.dispatchEvent(new Event('pageshow'));
+      await Promise.resolve();
+    });
+    const countAfterPageshow = callCount;
+    expect(countAfterPageshow).toBeGreaterThan(countAfterMount);
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+      await Promise.resolve();
+    });
+    expect(callCount).toBeGreaterThan(countAfterPageshow);
+  });
+
   it('sessionsSortedByAttention returns sessions for project sorted by score desc', async () => {
     const s1 = makeSession({ id: 'a', projectId: 'p1', attentionScore: 0.3 });
     const s2 = makeSession({ id: 'b', projectId: 'p1', attentionScore: 0.9 });
