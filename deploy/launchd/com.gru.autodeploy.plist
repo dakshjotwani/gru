@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.gru.autodeploy — LaunchAgent that runs scripts/autodeploy.sh every 60s.
+
+  Install via scripts/install-autodeploy.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gru.autodeploy</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/workspace/gru/scripts/autodeploy.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__HOME__/workspace/gru</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- Poll every 60s. Launchd skips firings that overlap a still-running run. -->
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Autodeploy itself logs via its own file; launchd stdout/stderr is a
+       safety net for bash-level failures before the script's log() kicks in. -->
+  <key>StandardOutPath</key>
+  <string>__HOME__/.gru/logs/autodeploy.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.gru/logs/autodeploy.launchd.log</string>
+</dict>
+</plist>
