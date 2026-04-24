@@ -36,8 +36,8 @@
   <!-- Autodeploy itself logs via its own file; launchd stdout/stderr is a
        safety net for bash-level failures before the script's log() kicks in. -->
   <key>StandardOutPath</key>
-  <string>__HOME__/.gru/logs/autodeploy.launchd.log</string>
+  <string>__HOME__/Library/Logs/gru/autodeploy-launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/.gru/logs/autodeploy.launchd.log</string>
+  <string>__HOME__/Library/Logs/gru/autodeploy-launchd.log</string>
 </dict>
 </plist>

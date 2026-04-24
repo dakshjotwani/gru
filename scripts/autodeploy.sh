@@ -7,7 +7,8 @@
 #
 # Env overrides:
 #   GRU_AUTODEPLOY_REPO      repo path              (default: $HOME/workspace/gru)
-#   GRU_STATE_DIR            state dir              (default: $HOME/.gru)
+#   GRU_STATE_DIR            state dir (lock file)  (default: $HOME/.gru)
+#   GRU_LOG_DIR              log dir                (default: $HOME/Library/Logs/gru)
 #   GRU_AUTODEPLOY_LABEL     launchd label to kick  (default: com.gru.server)
 #   GRU_AUTODEPLOY_BRANCH    tracking branch        (default: main)
 #
@@ -18,9 +19,9 @@ set -euo pipefail
 
 REPO="${GRU_AUTODEPLOY_REPO:-$HOME/workspace/gru}"
 STATE_DIR="${GRU_STATE_DIR:-$HOME/.gru}"
+LOG_DIR="${GRU_LOG_DIR:-$HOME/Library/Logs/gru}"
 LABEL="${GRU_AUTODEPLOY_LABEL:-com.gru.server}"
 BRANCH="${GRU_AUTODEPLOY_BRANCH:-main}"
-LOG_DIR="${STATE_DIR}/logs"
 LOG="${LOG_DIR}/autodeploy.log"
 LOCK="${STATE_DIR}/autodeploy.lock"
 
@@ -36,7 +37,7 @@ for arg in "$@"; do
   esac
 done
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$STATE_DIR"
 
 log() {
   printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$LOG"

@@ -27,7 +27,7 @@ render() {
 }
 
 cmd_install() {
-  mkdir -p "$DEST_DIR" "$HOME/.gru/logs"
+  mkdir -p "$DEST_DIR" "$HOME/Library/Logs/gru" "$HOME/.gru"
 
   if [ ! -x "$ROOT/gru" ]; then
     echo "error: $ROOT/gru not built. Run 'make build-web build' first." >&2
@@ -59,9 +59,10 @@ cmd_install() {
   done
 
   echo
-  echo "installed. Logs:"
-  echo "  tail -f ~/.gru/logs/server.launchd.log"
-  echo "  tail -f ~/.gru/logs/autodeploy.log"
+  echo "installed. Logs (~/Library/Logs/gru/):"
+  echo "  tail -f ~/Library/Logs/gru/server.log"
+  echo "  tail -f ~/Library/Logs/gru/autodeploy.log"
+  echo "  tail -f ~/Library/Logs/gru/autodeploy-launchd.log   # bash-level safety net"
 }
 
 cmd_uninstall() {
