@@ -11,9 +11,8 @@
 //
 //   - notification.needs_attention → always push, with Approve/Deny
 //     action buttons (signed per-device action token in `data`).
-//   - session.idle + attention_score > threshold → push, body is the
-//     event summary.
-//   - All other event types are ignored.
+//   - All other event types (including session.idle) are ignored —
+//     plain turn-complete idles are too noisy for lock-screen pings.
 //
 // Per-session rate limit: at most one push per session per
 // RateLimit. Dedupe in the OS tray is handled client-side via the
@@ -45,7 +44,9 @@ type Config struct {
 	VAPIDPublicKey  string
 	// Subject is the VAPID mailto: or https: subject URL (e.g. "mailto:ops@gru.local").
 	Subject string
-	// Threshold gates session.idle pushes: attention_score must exceed it.
+	// Threshold is an attention-score gate, reserved for future trigger
+	// kinds. Currently unused — notification.needs_attention pushes
+	// unconditionally.
 	Threshold float64
 	// RateLimit is the minimum gap between pushes for the same session.
 	RateLimit time.Duration
@@ -125,8 +126,8 @@ func (d *Dispatcher) Run(ctx context.Context) {
 // handle applies the trigger policy for a single event and dispatches
 // to all non-stale devices if the event qualifies.
 func (d *Dispatcher) handle(ctx context.Context, evt *gruv1.SessionEvent) error {
-	trigger, body := d.classify(ctx, evt)
-	if trigger == triggerNone {
+	trig, body := d.classify(evt)
+	if trig == triggerNone {
 		return nil
 	}
 	if !d.rateLimitAllow(evt.SessionId) {
@@ -145,7 +146,7 @@ func (d *Dispatcher) handle(ctx context.Context, evt *gruv1.SessionEvent) error 
 		return fmt.Errorf("list devices: %w", err)
 	}
 	for _, dev := range rows {
-		payload := d.buildPayload(evt, title, body, trigger, dev)
+		payload := d.buildPayload(evt, title, body, dev)
 		if err := d.send(ctx, dev, payload); err != nil {
 			log.Printf("push: device=%s: %v", dev.ID, err)
 		}
@@ -158,21 +159,13 @@ type trigger int
 const (
 	triggerNone      trigger = 0
 	triggerAttention trigger = 1 // needs_attention, actionable
-	triggerIdle      trigger = 2 // plain idle over threshold, navigation-only
 )
 
 // classify maps an event to a trigger kind + body text. Returns
 // triggerNone for events that shouldn't push.
-func (d *Dispatcher) classify(ctx context.Context, evt *gruv1.SessionEvent) (trigger, string) {
-	switch evt.Type {
-	case "notification.needs_attention":
+func (d *Dispatcher) classify(evt *gruv1.SessionEvent) (trigger, string) {
+	if evt.Type == "notification.needs_attention" {
 		return triggerAttention, shorten(extractMessage(evt.Payload), 80)
-	case "session.idle":
-		sess, err := d.store.Queries().GetSession(ctx, evt.SessionId)
-		if err != nil || sess.AttentionScore <= d.cfg.Threshold {
-			return triggerNone, ""
-		}
-		return triggerIdle, "turn complete — needs your input"
 	}
 	return triggerNone, ""
 }
@@ -204,27 +197,27 @@ type PayloadAction struct {
 	Title  string `json:"title"`
 }
 
-func (d *Dispatcher) buildPayload(evt *gruv1.SessionEvent, title, body string, t trigger, dev *devices.Device) Payload {
-	p := Payload{
+func (d *Dispatcher) buildPayload(evt *gruv1.SessionEvent, title, body string, dev *devices.Device) Payload {
+	tok := devices.MintActionToken(
+		dev.ActionTokenSecret,
+		dev.ID,
+		evt.Id,
+		time.Now().Add(d.cfg.ActionTokenTTL),
+	)
+	return Payload{
 		Title: title,
 		Body:  body,
 		Tag:   evt.SessionId,
-		Data:  map[string]string{"sessionId": evt.SessionId, "eventId": evt.Id},
-	}
-	if t == triggerAttention {
-		tok := devices.MintActionToken(
-			dev.ActionTokenSecret,
-			dev.ID,
-			evt.Id,
-			time.Now().Add(d.cfg.ActionTokenTTL),
-		)
-		p.Data["actionToken"] = tok
-		p.Actions = []PayloadAction{
+		Data: map[string]string{
+			"sessionId":   evt.SessionId,
+			"eventId":     evt.Id,
+			"actionToken": tok,
+		},
+		Actions: []PayloadAction{
 			{Action: "approve", Title: "Approve"},
 			{Action: "deny", Title: "Deny"},
-		}
+		},
 	}
-	return p
 }
 
 // send delivers a single push to one device. Stale endpoints (404,

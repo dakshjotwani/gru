@@ -153,44 +153,52 @@ func TestDispatcher_NeedsAttentionPushesOnce(t *testing.T) {
 	}
 }
 
-func TestDispatcher_IdleBelowThresholdIgnored(t *testing.T) {
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { s.Close() })
-	ctx := context.Background()
+// session.idle is never a push trigger — even when the session's
+// attention_score is above the old threshold. Plain turn-complete
+// idles are too noisy for lock-screen pings.
+func TestDispatcher_IdleNeverPushes(t *testing.T) {
+	for _, score := range []float64{0.3, 0.95} {
+		score := score
+		t.Run("score", func(t *testing.T) {
+			s, err := store.Open(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { s.Close() })
+			ctx := context.Background()
 
-	_, _ = s.Queries().UpsertProject(ctx, store.UpsertProjectParams{ID: "p", Name: "P", Adapter: "host", Runtime: "claude-code"})
-	_, _ = s.Queries().CreateSession(ctx, store.CreateSessionParams{ID: "sess-1", ProjectID: "p", Runtime: "claude-code", Status: "idle"})
-	_, _ = s.Queries().UpdateSessionAttentionScore(ctx, store.UpdateSessionAttentionScoreParams{ID: "sess-1", AttentionScore: 0.3})
+			_, _ = s.Queries().UpsertProject(ctx, store.UpsertProjectParams{ID: "p", Name: "P", Adapter: "host", Runtime: "claude-code"})
+			_, _ = s.Queries().CreateSession(ctx, store.CreateSessionParams{ID: "sess-1", ProjectID: "p", Runtime: "claude-code", Status: "idle"})
+			_, _ = s.Queries().UpdateSessionAttentionScore(ctx, store.UpdateSessionAttentionScoreParams{ID: "sess-1", AttentionScore: score})
 
-	reg := devices.NewRegistry(s.Queries())
-	fake := newFakePushEndpoint(t)
-	_, _ = reg.Register(ctx, "phone", devices.Subscription{
-		Endpoint: fake.endpoint(),
-		P256dh:   mustP256(t),
-		Auth:     mustAuth(t),
-	})
+			reg := devices.NewRegistry(s.Queries())
+			fake := newFakePushEndpoint(t)
+			_, _ = reg.Register(ctx, "phone", devices.Subscription{
+				Endpoint: fake.endpoint(),
+				P256dh:   mustP256(t),
+				Auth:     mustAuth(t),
+			})
 
-	priv, pub, _ := push.GenerateVAPIDKeys()
-	pubPub := ingestion.NewPublisher()
-	disp := push.NewDispatcher(push.Config{
-		VAPIDPrivateKey: priv, VAPIDPublicKey: pub, Subject: "mailto:t@x", Threshold: 0.7, RateLimit: 10 * time.Millisecond,
-	}, reg, pubPub, s)
+			priv, pub, _ := push.GenerateVAPIDKeys()
+			pubPub := ingestion.NewPublisher()
+			disp := push.NewDispatcher(push.Config{
+				VAPIDPrivateKey: priv, VAPIDPublicKey: pub, Subject: "mailto:t@x", Threshold: 0.7, RateLimit: 10 * time.Millisecond,
+			}, reg, pubPub, s)
 
-	dctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go disp.Run(dctx)
-	time.Sleep(20 * time.Millisecond)
+			dctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go disp.Run(dctx)
+			time.Sleep(20 * time.Millisecond)
 
-	pubPub.Publish(&gruv1.SessionEvent{
-		Id: "evt-x", SessionId: "sess-1", ProjectId: "p", Runtime: "claude-code",
-		Type: "session.idle", Timestamp: timestamppb.Now(),
-	})
-	time.Sleep(100 * time.Millisecond)
-	if fake.callCount() != 0 {
-		t.Errorf("expected no push (score below threshold), got %d", fake.callCount())
+			pubPub.Publish(&gruv1.SessionEvent{
+				Id: "evt-x", SessionId: "sess-1", ProjectId: "p", Runtime: "claude-code",
+				Type: "session.idle", Timestamp: timestamppb.Now(),
+			})
+			time.Sleep(100 * time.Millisecond)
+			if fake.callCount() != 0 {
+				t.Errorf("expected no push for session.idle (score=%.2f), got %d", score, fake.callCount())
+			}
+		})
 	}
 }
 
