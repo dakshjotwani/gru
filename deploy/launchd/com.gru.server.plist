@@ -30,6 +30,12 @@
     <string>__HOME__</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- launchd starts processes with no TERM. gru spawns tmux for sessions,
+         which fails with "open terminal failed: terminal does not support
+         clear" when TERM is unset. xterm-256color has a complete terminfo
+         entry on every modern macOS. -->
+    <key>TERM</key>
+    <string>xterm-256color</string>
   </dict>
 
   <key>RunAtLoad</key>
