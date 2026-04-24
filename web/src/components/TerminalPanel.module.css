@@ -1,13 +1,22 @@
 .panel {
-  /* flex:1 + min-height:0 — the panel lives inside .sessionViewShell
-   * next to the view toggle; claiming remaining space (instead of
-   * height:100%) keeps the terminal properly sized without clipping
-   * neighbors. */
+  /* flex:1 + min-height:0 — the panel claims remaining space (instead of
+   * height:100%) so it doesn't push the parent's other children off the
+   * end. With chat removed there's no neighbor inside the panel, but we
+   * keep the rule for layout robustness. */
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: #0d1117;
+}
+
+/* Fullscreen variant: fill the viewport, edge to edge.
+ * Parent (.appFullscreen) drops its safe-area padding too, so this
+ * really does cover the whole screen on iPad / iPhone. */
+.panelFullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
 }
 
 .titleBar {
@@ -18,6 +27,15 @@
   background: #161b22;
   border-bottom: 1px solid #30363d;
   flex-shrink: 0;
+  /* Reserve top safe-area inset only when fullscreen — outside fullscreen
+   * the .app wrapper handles it. Without this, the title bar would land
+   * under the iPhone notch in fullscreen. */
+}
+
+.panelFullscreen .titleBar {
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
 }
 
 .sessionName {
@@ -37,12 +55,43 @@
   padding: 1px 6px;
 }
 
+.fullscreenBtn {
+  margin-left: auto;
+  appearance: none;
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  /* Comfortable tap target on touch — 32px is Apple's recommendation. */
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.fullscreenBtn:hover {
+  background: #21262d;
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.fullscreenBtn:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
+}
+
 .terminal {
   flex: 1;
   overflow: hidden;
   padding: 8px;
   border: 1px solid transparent;
   transition: border-color 120ms ease;
+  /* Bottom safe-area inset in fullscreen so the home indicator on
+   * iPhone doesn't sit on top of the bottom row of output. */
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 .terminal:focus-within {
@@ -54,6 +103,49 @@
   height: 100%;
 }
 
+/* Touch-scroll the scrollback on mobile.
+ *
+ * xterm.js renders the cell grid into a canvas inside .xterm-screen and
+ * the scrollback overflow into .xterm-viewport. By default the canvas
+ * captures touch events for selection, which prevents vertical drags
+ * from scrolling the viewport on iOS / Android. Three things are needed:
+ *
+ *   1. .xterm-viewport must be the actual scroll container with
+ *      overflow:auto and momentum scrolling enabled.
+ *   2. touch-action: pan-y on the screen+viewport tells the browser to
+ *      treat vertical drags as scroll gestures (not custom touch events
+ *      to be passed to the page). Horizontal stays free for selection.
+ *   3. The viewport must sit ABOVE the screen in z-order so touch
+ *      events hit it first. xterm sets `z-index:0` by default which
+ *      isn't enough on iOS Safari — bumping it explicitly fixes the
+ *      "tap goes to canvas, no scroll" problem reported on iPhone.
+ */
 .terminal :global(.xterm-viewport) {
   overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  /* Above .xterm-screen so finger drags scroll instead of being eaten
+   * by the canvas's pointer-event handler. */
+  z-index: 5;
+}
+
+.terminal :global(.xterm-screen) {
+  touch-action: pan-y;
+}
+
+/* A visible scrollbar is helpful on touch — without it there's no
+ * indication that scrollback exists. WebKit shows a thin overlay
+ * scrollbar while scrolling, but make it more visible at rest. */
+.terminal :global(.xterm-viewport)::-webkit-scrollbar {
+  width: 8px;
+}
+.terminal :global(.xterm-viewport)::-webkit-scrollbar-track {
+  background: transparent;
+}
+.terminal :global(.xterm-viewport)::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+}
+.terminal :global(.xterm-viewport)::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
 }

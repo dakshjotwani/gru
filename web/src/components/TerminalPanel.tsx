@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { Session } from '../types';
 import { resolveWebSocketUrl } from '../utils/serverUrl';
 import styles from './TerminalPanel.module.css';
@@ -29,9 +30,19 @@ interface TerminalPanelProps {
   session: Session;
   /** Parent sets this ref to call focus() on the terminal from outside. */
   focusRef?: React.RefObject<(() => void) | null>;
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
-export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
+// hasCoarsePointer is true on phones / tablets without an attached mouse —
+// i.e. the device's primary input is a finger, not a cursor. Used to decide
+// whether links should activate on a plain tap (no Ctrl/Cmd modifier).
+function hasCoarsePointer(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
+export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscreen }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,6 +55,7 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
     let ws: WebSocket | null = null;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let touchListenerCleanup: (() => void) | undefined;
     let reconnectBackoffMs = WS_RECONNECT_INITIAL_BACKOFF_MS;
     // Once the socket has opened at least once, any subsequent close is
     // treated as a transient drop (backoff reconnect). Before that, we
@@ -84,13 +96,132 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
         lineHeight: 1.4,
         cursorBlink: true,
         theme: termTheme,
+        // Larger scrollback so mobile users have something to swipe back
+        // through. Default (1000) is fine on desktop but feels short when
+        // the terminal is the primary surface.
+        scrollback: 5000,
       });
 
       fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
+
+      // Web-links addon — detects URLs in the buffer and registers a link
+      // provider with xterm. On desktop, xterm's link service activates the
+      // link on cmd/ctrl + click (default WebLinksAddon handler opens in
+      // a new tab). On touch devices xterm's link hover state never gets
+      // set (no mousemove), so the addon alone doesn't give tap-to-open —
+      // the touch handler below uses the same regex to find URLs at the
+      // tap position and opens them on a quick tap.
+      const linksAddon = new WebLinksAddon((_event, uri) => {
+        window.open(uri, '_blank', 'noopener,noreferrer');
+      });
+      term.loadAddon(linksAddon);
+
       term.open(container);
       fitAddon.fit();
       term.focus();
+
+      // Tap-to-open links on touchscreens. xterm's link activation
+      // requires the cmd/ctrl modifier on desktop and the link to be
+      // in a "hovered" state — neither of which works on touch (no
+      // mousemove → no hover; no modifier keys). So when the device
+      // has a coarse pointer (no mouse), we listen for short-tap
+      // gestures, locate the cell at the tap point, scan the buffer
+      // line for a URL covering that cell, and open it ourselves.
+      // Desktop is left alone so the cmd/ctrl-click flow still works.
+      if (hasCoarsePointer()) {
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let touchCount = 0;
+
+        const onTouchStart = (e: TouchEvent) => {
+          touchCount = e.touches.length;
+          if (touchCount !== 1) return;
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+          touchStartTime = Date.now();
+        };
+
+        const onTouchEnd = (e: TouchEvent) => {
+          if (touchCount !== 1 || e.changedTouches.length !== 1) return;
+          const t = e.changedTouches[0];
+          const dx = t.clientX - touchStartX;
+          const dy = t.clientY - touchStartY;
+          const dt = Date.now() - touchStartTime;
+          // Tap = brief, no significant drag. Longer holds let iOS open
+          // its native context menu (copy / look up); drags are scroll.
+          if (dt > 350 || Math.abs(dx) > 8 || Math.abs(dy) > 8) return;
+
+          const url = findUrlAt(t.clientX, t.clientY);
+          if (url) {
+            e.preventDefault();
+            window.open(url, '_blank', 'noopener,noreferrer');
+          }
+        };
+
+        const findUrlAt = (clientX: number, clientY: number): string | null => {
+          if (!term) return null;
+          const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+          if (!screen) return null;
+          const rect = screen.getBoundingClientRect();
+          if (clientX < rect.left || clientX > rect.right) return null;
+          if (clientY < rect.top || clientY > rect.bottom) return null;
+          const cellWidth = rect.width / term.cols;
+          const cellHeight = rect.height / term.rows;
+          if (cellWidth <= 0 || cellHeight <= 0) return null;
+          const col = Math.floor((clientX - rect.left) / cellWidth);
+          const visibleRow = Math.floor((clientY - rect.top) / cellHeight);
+
+          // Match the regex used by @xterm/addon-web-links so detected
+          // URLs are exactly the same set as the underline targets.
+          const urlRegex = /(https?|HTTPS?):\/\/[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/g;
+
+          const buffer = term.buffer.active;
+          const baseRow = buffer.viewportY + visibleRow;
+          // Walk back through wrapped lines to get the full logical line,
+          // then forward through any continuations.  This matches what
+          // the addon does internally so URLs that wrap across the screen
+          // boundary still resolve.
+          let startRow = baseRow;
+          while (startRow > 0) {
+            const line = buffer.getLine(startRow);
+            if (!line || !line.isWrapped) break;
+            startRow--;
+          }
+          let text = '';
+          // The cell index inside `text` that corresponds to the tap.
+          let tapIdx = -1;
+          let row = startRow;
+          while (true) {
+            const line = buffer.getLine(row);
+            if (!line) break;
+            const lineText = line.translateToString(true);
+            if (row === baseRow) tapIdx = text.length + col;
+            text += lineText;
+            const next = buffer.getLine(row + 1);
+            if (!next || !next.isWrapped) break;
+            row++;
+          }
+          if (tapIdx < 0) return null;
+
+          let m: RegExpExecArray | null;
+          while ((m = urlRegex.exec(text)) !== null) {
+            const start = m.index;
+            const end = start + m[0].length;
+            if (tapIdx >= start && tapIdx < end) return m[0];
+          }
+          return null;
+        };
+
+        container.addEventListener('touchstart', onTouchStart, { passive: true });
+        container.addEventListener('touchend', onTouchEnd, { passive: false });
+
+        touchListenerCleanup = () => {
+          container.removeEventListener('touchstart', onTouchStart);
+          container.removeEventListener('touchend', onTouchEnd);
+        };
+      }
 
       // Claim keys the browser/React-app would otherwise steal from the
       // terminal: Ctrl+C (browser copies selection), Tab (focus move),
@@ -99,14 +230,43 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
       // global "toggle sidebar nav mode" shortcut.
       term.attachCustomKeyEventHandler((e) => {
         if (e.type !== 'keydown') return true;
-        const { key, ctrlKey, metaKey, altKey } = e;
+        const { key, ctrlKey, metaKey, altKey, shiftKey } = e;
+
+        // Ctrl+Shift+F is the global fullscreen toggle — let it bubble
+        // up to App.tsx (which captures at window level).
+        if (ctrlKey && shiftKey && !altKey && !metaKey && key.toLowerCase() === 'f') {
+          return false;
+        }
+
+        // Explicit control characters. xterm's default handling is
+        // unreliable across iPad/iPhone Safari + Bluetooth keyboards
+        // (Ctrl+C in particular has been observed to send '\r' on iPad
+        // due to some IME/keyboard-layer interaction). We send the raw
+        // bytes ourselves and tell xterm not to also handle them, which
+        // also prevents the browser's "copy selection" default.
+        if (ctrlKey && !metaKey && !altKey && !shiftKey) {
+          let byte: string | null = null;
+          // Lowercase the letter — Safari sometimes reports key='C' when
+          // Caps Lock is engaged.
+          const k = key.length === 1 ? key.toLowerCase() : key;
+          if (k === 'c') byte = '\x03';        // SIGINT
+          else if (k === 'd') byte = '\x04';   // EOF
+          else if (k === 'z') byte = '\x1a';   // SIGTSTP
+          if (byte !== null) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(new TextEncoder().encode(byte));
+            }
+            return false;
+          }
+        }
+
         const isClaimed =
           key === 'Tab' ||
           key === 'Escape' ||
           key === 'ArrowUp' || key === 'ArrowDown' ||
-          key === 'ArrowLeft' || key === 'ArrowRight' ||
-          (ctrlKey && !metaKey && !altKey &&
-            (key === 'c' || key === 'd' || key === 'z'));
+          key === 'ArrowLeft' || key === 'ArrowRight';
         if (isClaimed) {
           e.preventDefault();
           e.stopPropagation();
@@ -278,6 +438,7 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
       if (focusRef) focusRef.current = null;
+      touchListenerCleanup?.();
       observer.disconnect();
       ws?.close();
       term?.dispose();
@@ -285,11 +446,22 @@ export function TerminalPanel({ session, focusRef }: TerminalPanelProps) {
   }, [session.id]);
 
   return (
-    <div className={styles.panel}>
+    <div className={[styles.panel, fullscreen ? styles.panelFullscreen : ''].filter(Boolean).join(' ')}>
       <div className={styles.titleBar}>
         <span className={styles.sessionName}>{session.name || session.id.slice(0, 8)}</span>
         {session.tmuxSession && (
           <span className={styles.tmuxTarget}>{session.tmuxSession}</span>
+        )}
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            className={styles.fullscreenBtn}
+            onClick={onToggleFullscreen}
+            title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (Ctrl+Shift+F)'}
+            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {fullscreen ? '↙' : '⤢'}
+          </button>
         )}
       </div>
       <div ref={containerRef} className={styles.terminal} data-gru-terminal />

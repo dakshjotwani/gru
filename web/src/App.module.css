@@ -247,50 +247,21 @@ kbd {
   border-radius: 3px;
 }
 
-/* ── Per-session terminal/chat view toggle ── */
-
-.sessionViewShell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-
-.viewToggle {
-  flex-shrink: 0;
-  display: flex;
-  gap: 2px;
-  padding: 6px 8px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
-}
-
-.viewToggleBtn,
-.viewToggleActive {
-  appearance: none;
-  background: transparent;
-  color: #8b949e;
-  border: 1px solid transparent;
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.viewToggleBtn:hover {
-  background: #21262d;
-  color: #c9d1d9;
-}
-
-.viewToggleActive {
-  background: #21262d;
-  color: #f0f6fc;
-  border-color: #30363d;
+/* ── Fullscreen terminal mode ──
+ * Hides PWA banner / header / sidebar so the terminal owns the entire
+ * viewport. Toggled by the fullscreen button in TerminalPanel's title
+ * bar, F11, or Ctrl+Shift+F. Esc exits. The terminal panel itself
+ * still keeps its title bar (with a "Restore" button) so the user can
+ * always get back. */
+.appFullscreen {
+  /* Drop the safe-area insets too: a fullscreen terminal should reach
+   * edge-to-edge on iPad/iPhone in landscape. The terminal scroller
+   * still respects its own padding. */
+  padding: 0;
 }
 
 /* Safe-area insets are reserved on .app (above) — chrome elements
- * inside it (banner, header, chat input) don't need their own. */
+ * inside it (banner, header) don't need their own. */
 
 /* ── Responsive breakpoints (iPhone portrait ≤600px) ──
  * Stack the workspace vertically: header → session list (short

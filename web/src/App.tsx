@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { AttentionQueue } from './components/AttentionQueue';
-import { ChatPanel } from './components/ChatPanel';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { TerminalPanel } from './components/TerminalPanel';
 import { useSessionStream } from './hooks/useSessionStream';
@@ -8,42 +7,12 @@ import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
 import styles from './App.module.css';
 
-// Per-session view preference (terminal vs chat). Persisted to
-// localStorage so flipping a session to chat on iPhone survives a
-// reload. Default picks a sensible mode based on viewport: narrow
-// screens prefer chat; wider (iPad landscape / desktop) prefer
-// terminal. iPad portrait sits in between and matches whatever the
-// user last chose globally.
-type SessionView = 'terminal' | 'chat';
-
-function defaultView(): SessionView {
-  if (typeof window === 'undefined') return 'terminal';
-  return window.matchMedia('(max-width: 600px)').matches ? 'chat' : 'terminal';
-}
-
-function readSessionView(id: string): SessionView {
-  try {
-    const raw = localStorage.getItem(`gru.view.${id}`);
-    if (raw === 'chat' || raw === 'terminal') return raw;
-  } catch {
-    // ignore
-  }
-  return defaultView();
-}
-
-function writeSessionView(id: string, v: SessionView) {
-  try {
-    localStorage.setItem(`gru.view.${id}`, v);
-  } catch {
-    // ignore
-  }
-}
-
 export function App() {
   const { projects } = useProjects();
   const { sessions, events, connected } = useSessionStream(undefined, projects);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [sidebarFocused, setSidebarFocused] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   // AttentionQueue keeps this updated with the current visible+sorted session IDs.
   const sortedSessionIdsRef = useRef<string[]>([]);
@@ -66,13 +35,36 @@ export function App() {
     setTimeout(() => focusTerminalRef.current?.(), 50);
   };
 
+  const toggleFullscreen = () => {
+    setFullscreen((f) => {
+      const next = !f;
+      // Re-focus the terminal after the layout settles so keystrokes land.
+      setTimeout(() => focusTerminalRef.current?.(), 60);
+      return next;
+    });
+  };
+
   // Ctrl+\ — toggle between sidebar nav mode and terminal.
   // Ctrl+N / Ctrl+P — navigate sessions while sidebar is focused.
   // Enter — confirm selection and return focus to terminal.
+  // F11 / Ctrl+Shift+F — toggle fullscreen terminal.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Fullscreen toggle: F11 or Ctrl+Shift+F. Active anywhere.
+      if (
+        e.key === 'F11' ||
+        (e.key.toLowerCase() === 'f' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey)
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFullscreen();
+        return;
+      }
+
       // Ctrl+\ toggles sidebar nav mode from anywhere — always active.
+      // Ignored in fullscreen since the sidebar is hidden.
       if (e.key === '\\' && e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (fullscreen) return;
         e.preventDefault();
         e.stopPropagation();
         setSidebarFocused((prev) => {
@@ -120,14 +112,21 @@ export function App() {
 
       // Non-capture shortcuts (sidebar not focused, no special modifier).
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        // Esc deselects the current minion and returns the main pane to Gru.
-        // Guard against stealing Escape from inputs — if focus is in a
-        // form element, let it handle its own Escape.
-        if (e.key === 'Escape' && selectedSessionId) {
+        // Esc: in fullscreen, exit fullscreen first (don't deselect).
+        // Otherwise, deselect the current minion and return main pane to Gru.
+        if (e.key === 'Escape') {
           const tag = (e.target as HTMLElement).tagName;
           if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-          e.preventDefault();
-          deselect();
+          if (fullscreen) {
+            e.preventDefault();
+            setFullscreen(false);
+            setTimeout(() => focusTerminalRef.current?.(), 60);
+            return;
+          }
+          if (selectedSessionId) {
+            e.preventDefault();
+            deselect();
+          }
         }
       }
     };
@@ -135,7 +134,7 @@ export function App() {
     // capture: true so we intercept before xterm sees the event.
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [sidebarFocused, selectedSessionId]);
+  }, [sidebarFocused, selectedSessionId, fullscreen]);
 
   // Register service worker.
   useEffect(() => {
@@ -154,69 +153,75 @@ export function App() {
   ).length;
 
   return (
-    <div className={styles.app}>
-      <PWAInstallBanner />
-      <header className={styles.header}>
-        <div className={styles.brand}>
-          <button
-            type="button"
-            className={styles.titleButton}
-            onClick={deselect}
-            title="Return to Gru (Esc)"
-            aria-label="Return to Gru assistant"
-          >
-            <h1 className={styles.title}>Gru</h1>
-          </button>
-        </div>
-        <div className={styles.statusRow}>
-          <span
-            className={[styles.dot, connected ? styles.dotConnected : styles.dotDisconnected].join(' ')}
-            title={connected ? 'Connected' : 'Disconnected'}
-          />
-          <span className={styles.sessionCount}>
-            {activeCount} active minion{activeCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-      </header>
+    <div className={[styles.app, fullscreen ? styles.appFullscreen : ''].filter(Boolean).join(' ')}>
+      {!fullscreen && <PWAInstallBanner />}
+      {!fullscreen && (
+        <header className={styles.header}>
+          <div className={styles.brand}>
+            <button
+              type="button"
+              className={styles.titleButton}
+              onClick={deselect}
+              title="Return to Gru (Esc)"
+              aria-label="Return to Gru assistant"
+            >
+              <h1 className={styles.title}>Gru</h1>
+            </button>
+          </div>
+          <div className={styles.statusRow}>
+            <span
+              className={[styles.dot, connected ? styles.dotConnected : styles.dotDisconnected].join(' ')}
+              title={connected ? 'Connected' : 'Disconnected'}
+            />
+            <span className={styles.sessionCount}>
+              {activeCount} active minion{activeCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </header>
+      )}
 
       <div className={styles.workspace}>
-        <aside className={[styles.sidebar, sidebarFocused ? styles.sidebarActive : ''].filter(Boolean).join(' ')}>
-          {sidebarFocused && (
-            <div className={styles.navHint}>
-              <kbd>Ctrl+N</kbd><kbd>Ctrl+P</kbd> navigate &nbsp;·&nbsp; <kbd>Enter</kbd> or <kbd>Ctrl+\</kbd> back to terminal
-            </div>
-          )}
-          <button
-            type="button"
-            className={[styles.askGruButton, selectedSessionId === null ? styles.askGruButtonActive : ''].filter(Boolean).join(' ')}
-            onClick={deselect}
-            title="Chat with Gru (Esc)"
-          >
-            <span className={styles.askGruIcon}>💬</span>
-            <span className={styles.askGruLabel}>Ask Gru</span>
-          </button>
-          <AttentionQueue
-            sessions={sessions}
-            events={events}
-            projects={projects}
-            connected={connected}
-            onSessionSelect={(id) => {
-              setSelectedSessionId(id);
-              setSidebarFocused(false);
-              // Small delay to let TerminalPanel mount before focusing.
-              setTimeout(() => focusTerminalRef.current?.(), 50);
-            }}
-            selectedSessionId={selectedSessionId ?? undefined}
-            onSortedSessions={(ids) => { sortedSessionIdsRef.current = ids; }}
-          />
-        </aside>
+        {!fullscreen && (
+          <aside className={[styles.sidebar, sidebarFocused ? styles.sidebarActive : ''].filter(Boolean).join(' ')}>
+            {sidebarFocused && (
+              <div className={styles.navHint}>
+                <kbd>Ctrl+N</kbd><kbd>Ctrl+P</kbd> navigate &nbsp;·&nbsp; <kbd>Enter</kbd> or <kbd>Ctrl+\</kbd> back to terminal
+              </div>
+            )}
+            <button
+              type="button"
+              className={[styles.askGruButton, selectedSessionId === null ? styles.askGruButtonActive : ''].filter(Boolean).join(' ')}
+              onClick={deselect}
+              title="Chat with Gru (Esc)"
+            >
+              <span className={styles.askGruIcon}>💬</span>
+              <span className={styles.askGruLabel}>Ask Gru</span>
+            </button>
+            <AttentionQueue
+              sessions={sessions}
+              events={events}
+              projects={projects}
+              connected={connected}
+              onSessionSelect={(id) => {
+                setSelectedSessionId(id);
+                setSidebarFocused(false);
+                // Small delay to let TerminalPanel mount before focusing.
+                setTimeout(() => focusTerminalRef.current?.(), 50);
+              }}
+              selectedSessionId={selectedSessionId ?? undefined}
+              onSortedSessions={(ids) => { sortedSessionIdsRef.current = ids; }}
+            />
+          </aside>
+        )}
 
         <main className={styles.main}>
           {mainSession ? (
-            <SessionView
+            <TerminalPanel
+              key={mainSession.id}
               session={mainSession}
-              events={events.get(mainSession.id) ?? []}
               focusRef={focusTerminalRef}
+              fullscreen={fullscreen}
+              onToggleFullscreen={toggleFullscreen}
             />
           ) : (
             <div className={styles.emptyTerminal}>
@@ -230,56 +235,6 @@ export function App() {
           )}
         </main>
       </div>
-
-    </div>
-  );
-}
-
-// SessionView picks between the terminal (full fidelity, iPad/desktop
-// default) and the chat-style renderer (touch-friendly, iPhone default)
-// for a single session. The chosen view is per-session and sticky in
-// localStorage. The toggle lives as a small tab row above the panel.
-interface SessionViewProps {
-  session: import('./types').Session;
-  events: import('./types').SessionEvent[];
-  focusRef?: React.RefObject<(() => void) | null>;
-}
-
-function SessionView({ session, events, focusRef }: SessionViewProps) {
-  const [view, setView] = useState<SessionView>(() => readSessionView(session.id));
-
-  // Persist + refocus terminal when flipping back to it.
-  const flipTo = (v: SessionView) => {
-    setView(v);
-    writeSessionView(session.id, v);
-    if (v === 'terminal') {
-      setTimeout(() => focusRef?.current?.(), 60);
-    }
-  };
-
-  return (
-    <div className={styles.sessionViewShell}>
-      <div className={styles.viewToggle}>
-        <button
-          type="button"
-          className={view === 'terminal' ? styles.viewToggleActive : styles.viewToggleBtn}
-          onClick={() => flipTo('terminal')}
-        >
-          Terminal
-        </button>
-        <button
-          type="button"
-          className={view === 'chat' ? styles.viewToggleActive : styles.viewToggleBtn}
-          onClick={() => flipTo('chat')}
-        >
-          Chat
-        </button>
-      </div>
-      {view === 'terminal' ? (
-        <TerminalPanel key={session.id} session={session} focusRef={focusRef} />
-      ) : (
-        <ChatPanel session={session} events={events} />
-      )}
     </div>
   );
 }

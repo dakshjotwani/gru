@@ -9,9 +9,9 @@ html, body {
   overflow: hidden;
   /* iOS PWA with viewport-fit=cover extends under the home indicator.
    * Without an explicit background, iOS paints the safe-area inset
-   * with the default (white) and the chat input bar appears to be
-   * covered by a white strip. Paint the page background all the way
-   * so the inset is the same color as the app chrome. */
+   * with the default (white) and a strip appears below the app
+   * chrome. Paint the page background all the way so the inset is
+   * the same color as the app chrome. */
   background: #0d1117;
   color-scheme: dark;
 }
