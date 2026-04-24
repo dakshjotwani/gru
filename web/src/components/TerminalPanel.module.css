@@ -105,28 +105,20 @@
 
 /* Touch-scroll the scrollback on mobile.
  *
- * xterm.js renders the cell grid into a canvas inside .xterm-screen and
- * the scrollback overflow into .xterm-viewport. By default the canvas
- * captures touch events for selection, which prevents vertical drags
- * from scrolling the viewport on iOS / Android. Three things are needed:
+ * xterm.js layers an absolute-positioned .xterm-viewport (which has
+ * the terminal background color) BEHIND the .xterm-screen that
+ * holds the actual rendered text. Do NOT bump the viewport's
+ * z-index — doing that paints the empty viewport over the text and
+ * the terminal goes black. Default stacking is correct.
  *
- *   1. .xterm-viewport must be the actual scroll container with
- *      overflow:auto and momentum scrolling enabled.
- *   2. touch-action: pan-y on the screen+viewport tells the browser to
- *      treat vertical drags as scroll gestures (not custom touch events
- *      to be passed to the page). Horizontal stays free for selection.
- *   3. The viewport must sit ABOVE the screen in z-order so touch
- *      events hit it first. xterm sets `z-index:0` by default which
- *      isn't enough on iOS Safari — bumping it explicitly fixes the
- *      "tap goes to canvas, no scroll" problem reported on iPhone.
- */
+ * For iOS / Android, telling the browser that vertical drags inside
+ * the viewport are scroll gestures (touch-action: pan-y) plus
+ * momentum scrolling is enough — xterm's pointer handling already
+ * forwards drag deltas to the viewport. */
 .terminal :global(.xterm-viewport) {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  /* Above .xterm-screen so finger drags scroll instead of being eaten
-   * by the canvas's pointer-event handler. */
-  z-index: 5;
 }
 
 .terminal :global(.xterm-screen) {
