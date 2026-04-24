@@ -3,12 +3,13 @@
 <!--
   com.gru.server — LaunchAgent that supervises the local gru server.
 
-  Install via scripts/install-autodeploy.sh (copies to ~/Library/LaunchAgents,
-  substitutes $HOME, and bootstraps into launchd).
+  Install via scripts/install-gru.sh, which renders __HOME__ and __INSTALL__
+  before bootstrapping into launchd.
 
-  The server's binary lives at <REPO>/gru and is rebuilt in place by
-  autodeploy.sh. `KeepAlive` keeps it running; `kickstart -k` during autodeploy
-  stops the old process so launchd relaunches against the fresh binary.
+  The deployed binary + frontend live in __INSTALL__ (default
+  ~/.local/share/gru), separate from the dev repo. Git hooks under
+  scripts/git-hooks/ rebuild and `kickstart -k` this service whenever
+  main moves on the deploy host.
 -->
 <plist version="1.0">
 <dict>
@@ -17,12 +18,12 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>__HOME__/workspace/gru/gru</string>
+    <string>__INSTALL__/gru</string>
     <string>server</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>__HOME__/workspace/gru</string>
+  <string>__INSTALL__</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -36,6 +37,11 @@
          entry on every modern macOS. -->
     <key>TERM</key>
     <string>xterm-256color</string>
+    <!-- Pin web/dist to the install dir; otherwise FindWebDist falls back to
+         <cwd>/web/dist or <exe-dir>/web/dist, both of which are wrong when
+         we run outside the repo. -->
+    <key>GRU_WEB_DIST</key>
+    <string>__INSTALL__/web/dist</string>
   </dict>
 
   <key>RunAtLoad</key>
