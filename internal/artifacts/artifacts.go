@@ -25,6 +25,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -82,6 +83,12 @@ type Manager struct {
 	root  string // ~/.gru/artifacts
 	caps  Caps
 	pub   Publisher
+	// createMu serializes the cap-check + row-insert + file-write
+	// sequence so two concurrent uploads cannot both pass the cap check
+	// against the same session's pre-insert state. Single-operator
+	// deployment, so contention is fine; a per-session mutex would only
+	// matter if we had high parallel upload throughput, which we don't.
+	createMu sync.Mutex
 }
 
 // NewManager creates a manager and ensures the root directory exists with
@@ -168,7 +175,13 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*gruv1.Artifac
 		return nil, &SessionStateErr{Reason: fmt.Sprintf("session %s is %s — uploads rejected", req.SessionID, sess.Status)}
 	}
 
-	// 4. Enforce per-session caps.
+	// 4 + 5. Cap check + row insert under createMu so two concurrent
+	// uploads cannot both observe the same pre-insert state and both
+	// pass the cap check (unsafe even though SQLite serializes its own
+	// writes — the application-level check + insert is two queries).
+	m.createMu.Lock()
+	defer m.createMu.Unlock()
+
 	sums, err := q.SumArtifactsForSession(ctx, req.SessionID)
 	if err != nil {
 		return nil, fmt.Errorf("count artifacts: %w", err)
@@ -188,7 +201,6 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*gruv1.Artifac
 		}
 	}
 
-	// 5. Mint id + token, insert the DB row first, then write the file.
 	id := uuid.NewString()
 	token, err := mintToken()
 	if err != nil {
@@ -211,13 +223,17 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*gruv1.Artifac
 	// so we don't leave a metadata-only artifact behind.
 	dir := filepath.Join(m.root, req.SessionID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		_ = q.DeleteArtifact(ctx, id)
+		if delErr := q.DeleteArtifact(ctx, id); delErr != nil {
+			log.Printf("artifacts: rollback row %s after mkdir error: %v", id, delErr)
+		}
 		return nil, fmt.Errorf("mkdir artifact dir: %w", err)
 	}
 	finalPath := filepath.Join(dir, id+".bin")
 	tmpPath := finalPath + ".tmp"
 	if err := writeFileAtomic(tmpPath, finalPath, req.Bytes); err != nil {
-		_ = q.DeleteArtifact(ctx, id)
+		if delErr := q.DeleteArtifact(ctx, id); delErr != nil {
+			log.Printf("artifacts: rollback row %s after write error: %v", id, delErr)
+		}
 		return nil, fmt.Errorf("write artifact file: %w", err)
 	}
 
@@ -266,6 +282,13 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 
 // LookupByToken returns the artifact whose capability token matches.
 // Used by the GET /artifacts/<token> handler.
+//
+// TODO(public-internet): the SQLite WHERE token = ? compare short-circuits
+// on the first byte mismatch, leaking a timing oracle. With 256 bits of
+// entropy and local/tailnet-only binding it's not exploitable today; if
+// Gru ever exposes this endpoint to the public internet, look up by an
+// indexed token-prefix and constant-time-compare the rest with
+// crypto/subtle.ConstantTimeCompare.
 func (m *Manager) LookupByToken(ctx context.Context, token string) (db.Artifact, string, error) {
 	row, err := m.store.Queries().GetArtifactByToken(ctx, token)
 	if err != nil {
@@ -478,7 +501,16 @@ func writeFileAtomic(tmpPath, finalPath string, data []byte) error {
 		_ = os.Remove(tmpPath)
 		return err
 	}
-	return nil
+	// fsync the parent directory so the rename itself is durable on crash
+	// — without this, the comment promise that "after a successful rename,
+	// fsyncs the parent directory" was a lie.
+	dir, err := os.Open(filepath.Dir(finalPath))
+	if err != nil {
+		return err
+	}
+	syncErr := dir.Sync()
+	_ = dir.Close()
+	return syncErr
 }
 
 // MultipartLimitBytes returns the largest allowed multipart body, used to

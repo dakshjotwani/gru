@@ -85,32 +85,66 @@ interface ArtifactViewProps {
   artifact: Artifact;
 }
 
-// ArtifactView dispatches per MIME type. PDF embeds directly in a
-// sandboxed iframe (browser PDF viewer renders); Markdown is rendered to
-// HTML in the parent, sanitized, then injected into a sandboxed iframe
-// via srcdoc. Anything else falls back to a download card.
+// ArtifactView dispatches per MIME type. PDF embeds directly in an
+// (unsandboxed!) iframe when the artifact endpoint is on a different
+// origin from the dashboard — same-origin policy then provides the
+// isolation the iframe sandbox can't (Chrome's PDF viewer needs
+// same-origin scripting to render, so sandbox="" leaves the tab blank).
+// In same-origin deployments we downgrade to a download card.
+// Markdown is rendered to HTML in the parent, sanitized with DOMPurify,
+// and injected into a sandbox="" iframe via srcdoc.
+// Anything else falls back to a download card.
+
+// isSameOrigin compares the artifact URL's origin to window.location.origin.
+// Used to decide whether a PDF iframe can rely on cross-origin isolation,
+// or whether we have to fall back to a download card.
+function isSameOrigin(href: string): boolean {
+  if (typeof window === 'undefined') return true; // SSR: default to safer path
+  try {
+    return new URL(href, window.location.href).origin === window.location.origin;
+  } catch {
+    return true;
+  }
+}
 export function ArtifactView({ artifact }: ArtifactViewProps) {
   const downloadHref = resolveServerUrl().replace(/\/+$/, '') + artifact.url;
 
   if (artifact.mimeType === 'application/pdf') {
+    // PDF inline preview is only safe when the artifact endpoint is on a
+    // *different* origin than the dashboard. Chrome's PDF viewer needs
+    // same-origin scripting to render, so we can't use a sandboxed iframe;
+    // instead we lean on standard same-origin-policy isolation, which only
+    // exists when the iframe URL has a different origin from the parent.
+    // In single-port prod deployments (the SPA is mounted on the same port
+    // as the API by cmd/gru/server.go), the iframe would be same-origin
+    // with the dashboard and a malicious PDF could in principle reach
+    // parent state. Downgrade to a download card in that case so we
+    // don't silently regress the threat model.
+    const sameOrigin = isSameOrigin(downloadHref);
+    if (!sameOrigin) {
+      return (
+        <iframe
+          className={styles.iframe}
+          // No sandbox flags — see comment above. Defense leans on the
+          // server's %PDF- magic-byte check, Content-Type plus
+          // X-Content-Type-Options: nosniff, and the cross-origin
+          // separation between iframe and parent.
+          src={downloadHref}
+          referrerPolicy="no-referrer"
+          title={artifact.title}
+        />
+      );
+    }
     return (
-      <iframe
-        className={styles.iframe}
-        // No sandbox: Chrome's built-in PDF viewer ships its UI as a chrome
-        // extension that needs same-origin scripting to render — both
-        // sandbox="" and sandbox="allow-scripts" turn the tab blank. Defense
-        // for PDF instead leans on (a) the server's %PDF- magic-byte check,
-        // (b) Content-Type: application/pdf + X-Content-Type-Options:
-        // nosniff so the browser cannot reinterpret as HTML, and (c) the
-        // artifact endpoint being a different origin from the dashboard
-        // (different host:port), which gives the iframe natural same-origin-
-        // policy isolation from dashboard cookies / localStorage / DOM.
-        // Single-origin deployments would need a different strategy (e.g.
-        // serving artifacts from a sub-origin), but Gru is local-only today.
-        src={downloadHref}
-        referrerPolicy="no-referrer"
-        title={artifact.title}
-      />
+      <div className={styles.fallback}>
+        <div>{artifact.title}</div>
+        <a href={downloadHref} target="_blank" rel="noopener noreferrer">Open PDF in a new tab</a>
+        <div className={styles.fallbackHint}>
+          Inline preview is disabled because the dashboard and the artifact server are running on the same origin
+          ({typeof window !== 'undefined' ? window.location.origin : ''}).
+          Open in a new tab uses Chrome's built-in viewer with the browser's own sandbox.
+        </div>
+      </div>
     );
   }
 
