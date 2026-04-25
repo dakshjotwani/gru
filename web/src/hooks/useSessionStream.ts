@@ -57,6 +57,19 @@ function decodeTransitionPayload(payload: SessionEvent['payload']): { from?: str
   }
 }
 
+// Maps the state-string values the Go derivation function writes into
+// session.transition payloads to the numeric SessionStatus enum the
+// Session proto uses for its status field.
+const transitionStatusMap: Record<string, SessionStatus> = {
+  starting: SessionStatus.STARTING,
+  running: SessionStatus.RUNNING,
+  idle: SessionStatus.IDLE,
+  needs_attention: SessionStatus.NEEDS_ATTENTION,
+  completed: SessionStatus.COMPLETED,
+  errored: SessionStatus.ERRORED,
+  killed: SessionStatus.KILLED,
+};
+
 function reducer(state: SessionState, action: Action): SessionState {
   switch (action.type) {
     case 'CONNECTED':
@@ -122,15 +135,33 @@ function reducer(state: SessionState, action: Action): SessionState {
         return state;
       }
 
+      // session.transition: apply the server-derived status change.
+      // The tailer emits this on every status flip; we trust `to` so the
+      // UI never re-derives status locally. Also update lastEventSeq so
+      // the snapshot regression guard rejects any stale snapshot that
+      // arrives later with a lower seq.
+      if (event.type === 'session.transition') {
+        const body = decodeTransitionPayload(event.payload);
+        const newStatus = body.to !== undefined ? transitionStatusMap[body.to] : undefined;
+        const sessions = new Map(state.sessions);
+        const existing = sessions.get(event.sessionId);
+        if (existing && newStatus !== undefined) {
+          sessions.set(event.sessionId, {
+            ...existing,
+            status: newStatus,
+            lastEventSeq: event.seq ?? existing.lastEventSeq,
+          });
+        }
+        const events = new Map(state.events);
+        const sessionEvents = events.get(event.sessionId) ?? [];
+        events.set(event.sessionId, [...sessionEvents, event].slice(-20));
+        return { ...state, sessions, events, lastSeq: maxSeq(state.lastSeq, seq) };
+      }
 
+      // All other events: append to the per-session ring buffer only.
       const events = new Map(state.events);
       const sessionEvents = events.get(event.sessionId) ?? [];
       events.set(event.sessionId, [...sessionEvents, event].slice(-20));
-
-      // session.transition events carry a from/to body. For now we
-      // don't apply status from them either — the snapshot.session
-      // event(s) the server emits at the same seq carry the new row
-      // verbatim. Keeping derivation server-side is the whole point.
 
       return { ...state, events, lastSeq: maxSeq(state.lastSeq, seq) };
     }

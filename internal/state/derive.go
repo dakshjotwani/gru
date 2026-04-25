@@ -325,6 +325,11 @@ func deriveSupervisor(next State, line []byte) (State, *Projected) {
 		return next, nil
 	}
 	prev := next.Status
+	// Don't overwrite an already-terminal status. Replay of a persisted
+	// supervisor file after KillSession would otherwise flip killed→errored.
+	if prev == StatusKilled || prev == StatusCompleted || prev == StatusErrored {
+		return next, nil
+	}
 	// Sessions that were idle/needs_attention "completed normally" when
 	// the user closed the pane; running/starting sessions crashed.
 	if s.WasIdle || s.WasAttn || prev == StatusIdle || prev == StatusNeedsAttention {

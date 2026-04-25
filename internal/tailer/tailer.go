@@ -194,13 +194,16 @@ func (t *Tailer) Run(ctx context.Context) error {
 				watcher = nil
 				continue
 			}
-			// Filter to our two files plus their parent dirs to avoid
-			// stat-storming on unrelated edits.
-			if ev.Name == t.cfg.TranscriptPath || ev.Name == t.cfg.NotifyPath {
-				t.drain(ctx)
-			} else if filepath.Dir(ev.Name) == filepath.Dir(t.cfg.TranscriptPath) ||
-				filepath.Dir(ev.Name) == filepath.Dir(t.cfg.NotifyPath) {
-				// Could be a Create on the file we're waiting for.
+			// Filter to exactly our three files. We watch parent dirs
+			// so fsnotify fires on Create (the file may not exist at
+			// startup), but ev.Name carries the full path — a map
+			// lookup is enough to skip sibling sessions' writes.
+			watched := map[string]struct{}{
+				t.cfg.TranscriptPath: {},
+				t.cfg.NotifyPath:     {},
+				t.cfg.SupervisorPath: {},
+			}
+			if _, ok := watched[ev.Name]; ok {
 				t.drain(ctx)
 			}
 		case err := <-watcherErrors(watcher):

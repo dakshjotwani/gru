@@ -227,6 +227,10 @@ func (p *Publisher) shutdown() {
 	}
 }
 
+// Publish is an alias for PublishSynthetic, satisfying the artifacts.Publisher
+// interface. Artifact events are synthetic — they don't live in the events table.
+func (p *Publisher) Publish(evt *gruv1.SessionEvent) { p.PublishSynthetic(evt) }
+
 // PublishSynthetic injects a one-off event that doesn't come from the
 // events table — e.g. session.created at launch time, session.deleted
 // when a row is removed. The event is fanned out to every active

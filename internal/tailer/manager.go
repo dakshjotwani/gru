@@ -249,11 +249,13 @@ func (m *Manager) deriveTranscriptPath(ctx context.Context, sessionID, projectID
 }
 
 // encodeCwd reproduces Claude Code's project-hash convention:
-// "/Users/foo/x" → "-Users-foo-x". Empirical: every entry in
-// ~/.claude/projects/ on the dev machine matches this transform.
+// "/Users/foo/x" → "-Users-foo-x", and "." → "-" (dots in path
+// components produce double-dashes, e.g. "/Users/foo/.gru/journal"
+// → "-Users-foo--gru-journal"). Empirical: entries in
+// ~/.claude/projects/ on the dev machine match this transform.
 // If Anthropic changes the scheme, this is the one place to fix.
 func encodeCwd(cwd string) string {
-	return strings.ReplaceAll(cwd, "/", "-")
+	return strings.NewReplacer("/", "-", ".", "-").Replace(cwd)
 }
 
 // projectPrimaryWorkdir loads the spec at project.id and returns its

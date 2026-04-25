@@ -23,7 +23,7 @@ DROP TABLE IF EXISTS events;
 
 CREATE TABLE events (
     seq        INTEGER PRIMARY KEY AUTOINCREMENT,
-    id         TEXT NOT NULL UNIQUE,
+    id         TEXT NOT NULL,
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL REFERENCES projects(id),
     runtime    TEXT NOT NULL,
