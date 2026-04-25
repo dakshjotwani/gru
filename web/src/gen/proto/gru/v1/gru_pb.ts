@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file gru/v1/gru.proto.
  */
 export const file_gru_v1_gru: GenFile = /*@__PURE__*/
-  fileDesc("ChBncnUvdjEvZ3J1LnByb3RvEgZncnUudjEi+wMKB1Nlc3Npb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdydW50aW1lGAMgASgJEiUKBnN0YXR1cxgEIAEoDjIVLmdydS52MS5TZXNzaW9uU3RhdHVzEg8KB3Byb2ZpbGUYBSABKAkSFwoPYXR0ZW50aW9uX3Njb3JlGAYgASgBEi4KCnN0YXJ0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1sYXN0X2V2ZW50X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNwaWQYCiABKAUSFAoMdG11eF9zZXNzaW9uGAsgASgJEhMKC3RtdXhfd2luZG93GAwgASgJEgwKBG5hbWUYDSABKAkSEwoLZGVzY3JpcHRpb24YDiABKAkSDgoGcHJvbXB0GA8gASgJEgwKBHJvbGUYECABKAkSFwoPdHJhbnNjcmlwdF9wYXRoGBEgASgJEhoKEmNsYXVkZV9zdG9wX3JlYXNvbhgSIAEoCRIXCg9wZXJtaXNzaW9uX21vZGUYEyABKAkSFgoObGFzdF9ldmVudF9zZXEYFCABKAMidQoHUHJvamVjdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2FkYXB0ZXIYAyABKAkSDwoHcnVudGltZRgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKuAQoMU2Vzc2lvbkV2ZW50EgoKAmlkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIPCgdydW50aW1lGAQgASgJEgwKBHR5cGUYBSABKAkSLQoJdGltZXN0YW1wGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdwYXlsb2FkGAcgASgMEgsKA3NlcRgIIAEoAyJQChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSJQoGc3RhdHVzGAIgASgOMhUuZ3J1LnYxLlNlc3Npb25TdGF0dXMiOQoUTGlzdFNlc3Npb25zUmVzcG9uc2USIQoIc2Vzc2lvbnMYASADKAsyDy5ncnUudjEuU2Vzc2lvbiIfChFHZXRTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJsChRMYXVuY2hTZXNzaW9uUmVxdWVzdBIQCghlbnZfc3BlYxgBIAEoCRIOCgZwcm9tcHQYAiABKAkSDAoEbmFtZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIPCgdwcm9maWxlGAUgASgJIjkKFUxhdW5jaFNlc3Npb25SZXNwb25zZRIgCgdzZXNzaW9uGAEgASgLMg8uZ3J1LnYxLlNlc3Npb24iIAoSS2lsbFNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJIiYKE0tpbGxTZXNzaW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIiChREZWxldGVTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSIoChVEZWxldGVTZXNzaW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIWChRQcnVuZVNlc3Npb25zUmVxdWVzdCIuChVQcnVuZVNlc3Npb25zUmVzcG9uc2USFQoNZGVsZXRlZF9jb3VudBgBIAEoBSIVChNMaXN0UHJvamVjdHNSZXF1ZXN0IjkKFExpc3RQcm9qZWN0c1Jlc3BvbnNlEiEKCHByb2plY3RzGAEgAygLMg8uZ3J1LnYxLlByb2plY3QiNAoUVXBkYXRlUHJvamVjdFJlcXVlc3QSCgoCaWQYASABKAkSEAoIbmV3X25hbWUYAiABKAkiQAoMQWdlbnRQcm9maWxlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDQoFbW9kZWwYAyABKAkiKQoTTGlzdFByb2ZpbGVzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIj4KFExpc3RQcm9maWxlc1Jlc3BvbnNlEiYKCHByb2ZpbGVzGAEgAygLMhQuZ3J1LnYxLkFnZW50UHJvZmlsZSI0ChBTZW5kSW5wdXRSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEdGV4dBgCIAEoCSI7ChFTZW5kSW5wdXRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEhUKDWVycm9yX21lc3NhZ2UYAiABKAkiVwoWU3Vic2NyaWJlRXZlbnRzUmVxdWVzdBITCgtwcm9qZWN0X2lkcxgBIAMoCRIVCg1taW5fYXR0ZW50aW9uGAIgASgBEhEKCXNpbmNlX3NlcRgDIAEoAyI/ChlTdWdnZXN0U2Vzc2lvbk5hbWVSZXF1ZXN0Eg4KBnByb21wdBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJIj8KGlN1Z2dlc3RTZXNzaW9uTmFtZVJlc3BvbnNlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkq+gEKDVNlc3Npb25TdGF0dXMSHgoaU0VTU0lPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIbChdTRVNTSU9OX1NUQVRVU19TVEFSVElORxABEhoKFlNFU1NJT05fU1RBVFVTX1JVTk5JTkcQAhIXChNTRVNTSU9OX1NUQVRVU19JRExFEAMSIgoeU0VTU0lPTl9TVEFUVVNfTkVFRFNfQVRURU5USU9OEAQSHAoYU0VTU0lPTl9TVEFUVVNfQ09NUExFVEVEEAUSGgoWU0VTU0lPTl9TVEFUVVNfRVJST1JFRBAGEhkKFVNFU1NJT05fU1RBVFVTX0tJTExFRBAHMoMHCgpHcnVTZXJ2aWNlEkkKDExpc3RTZXNzaW9ucxIbLmdydS52MS5MaXN0U2Vzc2lvbnNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RTZXNzaW9uc1Jlc3BvbnNlEjgKCkdldFNlc3Npb24SGS5ncnUudjEuR2V0U2Vzc2lvblJlcXVlc3QaDy5ncnUudjEuU2Vzc2lvbhJMCg1MYXVuY2hTZXNzaW9uEhwuZ3J1LnYxLkxhdW5jaFNlc3Npb25SZXF1ZXN0Gh0uZ3J1LnYxLkxhdW5jaFNlc3Npb25SZXNwb25zZRJGCgtLaWxsU2Vzc2lvbhIaLmdydS52MS5LaWxsU2Vzc2lvblJlcXVlc3QaGy5ncnUudjEuS2lsbFNlc3Npb25SZXNwb25zZRJMCg1EZWxldGVTZXNzaW9uEhwuZ3J1LnYxLkRlbGV0ZVNlc3Npb25SZXF1ZXN0Gh0uZ3J1LnYxLkRlbGV0ZVNlc3Npb25SZXNwb25zZRJMCg1QcnVuZVNlc3Npb25zEhwuZ3J1LnYxLlBydW5lU2Vzc2lvbnNSZXF1ZXN0Gh0uZ3J1LnYxLlBydW5lU2Vzc2lvbnNSZXNwb25zZRJACglTZW5kSW5wdXQSGC5ncnUudjEuU2VuZElucHV0UmVxdWVzdBoZLmdydS52MS5TZW5kSW5wdXRSZXNwb25zZRJbChJTdWdnZXN0U2Vzc2lvbk5hbWUSIS5ncnUudjEuU3VnZ2VzdFNlc3Npb25OYW1lUmVxdWVzdBoiLmdydS52MS5TdWdnZXN0U2Vzc2lvbk5hbWVSZXNwb25zZRJJCgxMaXN0UHJvamVjdHMSGy5ncnUudjEuTGlzdFByb2plY3RzUmVxdWVzdBocLmdydS52MS5MaXN0UHJvamVjdHNSZXNwb25zZRI+Cg1VcGRhdGVQcm9qZWN0EhwuZ3J1LnYxLlVwZGF0ZVByb2plY3RSZXF1ZXN0Gg8uZ3J1LnYxLlByb2plY3QSSQoMTGlzdFByb2ZpbGVzEhsuZ3J1LnYxLkxpc3RQcm9maWxlc1JlcXVlc3QaHC5ncnUudjEuTGlzdFByb2ZpbGVzUmVzcG9uc2USSQoPU3Vic2NyaWJlRXZlbnRzEh4uZ3J1LnYxLlN1YnNjcmliZUV2ZW50c1JlcXVlc3QaFC5ncnUudjEuU2Vzc2lvbkV2ZW50MAFCfwoKY29tLmdydS52MUIIR3J1UHJvdG9QAVouZ2l0aHViLmNvbS9kYWtzaGpvdHdhbmkvZ3J1L3Byb3RvL2dydS92MTtncnV2MaICA0dYWKoCBkdydS5WMcoCBkdydVxWMeICEkdydVxWMVxHUEJNZXRhZGF0YeoCB0dydTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChBncnUvdjEvZ3J1LnByb3RvEgZncnUudjEi+wMKB1Nlc3Npb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdydW50aW1lGAMgASgJEiUKBnN0YXR1cxgEIAEoDjIVLmdydS52MS5TZXNzaW9uU3RhdHVzEg8KB3Byb2ZpbGUYBSABKAkSFwoPYXR0ZW50aW9uX3Njb3JlGAYgASgBEi4KCnN0YXJ0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1sYXN0X2V2ZW50X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNwaWQYCiABKAUSFAoMdG11eF9zZXNzaW9uGAsgASgJEhMKC3RtdXhfd2luZG93GAwgASgJEgwKBG5hbWUYDSABKAkSEwoLZGVzY3JpcHRpb24YDiABKAkSDgoGcHJvbXB0GA8gASgJEgwKBHJvbGUYECABKAkSFwoPdHJhbnNjcmlwdF9wYXRoGBEgASgJEhoKEmNsYXVkZV9zdG9wX3JlYXNvbhgSIAEoCRIXCg9wZXJtaXNzaW9uX21vZGUYEyABKAkSFgoObGFzdF9ldmVudF9zZXEYFCABKAMidQoHUHJvamVjdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2FkYXB0ZXIYAyABKAkSDwoHcnVudGltZRgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKuAQoMU2Vzc2lvbkV2ZW50EgoKAmlkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIPCgdydW50aW1lGAQgASgJEgwKBHR5cGUYBSABKAkSLQoJdGltZXN0YW1wGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdwYXlsb2FkGAcgASgMEgsKA3NlcRgIIAEoAyJQChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSJQoGc3RhdHVzGAIgASgOMhUuZ3J1LnYxLlNlc3Npb25TdGF0dXMiOQoUTGlzdFNlc3Npb25zUmVzcG9uc2USIQoIc2Vzc2lvbnMYASADKAsyDy5ncnUudjEuU2Vzc2lvbiIfChFHZXRTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJsChRMYXVuY2hTZXNzaW9uUmVxdWVzdBIQCghlbnZfc3BlYxgBIAEoCRIOCgZwcm9tcHQYAiABKAkSDAoEbmFtZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIPCgdwcm9maWxlGAUgASgJIjkKFUxhdW5jaFNlc3Npb25SZXNwb25zZRIgCgdzZXNzaW9uGAEgASgLMg8uZ3J1LnYxLlNlc3Npb24iIAoSS2lsbFNlc3Npb25SZXF1ZXN0EgoKAmlkGAEgASgJIiYKE0tpbGxTZXNzaW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIiChREZWxldGVTZXNzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSIoChVEZWxldGVTZXNzaW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIWChRQcnVuZVNlc3Npb25zUmVxdWVzdCIuChVQcnVuZVNlc3Npb25zUmVzcG9uc2USFQoNZGVsZXRlZF9jb3VudBgBIAEoBSIVChNMaXN0UHJvamVjdHNSZXF1ZXN0IjkKFExpc3RQcm9qZWN0c1Jlc3BvbnNlEiEKCHByb2plY3RzGAEgAygLMg8uZ3J1LnYxLlByb2plY3QiNAoUVXBkYXRlUHJvamVjdFJlcXVlc3QSCgoCaWQYASABKAkSEAoIbmV3X25hbWUYAiABKAkiQAoMQWdlbnRQcm9maWxlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDQoFbW9kZWwYAyABKAkiKQoTTGlzdFByb2ZpbGVzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIj4KFExpc3RQcm9maWxlc1Jlc3BvbnNlEiYKCHByb2ZpbGVzGAEgAygLMhQuZ3J1LnYxLkFnZW50UHJvZmlsZSI0ChBTZW5kSW5wdXRSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEdGV4dBgCIAEoCSI7ChFTZW5kSW5wdXRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEhUKDWVycm9yX21lc3NhZ2UYAiABKAkiVwoWU3Vic2NyaWJlRXZlbnRzUmVxdWVzdBITCgtwcm9qZWN0X2lkcxgBIAMoCRIVCg1taW5fYXR0ZW50aW9uGAIgASgBEhEKCXNpbmNlX3NlcRgDIAEoAyI/ChlTdWdnZXN0U2Vzc2lvbk5hbWVSZXF1ZXN0Eg4KBnByb21wdBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJIj8KGlN1Z2dlc3RTZXNzaW9uTmFtZVJlc3BvbnNlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkinQEKCEFydGlmYWN0EgoKAmlkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSDQoFdGl0bGUYAyABKAkSEQoJbWltZV90eXBlGAQgASgJEhIKCnNpemVfYnl0ZXMYBSABKAMSCwoDdXJsGAYgASgJEi4KCmNyZWF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIioKFExpc3RBcnRpZmFjdHNSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiXwoVTGlzdEFydGlmYWN0c1Jlc3BvbnNlEiMKCWFydGlmYWN0cxgBIAMoCzIQLmdydS52MS5BcnRpZmFjdBINCgVjb3VudBgCIAEoBRISCgpieXRlc191c2VkGAMgASgDIiMKFURlbGV0ZUFydGlmYWN0UmVxdWVzdBIKCgJpZBgBIAEoCSIpChZEZWxldGVBcnRpZmFjdFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgieQoLU2Vzc2lvbkxpbmsSCgoCaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRINCgV0aXRsZRgDIAEoCRILCgN1cmwYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiRwoVQWRkU2Vzc2lvbkxpbmtSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDQoFdGl0bGUYAiABKAkSCwoDdXJsGAMgASgJIi0KF0xpc3RTZXNzaW9uTGlua3NSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiPgoYTGlzdFNlc3Npb25MaW5rc1Jlc3BvbnNlEiIKBWxpbmtzGAEgAygLMhMuZ3J1LnYxLlNlc3Npb25MaW5rIiYKGERlbGV0ZVNlc3Npb25MaW5rUmVxdWVzdBIKCgJpZBgBIAEoCSIsChlEZWxldGVTZXNzaW9uTGlua1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgq+gEKDVNlc3Npb25TdGF0dXMSHgoaU0VTU0lPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIbChdTRVNTSU9OX1NUQVRVU19TVEFSVElORxABEhoKFlNFU1NJT05fU1RBVFVTX1JVTk5JTkcQAhIXChNTRVNTSU9OX1NUQVRVU19JRExFEAMSIgoeU0VTU0lPTl9TVEFUVVNfTkVFRFNfQVRURU5USU9OEAQSHAoYU0VTU0lPTl9TVEFUVVNfQ09NUExFVEVEEAUSGgoWU0VTU0lPTl9TVEFUVVNfRVJST1JFRBAGEhkKFVNFU1NJT05fU1RBVFVTX0tJTExFRBAHMpkKCgpHcnVTZXJ2aWNlEkkKDExpc3RTZXNzaW9ucxIbLmdydS52MS5MaXN0U2Vzc2lvbnNSZXF1ZXN0GhwuZ3J1LnYxLkxpc3RTZXNzaW9uc1Jlc3BvbnNlEjgKCkdldFNlc3Npb24SGS5ncnUudjEuR2V0U2Vzc2lvblJlcXVlc3QaDy5ncnUudjEuU2Vzc2lvbhJMCg1MYXVuY2hTZXNzaW9uEhwuZ3J1LnYxLkxhdW5jaFNlc3Npb25SZXF1ZXN0Gh0uZ3J1LnYxLkxhdW5jaFNlc3Npb25SZXNwb25zZRJGCgtLaWxsU2Vzc2lvbhIaLmdydS52MS5LaWxsU2Vzc2lvblJlcXVlc3QaGy5ncnUudjEuS2lsbFNlc3Npb25SZXNwb25zZRJMCg1EZWxldGVTZXNzaW9uEhwuZ3J1LnYxLkRlbGV0ZVNlc3Npb25SZXF1ZXN0Gh0uZ3J1LnYxLkRlbGV0ZVNlc3Npb25SZXNwb25zZRJMCg1QcnVuZVNlc3Npb25zEhwuZ3J1LnYxLlBydW5lU2Vzc2lvbnNSZXF1ZXN0Gh0uZ3J1LnYxLlBydW5lU2Vzc2lvbnNSZXNwb25zZRJACglTZW5kSW5wdXQSGC5ncnUudjEuU2VuZElucHV0UmVxdWVzdBoZLmdydS52MS5TZW5kSW5wdXRSZXNwb25zZRJbChJTdWdnZXN0U2Vzc2lvbk5hbWUSIS5ncnUudjEuU3VnZ2VzdFNlc3Npb25OYW1lUmVxdWVzdBoiLmdydS52MS5TdWdnZXN0U2Vzc2lvbk5hbWVSZXNwb25zZRJJCgxMaXN0UHJvamVjdHMSGy5ncnUudjEuTGlzdFByb2plY3RzUmVxdWVzdBocLmdydS52MS5MaXN0UHJvamVjdHNSZXNwb25zZRI+Cg1VcGRhdGVQcm9qZWN0EhwuZ3J1LnYxLlVwZGF0ZVByb2plY3RSZXF1ZXN0Gg8uZ3J1LnYxLlByb2plY3QSSQoMTGlzdFByb2ZpbGVzEhsuZ3J1LnYxLkxpc3RQcm9maWxlc1JlcXVlc3QaHC5ncnUudjEuTGlzdFByb2ZpbGVzUmVzcG9uc2USTAoNTGlzdEFydGlmYWN0cxIcLmdydS52MS5MaXN0QXJ0aWZhY3RzUmVxdWVzdBodLmdydS52MS5MaXN0QXJ0aWZhY3RzUmVzcG9uc2USTwoORGVsZXRlQXJ0aWZhY3QSHS5ncnUudjEuRGVsZXRlQXJ0aWZhY3RSZXF1ZXN0Gh4uZ3J1LnYxLkRlbGV0ZUFydGlmYWN0UmVzcG9uc2USRAoOQWRkU2Vzc2lvbkxpbmsSHS5ncnUudjEuQWRkU2Vzc2lvbkxpbmtSZXF1ZXN0GhMuZ3J1LnYxLlNlc3Npb25MaW5rElUKEExpc3RTZXNzaW9uTGlua3MSHy5ncnUudjEuTGlzdFNlc3Npb25MaW5rc1JlcXVlc3QaIC5ncnUudjEuTGlzdFNlc3Npb25MaW5rc1Jlc3BvbnNlElgKEURlbGV0ZVNlc3Npb25MaW5rEiAuZ3J1LnYxLkRlbGV0ZVNlc3Npb25MaW5rUmVxdWVzdBohLmdydS52MS5EZWxldGVTZXNzaW9uTGlua1Jlc3BvbnNlEkkKD1N1YnNjcmliZUV2ZW50cxIeLmdydS52MS5TdWJzY3JpYmVFdmVudHNSZXF1ZXN0GhQuZ3J1LnYxLlNlc3Npb25FdmVudDABQn8KCmNvbS5ncnUudjFCCEdydVByb3RvUAFaLmdpdGh1Yi5jb20vZGFrc2hqb3R3YW5pL2dydS9wcm90by9ncnUvdjE7Z3J1djGiAgNHWFiqAgZHcnUuVjHKAgZHcnVcVjHiAhJHcnVcVjFcR1BCTWV0YWRhdGHqAgdHcnU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message gru.v1.Session
@@ -731,6 +731,275 @@ export const SuggestSessionNameResponseSchema: GenMessage<SuggestSessionNameResp
   messageDesc(file_gru_v1_gru, 24);
 
 /**
+ * Artifact: a byte payload (PDF, Markdown, etc.) surfaced by an agent.
+ * `url` is the full server-relative path including the capability token
+ * (e.g. /artifacts/<base64url-token>) — anyone holding that URL can fetch
+ * the bytes, anyone who doesn't cannot.
+ *
+ * @generated from message gru.v1.Artifact
+ */
+export type Artifact = Message<"gru.v1.Artifact"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string title = 3;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string mime_type = 4;
+   */
+  mimeType: string;
+
+  /**
+   * @generated from field: int64 size_bytes = 5;
+   */
+  sizeBytes: bigint;
+
+  /**
+   * @generated from field: string url = 6;
+   */
+  url: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 7;
+   */
+  createdAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message gru.v1.Artifact.
+ * Use `create(ArtifactSchema)` to create a new message.
+ */
+export const ArtifactSchema: GenMessage<Artifact> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 25);
+
+/**
+ * @generated from message gru.v1.ListArtifactsRequest
+ */
+export type ListArtifactsRequest = Message<"gru.v1.ListArtifactsRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message gru.v1.ListArtifactsRequest.
+ * Use `create(ListArtifactsRequestSchema)` to create a new message.
+ */
+export const ListArtifactsRequestSchema: GenMessage<ListArtifactsRequest> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 26);
+
+/**
+ * ListArtifactsResponse exposes count + bytes_used so an agent can
+ * pre-check whether a planned upload will hit the per-session caps. The
+ * 409 cap-exceeded response from POST /artifacts returns the same fields.
+ *
+ * @generated from message gru.v1.ListArtifactsResponse
+ */
+export type ListArtifactsResponse = Message<"gru.v1.ListArtifactsResponse"> & {
+  /**
+   * @generated from field: repeated gru.v1.Artifact artifacts = 1;
+   */
+  artifacts: Artifact[];
+
+  /**
+   * @generated from field: int32 count = 2;
+   */
+  count: number;
+
+  /**
+   * @generated from field: int64 bytes_used = 3;
+   */
+  bytesUsed: bigint;
+};
+
+/**
+ * Describes the message gru.v1.ListArtifactsResponse.
+ * Use `create(ListArtifactsResponseSchema)` to create a new message.
+ */
+export const ListArtifactsResponseSchema: GenMessage<ListArtifactsResponse> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 27);
+
+/**
+ * @generated from message gru.v1.DeleteArtifactRequest
+ */
+export type DeleteArtifactRequest = Message<"gru.v1.DeleteArtifactRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message gru.v1.DeleteArtifactRequest.
+ * Use `create(DeleteArtifactRequestSchema)` to create a new message.
+ */
+export const DeleteArtifactRequestSchema: GenMessage<DeleteArtifactRequest> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 28);
+
+/**
+ * @generated from message gru.v1.DeleteArtifactResponse
+ */
+export type DeleteArtifactResponse = Message<"gru.v1.DeleteArtifactResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+};
+
+/**
+ * Describes the message gru.v1.DeleteArtifactResponse.
+ * Use `create(DeleteArtifactResponseSchema)` to create a new message.
+ */
+export const DeleteArtifactResponseSchema: GenMessage<DeleteArtifactResponse> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 29);
+
+/**
+ * SessionLink: an external URL pointer attached to a session. Icons are
+ * derived client-side from the URL hostname — the server does not store one.
+ *
+ * @generated from message gru.v1.SessionLink
+ */
+export type SessionLink = Message<"gru.v1.SessionLink"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string title = 3;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string url = 4;
+   */
+  url: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 5;
+   */
+  createdAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message gru.v1.SessionLink.
+ * Use `create(SessionLinkSchema)` to create a new message.
+ */
+export const SessionLinkSchema: GenMessage<SessionLink> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 30);
+
+/**
+ * @generated from message gru.v1.AddSessionLinkRequest
+ */
+export type AddSessionLinkRequest = Message<"gru.v1.AddSessionLinkRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string url = 3;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message gru.v1.AddSessionLinkRequest.
+ * Use `create(AddSessionLinkRequestSchema)` to create a new message.
+ */
+export const AddSessionLinkRequestSchema: GenMessage<AddSessionLinkRequest> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 31);
+
+/**
+ * @generated from message gru.v1.ListSessionLinksRequest
+ */
+export type ListSessionLinksRequest = Message<"gru.v1.ListSessionLinksRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message gru.v1.ListSessionLinksRequest.
+ * Use `create(ListSessionLinksRequestSchema)` to create a new message.
+ */
+export const ListSessionLinksRequestSchema: GenMessage<ListSessionLinksRequest> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 32);
+
+/**
+ * @generated from message gru.v1.ListSessionLinksResponse
+ */
+export type ListSessionLinksResponse = Message<"gru.v1.ListSessionLinksResponse"> & {
+  /**
+   * @generated from field: repeated gru.v1.SessionLink links = 1;
+   */
+  links: SessionLink[];
+};
+
+/**
+ * Describes the message gru.v1.ListSessionLinksResponse.
+ * Use `create(ListSessionLinksResponseSchema)` to create a new message.
+ */
+export const ListSessionLinksResponseSchema: GenMessage<ListSessionLinksResponse> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 33);
+
+/**
+ * @generated from message gru.v1.DeleteSessionLinkRequest
+ */
+export type DeleteSessionLinkRequest = Message<"gru.v1.DeleteSessionLinkRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message gru.v1.DeleteSessionLinkRequest.
+ * Use `create(DeleteSessionLinkRequestSchema)` to create a new message.
+ */
+export const DeleteSessionLinkRequestSchema: GenMessage<DeleteSessionLinkRequest> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 34);
+
+/**
+ * @generated from message gru.v1.DeleteSessionLinkResponse
+ */
+export type DeleteSessionLinkResponse = Message<"gru.v1.DeleteSessionLinkResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+};
+
+/**
+ * Describes the message gru.v1.DeleteSessionLinkResponse.
+ * Use `create(DeleteSessionLinkResponseSchema)` to create a new message.
+ */
+export const DeleteSessionLinkResponseSchema: GenMessage<DeleteSessionLinkResponse> = /*@__PURE__*/
+  messageDesc(file_gru_v1_gru, 35);
+
+/**
  * @generated from enum gru.v1.SessionStatus
  */
 export enum SessionStatus {
@@ -878,6 +1147,54 @@ export const GruService: GenService<{
     methodKind: "unary";
     input: typeof ListProfilesRequestSchema;
     output: typeof ListProfilesResponseSchema;
+  },
+  /**
+   * Artifacts (byte payloads surfaced by an agent: PDFs, Markdown, etc.)
+   * Creation is an HTTP multipart POST to /artifacts; this RPC surface is
+   * for listing and deletion, mirroring the rest of the dashboard API.
+   *
+   * @generated from rpc gru.v1.GruService.ListArtifacts
+   */
+  listArtifacts: {
+    methodKind: "unary";
+    input: typeof ListArtifactsRequestSchema;
+    output: typeof ListArtifactsResponseSchema;
+  },
+  /**
+   * @generated from rpc gru.v1.GruService.DeleteArtifact
+   */
+  deleteArtifact: {
+    methodKind: "unary";
+    input: typeof DeleteArtifactRequestSchema;
+    output: typeof DeleteArtifactResponseSchema;
+  },
+  /**
+   * Session links (external URLs an agent attaches to a session: PRs,
+   * Slack threads, Figma files). All-gRPC since there are no bytes to
+   * multipart-upload.
+   *
+   * @generated from rpc gru.v1.GruService.AddSessionLink
+   */
+  addSessionLink: {
+    methodKind: "unary";
+    input: typeof AddSessionLinkRequestSchema;
+    output: typeof SessionLinkSchema;
+  },
+  /**
+   * @generated from rpc gru.v1.GruService.ListSessionLinks
+   */
+  listSessionLinks: {
+    methodKind: "unary";
+    input: typeof ListSessionLinksRequestSchema;
+    output: typeof ListSessionLinksResponseSchema;
+  },
+  /**
+   * @generated from rpc gru.v1.GruService.DeleteSessionLink
+   */
+  deleteSessionLink: {
+    methodKind: "unary";
+    input: typeof DeleteSessionLinkRequestSchema;
+    output: typeof DeleteSessionLinkResponseSchema;
   },
   /**
    * Real-time event stream
