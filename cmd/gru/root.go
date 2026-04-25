@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -80,8 +79,7 @@ func newRootCmd() *cobra.Command {
 }
 
 func defaultConfigPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".gru", "server.yaml")
+	return filepath.Join(stateDir(), "server.yaml")
 }
 
 func shortID(id string) string {
