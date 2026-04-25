@@ -204,7 +204,9 @@ func (p *eventPump) streamOnce(ctx context.Context, shellCmd, cwd string) (exitC
 	}()
 
 	var stderrBuf []byte
+	stderrDone := make(chan struct{})
 	go func() {
+		defer close(stderrDone)
 		b, _ := io.ReadAll(errPipe)
 		stderrBuf = b
 	}()
@@ -255,6 +257,7 @@ loop:
 	}
 
 	_ = c.Wait()
+	<-stderrDone
 	exitCode = c.ProcessState.ExitCode()
 	return exitCode, string(stderrBuf)
 }
