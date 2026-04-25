@@ -168,12 +168,10 @@ describe('useSessionStream', () => {
     // Snapshot regression guard (anti-pattern #7 / spec §3.9).
     const fresh = makeSession({
       status: SessionStatus.NEEDS_ATTENTION,
-      // @ts-expect-error - lastEventSeq is added in proto for rev 2
       lastEventSeq: BigInt(10),
     });
     const stale = makeSession({
       status: SessionStatus.RUNNING,
-      // @ts-expect-error - lastEventSeq is added in proto for rev 2
       lastEventSeq: BigInt(5),
     });
     const freshSnap = makeSnapshotEvent(fresh);
