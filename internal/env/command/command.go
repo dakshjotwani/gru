@@ -63,12 +63,18 @@ type providerRefPayload struct {
 	SessionID  string         `json:"session_id"`
 	ProjectID  string         `json:"project_id,omitempty"`
 	SourcePath string         `json:"source_path,omitempty"` // spec file path for {{.SpecDir}} on Rehydrate
+	AgentCwd   string         `json:"agent_cwd,omitempty"`   // create.sh's "workdir" — surfaced via AgentArgs.Cwd
 }
 
 // scriptOutput is what the user's create script emits on stdout.
 type scriptOutput struct {
 	ProviderRef string   `json:"provider_ref"`
 	PtyHolders  []string `json:"pty_holders"`
+	// Workdir, when non-empty, becomes AgentArgs.Cwd — the cwd Claude Code
+	// is launched in. Lets create.sh provision an isolated source tree
+	// (e.g. a fresh git worktree) and point the agent at it instead of
+	// spec.Workdirs[0]. Optional; empty means "use spec.Workdirs[0]".
+	Workdir string `json:"workdir,omitempty"`
 }
 
 func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, error) {
@@ -148,6 +154,7 @@ func (a *Adapter) Create(ctx context.Context, spec env.EnvSpec) (env.Instance, e
 		Workdirs:   spec.Workdirs,
 		SessionID:  spec.Name,
 		SourcePath: spec.SourcePath,
+		AgentCwd:   out.Workdir,
 	})
 	if err != nil {
 		a.bestEffortDestroy(ctx, cfg, spec, out.ProviderRef)
@@ -336,12 +343,19 @@ func (a *Adapter) Status(ctx context.Context, inst env.Instance) (env.Status, er
 	}, nil
 }
 
-// AgentArgs for the command adapter is a no-op by default. If a future
-// version teaches create.sh to emit a "workdir" field for source-isolation
-// cases (e.g., it provisioned a fresh clone), this is where we'd surface
-// that as Cwd.
+// AgentArgs surfaces create.sh's optional "workdir" output as Cwd. When
+// create.sh provisions an isolated source tree (e.g. a per-minion git
+// worktree), this is what makes Claude Code launch inside it instead of
+// the shared spec.Workdirs[0]. Empty cwd means "use spec.Workdirs[0]".
 func (a *Adapter) AgentArgs(ctx context.Context, inst env.Instance) (env.AgentArgs, error) {
-	return env.AgentArgs{}, nil
+	if inst.ProviderRef == "" {
+		return env.AgentArgs{}, nil
+	}
+	var wrapped providerRefPayload
+	if err := json.Unmarshal([]byte(inst.ProviderRef), &wrapped); err != nil {
+		return env.AgentArgs{}, fmt.Errorf("command: decode provider ref for AgentArgs: %w", err)
+	}
+	return env.AgentArgs{Cwd: wrapped.AgentCwd}, nil
 }
 
 // trackInstance stores per-Instance state for later lookup.
