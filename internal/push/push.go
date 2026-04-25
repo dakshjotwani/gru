@@ -31,7 +31,7 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 
 	"github.com/dakshjotwani/gru/internal/devices"
-	"github.com/dakshjotwani/gru/internal/ingestion"
+	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/store"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 )
@@ -79,7 +79,7 @@ func (c *Config) withDefaults() {
 type Dispatcher struct {
 	cfg    Config
 	reg    *devices.Registry
-	pub    *ingestion.Publisher
+	pub    *publisher.Publisher
 	store  *store.Store
 	client *http.Client
 
@@ -88,7 +88,7 @@ type Dispatcher struct {
 }
 
 // NewDispatcher wires the dispatcher; call Run to start its goroutine.
-func NewDispatcher(cfg Config, reg *devices.Registry, pub *ingestion.Publisher, s *store.Store) *Dispatcher {
+func NewDispatcher(cfg Config, reg *devices.Registry, pub *publisher.Publisher, s *store.Store) *Dispatcher {
 	cfg.withDefaults()
 	return &Dispatcher{
 		cfg:      cfg,
@@ -102,24 +102,47 @@ func NewDispatcher(cfg Config, reg *devices.Registry, pub *ingestion.Publisher, 
 
 // Run subscribes to the publisher and dispatches pushes for matching
 // events until ctx is cancelled. Safe to call in a goroutine.
+//
+// On overflow the publisher closes our subscription channel; we
+// re-subscribe with the highest seq we've seen so we don't miss the
+// next session.transition.
 func (d *Dispatcher) Run(ctx context.Context) {
-	ch := make(chan *gruv1.SessionEvent, 64)
 	subID := "push-dispatcher"
-	d.pub.Subscribe(subID, ch)
-	defer d.pub.Unsubscribe(subID)
-
+	var since int64
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case evt := <-ch:
-			if evt == nil {
+		sub, _, err := d.pub.Subscribe(subID, since)
+		if err != nil {
+			log.Printf("push: subscribe: %v", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
 				continue
 			}
-			if err := d.handle(ctx, evt); err != nil {
-				log.Printf("push: handle %s: %v", evt.Id, err)
+		}
+	stream:
+		for {
+			select {
+			case <-ctx.Done():
+				d.pub.Unsubscribe(subID)
+				return
+			case evt, ok := <-sub.Events():
+				if !ok {
+					// Publisher dropped us — reconnect with our highest seq.
+					break stream
+				}
+				if evt == nil {
+					continue
+				}
+				if evt.Seq > since {
+					since = evt.Seq
+				}
+				if err := d.handle(ctx, evt); err != nil {
+					log.Printf("push: handle %s: %v", evt.Id, err)
+				}
 			}
 		}
+		d.pub.Unsubscribe(subID)
 	}
 }
 
@@ -163,11 +186,31 @@ const (
 
 // classify maps an event to a trigger kind + body text. Returns
 // triggerNone for events that shouldn't push.
+//
+// Rev 2: the only signal we care about for push is a session.transition
+// event whose `to` field is "needs_attention". The transition event is
+// emitted by the state-derivation function on permission_prompt /
+// idle_prompt notifications.
 func (d *Dispatcher) classify(evt *gruv1.SessionEvent) (trigger, string) {
-	if evt.Type == "notification.needs_attention" {
-		return triggerAttention, shorten(extractMessage(evt.Payload), 80)
+	if evt.Type != "session.transition" {
+		return triggerNone, ""
 	}
-	return triggerNone, ""
+	to := extractTransitionField(evt.Payload, "to")
+	if to != "needs_attention" {
+		return triggerNone, ""
+	}
+	return triggerAttention, shorten(extractMessage(evt.Payload), 80)
+}
+
+// extractTransitionField pulls a top-level string field out of the
+// transition payload {"from":..., "to":..., "why":...}. Returns "" on
+// malformed JSON or missing field — the caller treats that as "skip".
+func extractTransitionField(payload []byte, key string) string {
+	var m map[string]string
+	if err := json.Unmarshal(payload, &m); err != nil {
+		return ""
+	}
+	return m[key]
 }
 
 func (d *Dispatcher) rateLimitAllow(sessionID string) bool {

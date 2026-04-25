@@ -13,10 +13,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/dakshjotwani/gru/internal/adapter"
-	claudeadapter "github.com/dakshjotwani/gru/internal/adapter/claude"
 	"github.com/dakshjotwani/gru/internal/artifacts"
-	"github.com/dakshjotwani/gru/internal/attention"
+	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	claudecontroller "github.com/dakshjotwani/gru/internal/controller/claude"
@@ -24,18 +22,18 @@ import (
 	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/env/command"
 	"github.com/dakshjotwani/gru/internal/env/host"
-	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/journal"
+	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/push"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/supervisor"
+	"github.com/dakshjotwani/gru/internal/tailer"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // stateDir returns the directory Gru uses for server.yaml, logs, and the
@@ -82,9 +80,10 @@ func runServer(portFilePath string) error {
 	}
 	defer s.Close()
 
-	pub := ingestion.NewPublisher()
-	adapterReg := adapter.NewRegistry()
-	adapterReg.Register(claudeadapter.NewNormalizer())
+	// State pipeline rev 2: the publisher tails the events projection
+	// (written by per-session tailers) instead of being pushed to by an
+	// HTTP handler.
+	pub := publisher.NewPublisher(s)
 
 	// Build the env.Registry so LaunchSession can route per-launch to the
 	// adapter declared in a spec file. "host" stays the default for launches
@@ -130,56 +129,36 @@ func runServer(portFilePath string) error {
 		log.Printf("artifacts: boot sweep: %v", err)
 	}
 
-	// Build the attention engine from config-provided weights. Any zero
-	// field falls back to the documented defaults.
-	attnWeights := attention.DefaultWeights()
-	cw := cfg.Attention.Weights
-	if cw.Paused != 0 {
-		attnWeights.Paused = cw.Paused
-	}
-	if cw.Notification != 0 {
-		attnWeights.Notification = cw.Notification
-	}
-	if cw.ToolError != 0 {
-		attnWeights.ToolError = cw.ToolError
-	}
-	if cw.StalenessCap != 0 {
-		attnWeights.StalenessCap = cw.StalenessCap
-	}
-	if start, full, err := cw.ParseStalenessDurations(); err != nil {
-		log.Printf("attention: ignoring bad staleness duration: %v", err)
-	} else {
-		if start != 0 {
-			attnWeights.StalenessStart = start
-		}
-		if full != 0 {
-			attnWeights.StalenessFull = full
-		}
-	}
-	attnEngine := attention.New(attnWeights)
-	ingestionHandler := ingestion.NewHandlerWithAttention(s, adapterReg, pub, attnEngine)
-
 	// Start process liveness supervisor in the background.
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
 
+	// Tailer manager — the producer side of the state pipeline. Spawns
+	// one goroutine per non-terminal session that tails Claude's
+	// transcript JSONL, applies state derivation, and writes both the
+	// events projection and the derived sessions row in one
+	// transaction.
+	tailerMgr := tailer.NewManager(s, pub, stateDir())
+	svc.SetTailerManager(tailerMgr)
+	if err := tailerMgr.Start(serverCtx); err != nil {
+		log.Printf("tailer manager start: %v (continuing; sessions will be tailed on next launch)", err)
+	}
+	defer tailerMgr.StopAll()
+
+	// Run the publisher's fan-out loop.
+	go pub.Run(serverCtx)
+
 	// Ensure the journal singleton is up before the supervisor begins reconciling.
-	// A failure here is logged but non-fatal — the supervisor will retry with
-	// backoff on the next reconcile tick.
 	if err := journal.Ensure(serverCtx, s, ctrlReg, cfg); err != nil {
 		log.Printf("journal: ensure failed at startup: %v (supervisor will retry)", err)
 	}
 
 	sv := supervisor.New(
 		&supervisorStoreAdapter{store: s},
-		&supervisorPublisherAdapter{pub: pub},
+		supervisor.NewFileEmitter(stateDir()),
 		10*time.Second,
 	)
 	sv.SetJournalRespawner(&journalRespawner{store: s, reg: ctrlReg, cfg: cfg})
-	// Wire attention-engine rescoring into the supervisor tick so the
-	// staleness signal ramps up for silent sessions (otherwise the score
-	// only changes on hook arrival).
-	sv.SetAttentionRescorer(&attentionRescorer{store: s, pub: pub, engine: attnEngine})
 	go sv.Run(serverCtx)
 
 	mux := http.NewServeMux()
@@ -190,8 +169,10 @@ func runServer(portFilePath string) error {
 	)
 	mux.Handle(grpcPath, grpcHandler)
 
-	// Hook event ingestion (plain HTTP POST).
-	mux.Handle("POST /events", ingestionHandler)
+	// Note: /events HTTP endpoint is gone in rev 2 — Gru no longer
+	// receives hook posts over HTTP. Producers (Claude Code) write
+	// directly to filesystem files (transcript JSONL + the residual
+	// notify file); tailers read.
 
 	// Artifact upload (multipart) + download (capability-token GET). Both
 	// share the artifact manager wired above. The download path is the
@@ -360,36 +341,9 @@ func (a *supervisorStoreAdapter) ListLiveSessions(ctx context.Context) ([]superv
 		if r.TmuxWindow != nil {
 			ls.TmuxWindow = *r.TmuxWindow
 		}
-		if r.LastEventAt != nil {
-			if t, err := time.Parse(time.RFC3339, *r.LastEventAt); err == nil {
-				ls.LastEventAt = &t
-			}
-		}
-		// Look up the latest event type only for running sessions — the
-		// staleness heuristic is the only consumer and it only fires on
-		// running. Skipping this query for other statuses keeps reconcile
-		// cheap.
-		if r.Status == "running" {
-			if ev, err := a.store.Queries().GetLatestEventForSession(ctx, r.ID); err == nil {
-				ls.LastEventType = ev.Type
-			}
-		}
 		live = append(live, ls)
 	}
 	return live, nil
-}
-
-func (a *supervisorStoreAdapter) UpdateSessionStatus(ctx context.Context, sessionID, status string) error {
-	_, err := a.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
-		Status: status,
-		ID:     sessionID,
-	})
-	return err
-}
-
-// supervisorPublisherAdapter adapts *ingestion.Publisher to supervisor.EventPublisher.
-type supervisorPublisherAdapter struct {
-	pub *ingestion.Publisher
 }
 
 // journalRespawner adapts the journal package to supervisor.JournalRespawner.
@@ -405,65 +359,6 @@ func (r *journalRespawner) RespawnJournal(ctx context.Context) error {
 		log.Printf("journal: respawn failed: %v", err)
 	}
 	return err
-}
-
-func (a *supervisorPublisherAdapter) PublishExit(_ context.Context, e supervisor.ExitEvent) {
-	eventType := "session.crash"
-	if e.NewStatus == "completed" {
-		eventType = "session.end"
-	} else if e.NewStatus == "killed" {
-		eventType = "session.killed"
-	}
-	a.pub.Publish(&gruv1.SessionEvent{
-		Type:      eventType,
-		SessionId: e.SessionID,
-		Timestamp: timestamppb.Now(),
-	})
-}
-
-// attentionRescorer adapts the attention engine + store to supervisor's
-// AttentionRescorer interface. The supervisor calls Rescore on every tick so
-// long-silent sessions drift up the queue via the staleness ramp.
-type attentionRescorer struct {
-	store  *store.Store
-	pub    *ingestion.Publisher
-	engine *attention.Engine
-}
-
-func (r *attentionRescorer) Rescore(ctx context.Context, sessionID string) {
-	snap := r.engine.Recompute(sessionID)
-	// Nothing to do if we never saw an event for this session — the engine
-	// returns a zero snapshot and we'd just overwrite score=0 with score=0.
-	if snap.Score == 0 && len(snap.Signals) == 0 {
-		return
-	}
-	if _, err := r.store.Queries().UpdateSessionAttentionScore(ctx, store.UpdateSessionAttentionScoreParams{
-		AttentionScore: snap.Score,
-		ID:             sessionID,
-	}); err != nil {
-		log.Printf("attention: rescore %s: %v", sessionID, err)
-		return
-	}
-	r.pub.Publish(&gruv1.SessionEvent{
-		Type:      "attention.rescored",
-		SessionId: sessionID,
-		Timestamp: timestamppb.Now(),
-	})
-}
-
-func (a *supervisorPublisherAdapter) PublishStatusChange(_ context.Context, e supervisor.StatusChangeEvent) {
-	eventType := ""
-	switch e.NewStatus {
-	case "needs_attention":
-		eventType = "notification.needs_attention"
-	default:
-		return
-	}
-	a.pub.Publish(&gruv1.SessionEvent{
-		Type:      eventType,
-		SessionId: e.SessionID,
-		Timestamp: timestamppb.Now(),
-	})
 }
 
 func newServerCmd() *cobra.Command {

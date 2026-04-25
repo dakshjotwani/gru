@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	"github.com/dakshjotwani/gru/internal/ingestion"
+	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/store"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 )
@@ -38,7 +38,7 @@ func newSuggestTestService(t *testing.T) *Service {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	pub := ingestion.NewPublisher()
+	pub := publisher.NewPublisher(s)
 	return NewService(s, pub)
 }
 

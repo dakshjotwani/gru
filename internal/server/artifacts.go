@@ -136,7 +136,7 @@ func (s *Service) AddSessionLink(
 		s.artifactMgr.PublishLinkEvent(link, sess.Runtime, sess.ProjectID)
 	} else if s.pub != nil {
 		// Fallback: publish a thin event without the proto payload.
-		s.pub.Publish(&gruv1.SessionEvent{
+		s.pub.PublishSynthetic(&gruv1.SessionEvent{
 			Id:        uuid.NewString(),
 			Type:      "session_link.created",
 			SessionId: link.SessionId,
