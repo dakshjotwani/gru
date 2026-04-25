@@ -32,25 +32,35 @@ go test ./internal/adapter/... -run TestNormalizerName
 
 ## Architecture
 
+State pipeline rev 2 (see `docs/superpowers/specs/2026-04-24-state-pipeline-design.md`):
+the producer side is a **transcript tailer** rather than an HTTP hook receiver.
+
 ```
 Claude Code Processes (tmux windows)
-  │  POST /events (hook payloads)
+  ├─ writes ~/.claude/projects/<hash>/<sid>.jsonl   ← producer; Gru never makes
+  └─ Notification hook → ~/.gru/notify/<sid>.jsonl     a network call
   ▼
 Gru Server (port 7777)
-  ├── /events endpoint → Adapter (normalize) → Store (SQLite) → Publisher (broadcast)
-  ├── gRPC service (connect-rpc over h2c) → ListSessions, LaunchSession, KillSession, SubscribeEvents
-  └── Bearer token auth + CORS
+  ├── per-session Tailer goroutine — reads JSONL, applies state derivation,
+  │     writes events projection + sessions row in one SQLite transaction
+  ├── Publisher — tails events.seq, fans out to subscribers
+  │     (close-on-overflow, NOT silent-drop)
+  ├── Supervisor — tmux liveness probe; emits claude_pid_exit synthetic
+  │     events into ~/.gru/supervisor/<sid>.jsonl (the tailer reads it)
+  └── gRPC service (connect-rpc over h2c)
+        ListSessions / LaunchSession / KillSession /
+        SubscribeEvents (with since_seq for replay-on-reconnect)
   ▼
-React Dashboard (port 3000)
-  └── connect-web client → real-time session monitoring via SubscribeEvents stream
+React Dashboard (port 3000) — renders dumb; trusts session.status from the server
 ```
 
 ### Key data flow
 
-1. **Launch**: CLI/web calls `LaunchSession` → server creates DB record → `ClaudeController` spawns tmux window with `GRU_SESSION_ID` + `GRU_API_KEY` env vars
-2. **Ingestion**: Claude Code hooks fire → `gru-hook.sh` POSTs to `/events` → `ClaudeNormalizer` converts to `GruEvent` → persisted + broadcast
-3. **Monitoring**: Web UI subscribes via `SubscribeEvents` stream → receives snapshots + live events
-4. **Supervision**: Supervisor reconciles tmux windows vs DB every 10s, marking crashed sessions as errored
+1. **Launch**: CLI/web calls `LaunchSession` → server creates DB record → `ClaudeController` spawns tmux window. The tailer manager spawns a per-session goroutine immediately.
+2. **State derivation**: each Tailer reads new bytes from its transcript JSONL, applies the pure `state.Derive` function, and writes both the events projection row and the derived sessions row in one SQLite transaction.
+3. **Notifications**: only `Notification` hooks fire; the script appends to `~/.gru/notify/<sid>.jsonl`. The tailer reads that file as a second input.
+4. **Monitoring**: Web UI calls `SubscribeEvents(since_seq=N)` → server replays every event with seq > N, then streams live events.
+5. **Supervision**: Supervisor reconciles tmux panes; when one disappears, it appends a `claude_pid_exit` synthetic line to `~/.gru/supervisor/<sid>.jsonl`. The tailer (single status writer) turns that into errored/completed via the derivation function.
 
 ### Component layout
 
@@ -58,12 +68,14 @@ React Dashboard (port 3000)
 - `proto/gru/v1/gru.proto` — Service and message definitions (source of truth for API)
 - `internal/server/` — gRPC service handlers, auth interceptor, CORS
 - `internal/controller/` — Pluggable session launchers (ClaudeController uses tmux)
-- `internal/adapter/` — Pluggable event normalizers (ClaudeNormalizer maps hook types)
+- `internal/adapter/` — Legacy event normalizers; rev-2 keeps the registry but the HTTP path is gone
 - `internal/env/` — Environment abstraction: `host` and `command` adapters, `PersistentPty` layer, 9-case conformance suite. See `docs/superpowers/specs/2026-04-17-gru-v2-design.md`.
-- `internal/attention/` — Hook-driven attention score engine (paused / notification / tool_error / staleness weights, tunable via `~/.gru/server.yaml`)
-- `internal/ingestion/` — HTTP handler for `/events` + in-memory Publisher (calls attention engine on each event)
+- `internal/state/` — Pure derivation function (`state.Derive`) — single source of truth for status transitions
+- `internal/tailer/` — Per-session goroutine that reads Claude's JSONL + the notify file + the supervisor file, runs derivation, commits to SQLite
+- `internal/publisher/` — Tails events.seq, fans out to subscribers, closes on overflow
 - `internal/store/` — SQLite with WAL mode, sqlc-generated queries, migrations
-- `internal/supervisor/` — Process liveness monitor (tmux window inspection)
+- `internal/supervisor/` — tmux liveness probe; emits `claude_pid_exit` events into `~/.gru/supervisor/<sid>.jsonl`
+- `internal/attention/` — Hook-driven attention score engine (paused / notification / tool_error / staleness weights, tunable via `~/.gru/server.yaml`)
 - `skills/` — Claude Code skills shipped in the repo (symlink into `.claude/skills/` for discovery)
 - `test/fixtures/command-adapter/` — reference create/exec/destroy scripts; double as `command` adapter conformance targets
 - `web/src/` — React 19 + Vite + connect-web client
@@ -88,6 +100,6 @@ Both buf and sqlc are managed as Go tools (declared in `go.mod`), no separate in
 
 - Server config: `~/.gru/server.yaml` (generated by `scripts/dev.sh` with stable API key)
 - Logs: `~/.gru/logs/`
-- Hook scripts: `hooks/gru-hook.sh` (symlinked from `~/.gru/hooks/`)
-- Claude Code hooks: `.claude/settings.json` registers `gru-hook.sh` for all lifecycle events
+- Hook script: `hooks/claude-notify.sh` (the only hook in rev 2; symlinked from `~/.gru/hooks/`)
+- Claude Code hooks: `.claude/settings.json` registers `claude-notify.sh` for the `Notification` event only — everything else flows through the transcript tailer
 - Frontend env vars: `VITE_GRU_SERVER_URL`, `VITE_GRU_API_KEY`

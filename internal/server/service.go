@@ -19,9 +19,10 @@ import (
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/env/spec"
-	"github.com/dakshjotwani/gru/internal/ingestion"
+	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/store/db"
+	"github.com/dakshjotwani/gru/internal/tailer"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
 	"github.com/dakshjotwani/gru/proto/gru/v1/gruv1connect"
 	"github.com/google/uuid"
@@ -92,7 +93,8 @@ func (c *claudeCLISuggester) suggest(ctx context.Context, prompt, projectDir str
 // Service implements gruv1connect.GruServiceHandler.
 type Service struct {
 	store         *store.Store
-	pub           *ingestion.Publisher
+	pub           *publisher.Publisher
+	tailerMgr     *tailer.Manager
 	controllerReg *controller.Registry
 	suggester     nameSuggester // nil means feature disabled
 	// artifactMgr handles byte payloads + on-disk lifecycle. Wired at
@@ -103,13 +105,19 @@ type Service struct {
 
 var _ gruv1connect.GruServiceHandler = (*Service)(nil)
 
-func NewService(s *store.Store, pub *ingestion.Publisher) *Service {
+func NewService(s *store.Store, pub *publisher.Publisher) *Service {
 	return &Service{
 		store:         s,
 		pub:           pub,
 		controllerReg: controller.NewRegistry(),
 		suggester:     &claudeCLISuggester{},
 	}
+}
+
+// SetTailerManager wires the manager so LaunchSession can spawn a
+// tailer for each new session.
+func (s *Service) SetTailerManager(m *tailer.Manager) {
+	s.tailerMgr = m
 }
 
 // setSuggester replaces the suggester — used in tests.
@@ -231,17 +239,18 @@ func (s *Service) LaunchSession(
 	}
 
 	row, err := s.store.Queries().CreateSession(ctx, store.CreateSessionParams{
-		ID:          sessionID,
-		ProjectID:   projectID,
-		Runtime:     runtimeID,
-		Status:      "starting",
-		Profile:     nilStr(profile),
-		TmuxSession: nilStr(handle.TmuxSession),
-		TmuxWindow:  nilStr(handle.TmuxWindow),
-		Name:        req.Msg.Name,
-		Description: req.Msg.Description,
-		Prompt:      prompt,
-		Role:        "",
+		ID:             sessionID,
+		ProjectID:      projectID,
+		Runtime:        runtimeID,
+		Status:         "starting",
+		Profile:        nilStr(profile),
+		TmuxSession:    nilStr(handle.TmuxSession),
+		TmuxWindow:     nilStr(handle.TmuxWindow),
+		Name:           req.Msg.Name,
+		Description:    req.Msg.Description,
+		Prompt:         prompt,
+		Role:           "",
+		TranscriptPath: "", // resolved by the tailer when the file shows up
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create session row: %w", err))
@@ -249,7 +258,7 @@ func (s *Service) LaunchSession(
 
 	sess := rowToSession(row)
 	if payload, err := sessionToJSON(sess); err == nil {
-		s.pub.Publish(&gruv1.SessionEvent{
+		s.pub.PublishSynthetic(&gruv1.SessionEvent{
 			Type:      "snapshot.session",
 			SessionId: sessionID,
 			ProjectId: projectID,
@@ -259,6 +268,14 @@ func (s *Service) LaunchSession(
 		})
 	} else {
 		log.Printf("LaunchSession: marshal session %s for publish: %v", sessionID, err)
+	}
+
+	// Spawn a tailer so the session's transcript starts driving state
+	// derivation. The manager handles the case where transcript_path
+	// hasn't been resolved yet — fsnotify watches the parent dir and
+	// picks up the file on create.
+	if s.tailerMgr != nil {
+		s.tailerMgr.AddSession(ctx, sessionID, projectID, runtimeID, "")
 	}
 
 	return connect.NewResponse(&gruv1.LaunchSessionResponse{
@@ -310,6 +327,14 @@ func (s *Service) KillSession(
 		}
 	}
 
+	// Stop the tailer BEFORE writing the DB status. RemoveSession blocks
+	// until the tailer goroutine exits, so no derivation can overwrite
+	// the "killed" row after this point (eliminates the killed→errored
+	// race from a concurrent claude_pid_exit replay).
+	if s.tailerMgr != nil {
+		s.tailerMgr.RemoveSession(sessionID)
+	}
+
 	_, err = s.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
 		Status: "killed",
 		ID:     sessionID,
@@ -318,12 +343,18 @@ func (s *Service) KillSession(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("update status: %w", err))
 	}
 
-	s.pub.Publish(&gruv1.SessionEvent{
+	transPayload, _ := json.Marshal(map[string]string{
+		"from": row.Status,
+		"to":   "killed",
+		"why":  "user_kill",
+	})
+	s.pub.PublishSynthetic(&gruv1.SessionEvent{
 		SessionId: sessionID,
 		ProjectId: row.ProjectID,
 		Runtime:   row.Runtime,
-		Type:      "session.killed",
+		Type:      "session.transition",
 		Timestamp: timestamppb.Now(),
+		Payload:   transPayload,
 	})
 
 	return connect.NewResponse(&gruv1.KillSessionResponse{Success: true}), nil
@@ -373,7 +404,7 @@ func (s *Service) DeleteSession(
 			log.Printf("DeleteSession: cleanup artifact dir for %s: %v", sessionID, err)
 		}
 	}
-	s.pub.Publish(&gruv1.SessionEvent{
+	s.pub.PublishSynthetic(&gruv1.SessionEvent{
 		Type:      "session.deleted",
 		SessionId: sessionID,
 		ProjectId: row.ProjectID,
@@ -416,7 +447,7 @@ func (s *Service) PruneSessions(
 				log.Printf("PruneSessions: cleanup artifact dir for %s: %v", id, err)
 			}
 		}
-		s.pub.Publish(&gruv1.SessionEvent{
+		s.pub.PublishSynthetic(&gruv1.SessionEvent{
 			Type:      "session.deleted",
 			SessionId: id,
 			Timestamp: timestamppb.Now(),
@@ -601,20 +632,45 @@ func projectPrimaryWorkdir(projectID string) (string, error) {
 	return loaded.Workdirs[0], nil
 }
 
-// SubscribeEvents sends a snapshot of current sessions, then streams new events.
+// SubscribeEvents implements the subscribe-then-snapshot reconnect
+// protocol from spec §3.6:
+//
+//  1. Subscribe to the publisher at the client-supplied since_seq.
+//     This call returns the current head_seq atomically.
+//  2. Send a snapshot of every session row, each carrying
+//     last_event_seq, so the client can deduplicate any deltas it
+//     already saw.
+//  3. Forward live events from the publisher.
+//
+// On overflow the publisher closes our channel; we surface that as an
+// abnormal stream end and the client reconnects with its highest
+// observed seq.
 func (s *Service) SubscribeEvents(
 	ctx context.Context,
 	req *connect.Request[gruv1.SubscribeEventsRequest],
 	stream *connect.ServerStream[gruv1.SessionEvent],
 ) error {
-	// TODO(phase-1c): apply req.Msg.ProjectIds and req.Msg.MinAttention filters
-	// to both the snapshot and the live stream.
+	subID := req.Header().Get("Grpc-Metadata-Sub-Id")
+	if subID == "" {
+		subID = req.Peer().Addr
+	}
+	since := req.Msg.SinceSeq
+	sub, headSeq, err := s.pub.Subscribe(subID, since)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	defer s.pub.Unsubscribe(subID)
+
+	// Snapshot at the known head_seq. Each snapshot row carries
+	// last_event_seq = headSeq so the client can reconcile against
+	// any deltas that arrive in the stream.
 	rows, err := s.store.Queries().ListSessions(ctx, store.ListSessionsParams{})
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	for _, row := range rows {
 		sess := rowToSession(row)
+		sess.LastEventSeq = headSeq
 		payload, err := sessionToJSON(sess)
 		if err != nil {
 			log.Printf("SubscribeEvents: marshal session %s: %v", row.ID, err)
@@ -630,19 +686,17 @@ func (s *Service) SubscribeEvents(
 		}
 	}
 
-	subID := req.Header().Get("Grpc-Metadata-Sub-Id")
-	if subID == "" {
-		subID = req.Peer().Addr
-	}
-	ch := make(chan *gruv1.SessionEvent, 64)
-	s.pub.Subscribe(subID, ch)
-	defer s.pub.Unsubscribe(subID)
-
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case evt := <-ch:
+		case evt, ok := <-sub.Events():
+			if !ok {
+				// Publisher closed our channel (overflow or shutdown).
+				// Return — the client will reconnect with since_seq.
+				return connect.NewError(connect.CodeUnavailable,
+					fmt.Errorf("subscriber overflow; reconnect with since_seq"))
+			}
 			if err := stream.Send(evt); err != nil {
 				return err
 			}
@@ -797,6 +851,9 @@ func rowToSession(r db.Session) *gruv1.Session {
 	sess.Description = r.Description
 	sess.Prompt = r.Prompt
 	sess.Role = r.Role
+	sess.TranscriptPath = r.TranscriptPath
+	sess.ClaudeStopReason = r.ClaudeStopReason
+	sess.PermissionMode = r.PermissionMode
 	return sess
 }
 

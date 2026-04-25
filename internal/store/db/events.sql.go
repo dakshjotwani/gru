@@ -12,7 +12,7 @@ import (
 const createEvent = `-- name: CreateEvent :one
 INSERT INTO events (id, session_id, project_id, runtime, type, timestamp, payload)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, session_id, project_id, runtime, type, timestamp, payload, created_at
+RETURNING seq, id, session_id, project_id, runtime, type, timestamp, payload, created_at
 `
 
 type CreateEventParams struct {
@@ -37,6 +37,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	)
 	var i Event
 	err := row.Scan(
+		&i.Seq,
 		&i.ID,
 		&i.SessionID,
 		&i.ProjectID,
@@ -49,14 +50,25 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	return i, err
 }
 
+const deleteEventsForSessionByID = `-- name: DeleteEventsForSessionByID :exec
+DELETE FROM events WHERE session_id = ?
+`
+
+// Wipe a session's projection rows so the tailer can rebuild from byte 0.
+func (q *Queries) DeleteEventsForSessionByID(ctx context.Context, sessionID string) error {
+	_, err := q.db.ExecContext(ctx, deleteEventsForSessionByID, sessionID)
+	return err
+}
+
 const getEvent = `-- name: GetEvent :one
-SELECT id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events WHERE id = ? LIMIT 1
+SELECT seq, id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetEvent(ctx context.Context, id string) (Event, error) {
 	row := q.db.QueryRowContext(ctx, getEvent, id)
 	var i Event
 	err := row.Scan(
+		&i.Seq,
 		&i.ID,
 		&i.SessionID,
 		&i.ProjectID,
@@ -69,10 +81,24 @@ func (q *Queries) GetEvent(ctx context.Context, id string) (Event, error) {
 	return i, err
 }
 
+const getHeadSeq = `-- name: GetHeadSeq :one
+SELECT CAST(COALESCE(MAX(seq), 0) AS INTEGER) AS head_seq FROM events
+`
+
+// Returns the highest seq in the events table, or 0 if empty.
+// CAST to INTEGER pins the return type; COALESCE alone can leave it
+// as ANY/interface{} in sqlc's emitter.
+func (q *Queries) GetHeadSeq(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getHeadSeq)
+	var head_seq int64
+	err := row.Scan(&head_seq)
+	return head_seq, err
+}
+
 const getLatestEventForSession = `-- name: GetLatestEventForSession :one
-SELECT id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events
+SELECT seq, id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events
 WHERE session_id = ?
-ORDER BY timestamp DESC
+ORDER BY seq DESC
 LIMIT 1
 `
 
@@ -80,6 +106,7 @@ func (q *Queries) GetLatestEventForSession(ctx context.Context, sessionID string
 	row := q.db.QueryRowContext(ctx, getLatestEventForSession, sessionID)
 	var i Event
 	err := row.Scan(
+		&i.Seq,
 		&i.ID,
 		&i.SessionID,
 		&i.ProjectID,
@@ -92,10 +119,55 @@ func (q *Queries) GetLatestEventForSession(ctx context.Context, sessionID string
 	return i, err
 }
 
+const listEventsAfterSeq = `-- name: ListEventsAfterSeq :many
+SELECT seq, id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events
+WHERE seq > ?1
+ORDER BY seq ASC
+LIMIT ?2
+`
+
+type ListEventsAfterSeqParams struct {
+	Seq int64
+	Lim int64
+}
+
+func (q *Queries) ListEventsAfterSeq(ctx context.Context, arg ListEventsAfterSeqParams) ([]Event, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsAfterSeq, arg.Seq, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.Runtime,
+			&i.Type,
+			&i.Timestamp,
+			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEventsBySession = `-- name: ListEventsBySession :many
-SELECT id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events
+SELECT seq, id, session_id, project_id, runtime, type, timestamp, payload, created_at FROM events
 WHERE session_id = ?
-ORDER BY timestamp ASC
+ORDER BY seq ASC
 `
 
 func (q *Queries) ListEventsBySession(ctx context.Context, sessionID string) ([]Event, error) {
@@ -108,6 +180,7 @@ func (q *Queries) ListEventsBySession(ctx context.Context, sessionID string) ([]
 	for rows.Next() {
 		var i Event
 		if err := rows.Scan(
+			&i.Seq,
 			&i.ID,
 			&i.SessionID,
 			&i.ProjectID,

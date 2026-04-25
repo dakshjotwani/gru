@@ -87,25 +87,32 @@ func (SessionStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type Session struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId      string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Runtime        string                 `protobuf:"bytes,3,opt,name=runtime,proto3" json:"runtime,omitempty"`
-	Status         SessionStatus          `protobuf:"varint,4,opt,name=status,proto3,enum=gru.v1.SessionStatus" json:"status,omitempty"`
-	Profile        string                 `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
-	AttentionScore float64                `protobuf:"fixed64,6,opt,name=attention_score,json=attentionScore,proto3" json:"attention_score,omitempty"`
-	StartedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	EndedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	LastEventAt    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_event_at,json=lastEventAt,proto3" json:"last_event_at,omitempty"`
-	Pid            int32                  `protobuf:"varint,10,opt,name=pid,proto3" json:"pid,omitempty"`
-	TmuxSession    string                 `protobuf:"bytes,11,opt,name=tmux_session,json=tmuxSession,proto3" json:"tmux_session,omitempty"`
-	TmuxWindow     string                 `protobuf:"bytes,12,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
-	Name           string                 `protobuf:"bytes,13,opt,name=name,proto3" json:"name,omitempty"`               // human-readable, e.g. "auth-frontend-bugfix"
-	Description    string                 `protobuf:"bytes,14,opt,name=description,proto3" json:"description,omitempty"` // what problem is being solved
-	Prompt         string                 `protobuf:"bytes,15,opt,name=prompt,proto3" json:"prompt,omitempty"`           // the initial prompt given to the agent
-	Role           string                 `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`               // "" for normal sessions; "journal" marks the server-managed singleton
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProjectId        string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Runtime          string                 `protobuf:"bytes,3,opt,name=runtime,proto3" json:"runtime,omitempty"`
+	Status           SessionStatus          `protobuf:"varint,4,opt,name=status,proto3,enum=gru.v1.SessionStatus" json:"status,omitempty"`
+	Profile          string                 `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	AttentionScore   float64                `protobuf:"fixed64,6,opt,name=attention_score,json=attentionScore,proto3" json:"attention_score,omitempty"`
+	StartedAt        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	LastEventAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_event_at,json=lastEventAt,proto3" json:"last_event_at,omitempty"`
+	Pid              int32                  `protobuf:"varint,10,opt,name=pid,proto3" json:"pid,omitempty"`
+	TmuxSession      string                 `protobuf:"bytes,11,opt,name=tmux_session,json=tmuxSession,proto3" json:"tmux_session,omitempty"`
+	TmuxWindow       string                 `protobuf:"bytes,12,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	Name             string                 `protobuf:"bytes,13,opt,name=name,proto3" json:"name,omitempty"`                                                   // human-readable, e.g. "auth-frontend-bugfix"
+	Description      string                 `protobuf:"bytes,14,opt,name=description,proto3" json:"description,omitempty"`                                     // what problem is being solved
+	Prompt           string                 `protobuf:"bytes,15,opt,name=prompt,proto3" json:"prompt,omitempty"`                                               // the initial prompt given to the agent
+	Role             string                 `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`                                                   // "" for normal sessions; "journal" marks the server-managed singleton
+	TranscriptPath   string                 `protobuf:"bytes,17,opt,name=transcript_path,json=transcriptPath,proto3" json:"transcript_path,omitempty"`         // ~/.claude/projects/<hash>/<sid>.jsonl
+	ClaudeStopReason string                 `protobuf:"bytes,18,opt,name=claude_stop_reason,json=claudeStopReason,proto3" json:"claude_stop_reason,omitempty"` // last assistant.stop_reason
+	PermissionMode   string                 `protobuf:"bytes,19,opt,name=permission_mode,json=permissionMode,proto3" json:"permission_mode,omitempty"`         // last permission-mode value
+	// last_event_seq is the events.seq the server-side derivation row was
+	// last committed at. Clients use it to ignore stale snapshots that
+	// would otherwise regress local state (anti-pattern #7).
+	LastEventSeq  int64 `protobuf:"varint,20,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -250,6 +257,34 @@ func (x *Session) GetRole() string {
 	return ""
 }
 
+func (x *Session) GetTranscriptPath() string {
+	if x != nil {
+		return x.TranscriptPath
+	}
+	return ""
+}
+
+func (x *Session) GetClaudeStopReason() string {
+	if x != nil {
+		return x.ClaudeStopReason
+	}
+	return ""
+}
+
+func (x *Session) GetPermissionMode() string {
+	if x != nil {
+		return x.PermissionMode
+	}
+	return ""
+}
+
+func (x *Session) GetLastEventSeq() int64 {
+	if x != nil {
+		return x.LastEventSeq
+	}
+	return 0
+}
+
 // Project is a reference to an env spec on disk. Project.id is the absolute
 // path to the spec.yaml file; Project.name is the directory basename (used
 // for display). Workdirs, adapter config, and everything else about how a
@@ -331,14 +366,19 @@ func (x *Project) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type SessionEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Runtime       string                 `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"`
-	Type          string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,7,opt,name=payload,proto3" json:"payload,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ProjectId string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Runtime   string                 `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"`
+	Type      string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	Timestamp *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Payload   []byte                 `protobuf:"bytes,7,opt,name=payload,proto3" json:"payload,omitempty"`
+	// seq is the monotonic resource version assigned by the server-side
+	// events projection. Clients track the highest seq they've seen and
+	// pass it as `since_seq` on reconnect to replay missed events. Zero
+	// for synthetic events that don't land in the projection.
+	Seq           int64 `protobuf:"varint,8,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -420,6 +460,13 @@ func (x *SessionEvent) GetPayload() []byte {
 		return x.Payload
 	}
 	return nil
+}
+
+func (x *SessionEvent) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 type ListSessionsRequest struct {
@@ -1340,9 +1387,13 @@ func (x *SendInputResponse) GetErrorMessage() string {
 }
 
 type SubscribeEventsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectIds    []string               `protobuf:"bytes,1,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
-	MinAttention  float64                `protobuf:"fixed64,2,opt,name=min_attention,json=minAttention,proto3" json:"min_attention,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ProjectIds   []string               `protobuf:"bytes,1,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
+	MinAttention float64                `protobuf:"fixed64,2,opt,name=min_attention,json=minAttention,proto3" json:"min_attention,omitempty"`
+	// since_seq is the highest seq the client has previously observed.
+	// The server replays every event with seq > since_seq before going
+	// live. Pass 0 to start from the current head.
+	SinceSeq      int64 `protobuf:"varint,3,opt,name=since_seq,json=sinceSeq,proto3" json:"since_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1387,6 +1438,13 @@ func (x *SubscribeEventsRequest) GetProjectIds() []string {
 func (x *SubscribeEventsRequest) GetMinAttention() float64 {
 	if x != nil {
 		return x.MinAttention
+	}
+	return 0
+}
+
+func (x *SubscribeEventsRequest) GetSinceSeq() int64 {
+	if x != nil {
+		return x.SinceSeq
 	}
 	return 0
 }
@@ -2104,7 +2162,7 @@ var File_gru_v1_gru_proto protoreflect.FileDescriptor
 
 const file_gru_v1_gru_proto_rawDesc = "" +
 	"\n" +
-	"\x10gru/v1/gru.proto\x12\x06gru.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xae\x04\n" +
+	"\x10gru/v1/gru.proto\x12\x06gru.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd4\x05\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -2125,14 +2183,18 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x04name\x18\r \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x0e \x01(\tR\vdescription\x12\x16\n" +
 	"\x06prompt\x18\x0f \x01(\tR\x06prompt\x12\x12\n" +
-	"\x04role\x18\x10 \x01(\tR\x04role\"\x9c\x01\n" +
+	"\x04role\x18\x10 \x01(\tR\x04role\x12'\n" +
+	"\x0ftranscript_path\x18\x11 \x01(\tR\x0etranscriptPath\x12,\n" +
+	"\x12claude_stop_reason\x18\x12 \x01(\tR\x10claudeStopReason\x12'\n" +
+	"\x0fpermission_mode\x18\x13 \x01(\tR\x0epermissionMode\x12$\n" +
+	"\x0elast_event_seq\x18\x14 \x01(\x03R\flastEventSeq\"\x9c\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\aadapter\x18\x03 \x01(\tR\aadapter\x12\x18\n" +
 	"\aruntime\x18\x04 \x01(\tR\aruntime\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xde\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf0\x01\n" +
 	"\fSessionEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -2142,7 +2204,8 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\aruntime\x18\x04 \x01(\tR\aruntime\x12\x12\n" +
 	"\x04type\x18\x05 \x01(\tR\x04type\x128\n" +
 	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x18\n" +
-	"\apayload\x18\a \x01(\fR\apayload\"c\n" +
+	"\apayload\x18\a \x01(\fR\apayload\x12\x10\n" +
+	"\x03seq\x18\b \x01(\x03R\x03seq\"c\n" +
 	"\x13ListSessionsRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12-\n" +
@@ -2191,11 +2254,12 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x04text\x18\x02 \x01(\tR\x04text\"R\n" +
 	"\x11SendInputResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
-	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"^\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"{\n" +
 	"\x16SubscribeEventsRequest\x12\x1f\n" +
 	"\vproject_ids\x18\x01 \x03(\tR\n" +
 	"projectIds\x12#\n" +
-	"\rmin_attention\x18\x02 \x01(\x01R\fminAttention\"R\n" +
+	"\rmin_attention\x18\x02 \x01(\x01R\fminAttention\x12\x1b\n" +
+	"\tsince_seq\x18\x03 \x01(\x03R\bsinceSeq\"R\n" +
 	"\x19SuggestSessionNameRequest\x12\x16\n" +
 	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12\x1d\n" +
 	"\n" +

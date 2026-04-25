@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/dakshjotwani/gru/internal/devices"
-	"github.com/dakshjotwani/gru/internal/ingestion"
+	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/push"
 	"github.com/dakshjotwani/gru/internal/store"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
@@ -112,7 +112,10 @@ func TestDispatcher_NeedsAttentionPushesOnce(t *testing.T) {
 
 	priv, pub, _ := push.GenerateVAPIDKeys()
 
-	pubPub := ingestion.NewPublisher()
+	pubPub := publisher.NewPublisher(s)
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
+	go pubPub.Run(pctx)
 	disp := push.NewDispatcher(push.Config{
 		VAPIDPrivateKey: priv,
 		VAPIDPublicKey:  pub,
@@ -132,11 +135,11 @@ func TestDispatcher_NeedsAttentionPushesOnce(t *testing.T) {
 		SessionId: "sess-1",
 		ProjectId: "proj-1",
 		Runtime:   "claude-code",
-		Type:      "notification.needs_attention",
+		Type:      "session.transition",
 		Timestamp: timestamppb.Now(),
-		Payload:   []byte(`{"message":"need your approval"}`),
+		Payload:   []byte(`{"from":"running","to":"needs_attention","message":"need your approval"}`),
 	}
-	pubPub.Publish(evt)
+	pubPub.PublishSynthetic(evt)
 
 	// Wait up to 2s for the fake endpoint to get hit.
 	if !eventuallyTrue(2*time.Second, func() bool { return fake.callCount() >= 1 }) {
@@ -144,9 +147,18 @@ func TestDispatcher_NeedsAttentionPushesOnce(t *testing.T) {
 	}
 
 	// Second publish within rate-limit window must NOT send.
-	evt2 := *evt
-	evt2.Id = "evt-2"
-	pubPub.Publish(&evt2)
+	// Build a fresh proto rather than copying — protobuf message types
+	// embed an unexported lock that vet flags on copy-by-value.
+	evt2 := &gruv1.SessionEvent{
+		Id:        "evt-2",
+		SessionId: evt.SessionId,
+		ProjectId: evt.ProjectId,
+		Runtime:   evt.Runtime,
+		Type:      evt.Type,
+		Timestamp: evt.Timestamp,
+		Payload:   evt.Payload,
+	}
+	pubPub.PublishSynthetic(evt2)
 	time.Sleep(30 * time.Millisecond)
 	if fake.callCount() != 1 {
 		t.Errorf("rate limit not honored: got %d calls, want 1", fake.callCount())
@@ -180,7 +192,10 @@ func TestDispatcher_IdleNeverPushes(t *testing.T) {
 			})
 
 			priv, pub, _ := push.GenerateVAPIDKeys()
-			pubPub := ingestion.NewPublisher()
+			pubPub := publisher.NewPublisher(s)
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
+	go pubPub.Run(pctx)
 			disp := push.NewDispatcher(push.Config{
 				VAPIDPrivateKey: priv, VAPIDPublicKey: pub, Subject: "mailto:t@x", Threshold: 0.7, RateLimit: 10 * time.Millisecond,
 			}, reg, pubPub, s)
@@ -190,7 +205,7 @@ func TestDispatcher_IdleNeverPushes(t *testing.T) {
 			go disp.Run(dctx)
 			time.Sleep(20 * time.Millisecond)
 
-			pubPub.Publish(&gruv1.SessionEvent{
+			pubPub.PublishSynthetic(&gruv1.SessionEvent{
 				Id: "evt-x", SessionId: "sess-1", ProjectId: "p", Runtime: "claude-code",
 				Type: "session.idle", Timestamp: timestamppb.Now(),
 			})
@@ -224,7 +239,10 @@ func TestDispatcher_StaleEndpointMarked(t *testing.T) {
 	})
 
 	priv, pub, _ := push.GenerateVAPIDKeys()
-	pubPub := ingestion.NewPublisher()
+	pubPub := publisher.NewPublisher(s)
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
+	go pubPub.Run(pctx)
 	disp := push.NewDispatcher(push.Config{
 		VAPIDPrivateKey: priv, VAPIDPublicKey: pub, Subject: "mailto:t@x", Threshold: 0.7, RateLimit: 10 * time.Millisecond,
 	}, reg, pubPub, s)
@@ -234,10 +252,10 @@ func TestDispatcher_StaleEndpointMarked(t *testing.T) {
 	go disp.Run(dctx)
 	time.Sleep(20 * time.Millisecond)
 
-	pubPub.Publish(&gruv1.SessionEvent{
+	pubPub.PublishSynthetic(&gruv1.SessionEvent{
 		Id: "evt-1", SessionId: "sess-1", ProjectId: "p", Runtime: "claude-code",
-		Type: "notification.needs_attention", Timestamp: timestamppb.Now(),
-		Payload: []byte(`{"message":"x"}`),
+		Type: "session.transition", Timestamp: timestamppb.Now(),
+		Payload: []byte(`{"from":"running","to":"needs_attention","message":"x"}`),
 	})
 
 	if !eventuallyTrue(2*time.Second, func() bool {

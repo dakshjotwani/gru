@@ -69,6 +69,13 @@ message Session {
   string         description     = 14;  // what problem is being solved
   string         prompt          = 15;  // the initial prompt given to the agent
   string         role            = 16;  // "" for normal sessions; "journal" marks the server-managed singleton
+  string         transcript_path = 17;  // ~/.claude/projects/<hash>/<sid>.jsonl
+  string         claude_stop_reason = 18; // last assistant.stop_reason
+  string         permission_mode    = 19; // last permission-mode value
+  // last_event_seq is the events.seq the server-side derivation row was
+  // last committed at. Clients use it to ignore stale snapshots that
+  // would otherwise regress local state (anti-pattern #7).
+  int64          last_event_seq     = 20;
 }
 
 // Project is a reference to an env spec on disk. Project.id is the absolute
@@ -91,6 +98,11 @@ message SessionEvent {
   string type       = 5;
   google.protobuf.Timestamp timestamp = 6;
   bytes  payload    = 7;
+  // seq is the monotonic resource version assigned by the server-side
+  // events projection. Clients track the highest seq they've seen and
+  // pass it as `since_seq` on reconnect to replay missed events. Zero
+  // for synthetic events that don't land in the projection.
+  int64  seq        = 8;
 }
 
 message ListSessionsRequest {
@@ -196,6 +208,10 @@ message SendInputResponse {
 message SubscribeEventsRequest {
   repeated string project_ids   = 1;
   double          min_attention = 2;
+  // since_seq is the highest seq the client has previously observed.
+  // The server replays every event with seq > since_seq before going
+  // live. Pass 0 to start from the current head.
+  int64           since_seq     = 3;
 }
 
 message SuggestSessionNameRequest {

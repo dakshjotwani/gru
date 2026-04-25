@@ -9,11 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/env"
-	"github.com/dakshjotwani/gru/internal/ingestion"
+	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
 	gruv1 "github.com/dakshjotwani/gru/proto/gru/v1"
@@ -46,7 +47,7 @@ func newTestServer(t *testing.T) (gruv1connect.GruServiceClient, *store.Store) {
 	}
 	t.Cleanup(func() { s.Close() })
 
-	pub := ingestion.NewPublisher()
+	pub := publisher.NewPublisher(s)
 	svc := server.NewService(s, pub)
 	mux := http.NewServeMux()
 	mux.Handle(gruv1connect.NewGruServiceHandler(svc))
@@ -66,14 +67,14 @@ func newTestService(t *testing.T) (*server.Service, *store.Store) {
 
 // newTestServiceWithPub is like newTestService but also returns the Publisher so
 // tests can subscribe and assert on broadcast events.
-func newTestServiceWithPub(t *testing.T) (*server.Service, *store.Store, *ingestion.Publisher) {
+func newTestServiceWithPub(t *testing.T) (*server.Service, *store.Store, *publisher.Publisher) {
 	t.Helper()
 	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	pub := ingestion.NewPublisher()
+	pub := publisher.NewPublisher(s)
 	svc := server.NewService(s, pub)
 	return svc, s, pub
 }
@@ -527,6 +528,10 @@ func (f *fakeSessionController) Launch(ctx context.Context, opts controller.Laun
 func TestService_LaunchSession_PublishesSnapshotEvent(t *testing.T) {
 	svc, _, pub := newTestServiceWithPub(t)
 
+	pctx, pcancel := context.WithCancel(context.Background())
+	defer pcancel()
+	go pub.Run(pctx)
+
 	reg := controller.NewRegistry()
 	reg.Register(&fakeSessionController{
 		runtimeID: "claude-code",
@@ -536,8 +541,10 @@ func TestService_LaunchSession_PublishesSnapshotEvent(t *testing.T) {
 	})
 	svc.SetControllerRegistry(reg)
 
-	ch := make(chan *gruv1.SessionEvent, 4)
-	pub.Subscribe("test-subscriber", ch)
+	sub, _, err := pub.Subscribe("test-subscriber", 0)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
 	defer pub.Unsubscribe("test-subscriber")
 
 	projectDir := t.TempDir()
@@ -553,7 +560,7 @@ func TestService_LaunchSession_PublishesSnapshotEvent(t *testing.T) {
 	sessionID := resp.Msg.Session.Id
 
 	select {
-	case evt := <-ch:
+	case evt := <-sub.Events():
 		if evt.Type != "snapshot.session" {
 			t.Errorf("event type = %q, want snapshot.session", evt.Type)
 		}
@@ -563,7 +570,7 @@ func TestService_LaunchSession_PublishesSnapshotEvent(t *testing.T) {
 		if len(evt.Payload) == 0 {
 			t.Error("event payload is empty, want JSON-encoded Session")
 		}
-	default:
+	case <-time.After(2 * time.Second):
 		t.Error("no event published after LaunchSession; sidebar will not update without a page refresh")
 	}
 }

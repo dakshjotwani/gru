@@ -18,6 +18,8 @@ type Querier interface {
 	DeleteArtifact(ctx context.Context, id string) error
 	DeleteDevice(ctx context.Context, id string) error
 	DeleteEventsForSession(ctx context.Context, id string) error
+	// Wipe a session's projection rows so the tailer can rebuild from byte 0.
+	DeleteEventsForSessionByID(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteSessionLink(ctx context.Context, id string) error
 	GetAction(ctx context.Context, arg GetActionParams) (ActionLog, error)
@@ -26,6 +28,10 @@ type Querier interface {
 	GetAssistantSession(ctx context.Context) (Session, error)
 	GetDevice(ctx context.Context, id string) (Device, error)
 	GetEvent(ctx context.Context, id string) (Event, error)
+	// Returns the highest seq in the events table, or 0 if empty.
+	// CAST to INTEGER pins the return type; COALESCE alone can leave it
+	// as ANY/interface{} in sqlc's emitter.
+	GetHeadSeq(ctx context.Context) (int64, error)
 	GetLatestEventForSession(ctx context.Context, sessionID string) (Event, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetSession(ctx context.Context, id string) (Session, error)
@@ -34,7 +40,11 @@ type Querier interface {
 	ListArtifactIDsBySession(ctx context.Context, sessionID string) ([]string, error)
 	ListArtifactsBySession(ctx context.Context, sessionID string) ([]Artifact, error)
 	ListDevices(ctx context.Context) ([]Device, error)
+	ListEventsAfterSeq(ctx context.Context, arg ListEventsAfterSeqParams) ([]Event, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]Event, error)
+	// Used by the tailer manager at startup to find every session that needs a
+	// live tailer goroutine.
+	ListNonTerminalSessions(ctx context.Context) ([]Session, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSessionLinksBySession(ctx context.Context, sessionID string) ([]SessionLink, error)
 	ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error)
@@ -49,9 +59,14 @@ type Querier interface {
 	TouchDevice(ctx context.Context, id string) error
 	UpdateDeviceSubscription(ctx context.Context, arg UpdateDeviceSubscriptionParams) (Device, error)
 	UpdateSessionAttentionScore(ctx context.Context, arg UpdateSessionAttentionScoreParams) (Session, error)
-	UpdateSessionLastEvent(ctx context.Context, arg UpdateSessionLastEventParams) error
+	// Single writer of derived fields, called from the tailer's commit
+	// transaction. Combines status / attention_score / claude_stop_reason /
+	// permission_mode / last_event_at into one statement so the row never
+	// transiently disagrees with the events projection.
+	UpdateSessionDerived(ctx context.Context, arg UpdateSessionDerivedParams) error
 	UpdateSessionPID(ctx context.Context, arg UpdateSessionPIDParams) error
 	UpdateSessionStatus(ctx context.Context, arg UpdateSessionStatusParams) (Session, error)
+	UpdateSessionTranscriptPath(ctx context.Context, arg UpdateSessionTranscriptPathParams) error
 	UpsertProject(ctx context.Context, arg UpsertProjectParams) (Project, error)
 }
 
