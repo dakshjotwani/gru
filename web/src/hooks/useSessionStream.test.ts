@@ -118,25 +118,79 @@ describe('useSessionStream', () => {
     });
   });
 
-  it('updates session status from live event payload', async () => {
+  it('does NOT re-derive status on live events; trusts server snapshots', async () => {
+    // Rev 2 (state-pipeline): the frontend does not re-derive status
+    // from event types. The session.status here stays RUNNING until a
+    // fresh snapshot.session arrives carrying a new derived row.
     const session = makeSession({ status: SessionStatus.RUNNING });
     const snapshotEvent = makeSnapshotEvent(session);
-    const statusEvent = makeLiveEvent(
-      session.id,
-      'session.status',
-      JSON.stringify({ status: 'needs_attention' })
-    );
+    // A live event that previously would have flipped status —
+    // notification.needs_attention — must NOT mutate session.status
+    // anymore. The server is the single derivation point.
+    const liveEvent = makeLiveEvent(session.id, 'notification.needs_attention');
 
     vi.mocked(gruClient.subscribeEvents).mockReturnValue(
-      makeStream([snapshotEvent, statusEvent]) as any
+      makeStream([snapshotEvent, liveEvent]) as any
     );
 
     const { result } = renderHook(() => useSessionStream());
 
     await waitFor(() => {
-      const s = result.current.sessions.get(session.id);
+      expect(result.current.sessions.size).toBe(1);
+    });
+
+    // Status remains RUNNING because the server hasn't sent a
+    // refreshed snapshot yet.
+    const s = result.current.sessions.get(session.id);
+    expect(s?.status).toBe(SessionStatus.RUNNING);
+    // The live event is recorded in the per-session ring buffer.
+    expect(result.current.events.get(session.id)?.length).toBe(1);
+  });
+
+  it('updates status when the server sends a fresh snapshot.session', async () => {
+    const initial = makeSession({ status: SessionStatus.RUNNING });
+    const updated = makeSession({ status: SessionStatus.NEEDS_ATTENTION });
+    const initialSnap = makeSnapshotEvent(initial);
+    const refreshedSnap = makeSnapshotEvent(updated);
+
+    vi.mocked(gruClient.subscribeEvents).mockReturnValue(
+      makeStream([initialSnap, refreshedSnap]) as any
+    );
+
+    const { result } = renderHook(() => useSessionStream());
+    await waitFor(() => {
+      const s = result.current.sessions.get(initial.id);
       expect(s?.status).toBe(SessionStatus.NEEDS_ATTENTION);
     });
+  });
+
+  it('ignores stale snapshots whose last_event_seq is older than what we have', async () => {
+    // Snapshot regression guard (anti-pattern #7 / spec §3.9).
+    const fresh = makeSession({
+      status: SessionStatus.NEEDS_ATTENTION,
+      // @ts-expect-error - lastEventSeq is added in proto for rev 2
+      lastEventSeq: BigInt(10),
+    });
+    const stale = makeSession({
+      status: SessionStatus.RUNNING,
+      // @ts-expect-error - lastEventSeq is added in proto for rev 2
+      lastEventSeq: BigInt(5),
+    });
+    const freshSnap = makeSnapshotEvent(fresh);
+    const staleSnap = makeSnapshotEvent(stale);
+
+    vi.mocked(gruClient.subscribeEvents).mockReturnValue(
+      makeStream([freshSnap, staleSnap]) as any
+    );
+    const { result } = renderHook(() => useSessionStream());
+
+    await waitFor(() => {
+      expect(result.current.sessions.size).toBe(1);
+    });
+    // Final state must still reflect the FRESH snapshot — the stale
+    // one with lastEventSeq=5 was dropped.
+    const s = result.current.sessions.get(fresh.id);
+    expect(s?.status).toBe(SessionStatus.NEEDS_ATTENTION);
   });
 
   it('reconnects with exponential backoff on error', async () => {

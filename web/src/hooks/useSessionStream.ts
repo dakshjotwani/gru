@@ -3,73 +3,58 @@ import { gruClient } from '../client';
 import type { Project, Session, SessionEvent } from '../types';
 import { SessionStatus } from '../types';
 
+// State pipeline rev 2 (see
+// docs/superpowers/specs/2026-04-24-state-pipeline-design.md):
+//
+//  - The frontend NEVER re-derives session.status from event types.
+//    The server-side tailer is the single source of truth; we trust
+//    `session.status` straight from snapshot/snapshot.session events.
+//  - Each event carries a monotonic `seq`. We track the highest seen
+//    and pass it as `since_seq` on reconnect. The server replays
+//    everything that happened while we were offline.
+//  - Snapshot merges are guarded by `last_event_seq` so a stale
+//    snapshot can't regress local state we already have.
+//  - Push notifications fire on `session.transition` events (with a
+//    `to: "needs_attention"` body), not on local state diffing.
+
 export interface SessionState {
   sessions: Map<string, Session>;
   events: Map<string, SessionEvent[]>; // session_id -> last 20 events
   connected: boolean;
   error: string | null;
+  // Highest event seq the client has observed. Used as `since_seq` on
+  // reconnect — the server replays anything newer.
+  lastSeq: bigint;
 }
 
 type Action =
-  | { type: 'SNAPSHOT'; session: Session }
   | { type: 'EVENT'; event: SessionEvent }
   | { type: 'CONNECTED' }
   | { type: 'DISCONNECTED'; error?: string }
   | { type: 'RESET' };
 
-// Derive session status from event type, mirroring the backend logic in
-// internal/ingestion/handler.go so the frontend updates in real time without
-// needing the server to echo the new status back.
-function applyEvent(sessions: Map<string, Session>, event: SessionEvent): Map<string, Session> {
-  const next = new Map(sessions);
-  const existing = next.get(event.sessionId);
-  if (!existing) return next;
+function maxSeq(a: bigint, b: bigint): bigint {
+  return a > b ? a : b;
+}
 
-  const updated: Session = {
-    ...existing,
-    lastEventAt: event.timestamp,
-  };
-
-  switch (event.type) {
-    case 'session.start':
-      updated.status = SessionStatus.RUNNING;
-      break;
-    case 'session.idle':
-      updated.status = SessionStatus.IDLE;
-      break;
-    case 'session.end':
-      updated.status = SessionStatus.COMPLETED;
-      break;
-    case 'session.crash':
-      updated.status = SessionStatus.ERRORED;
-      break;
-    case 'session.killed':
-      updated.status = SessionStatus.KILLED;
-      break;
-    case 'notification.needs_attention':
-      updated.status = SessionStatus.NEEDS_ATTENTION;
-      break;
-    case 'tool.pre':
-    case 'subagent.start':
-      if (
-        existing.status === SessionStatus.STARTING ||
-        existing.status === SessionStatus.IDLE ||
-        existing.status === SessionStatus.NEEDS_ATTENTION
-      ) {
-        updated.status = SessionStatus.RUNNING;
-      }
-      break;
-    case 'tool.post':
-    case 'tool.error':
-    case 'subagent.end':
-      if (existing.status === SessionStatus.STARTING) {
-        updated.status = SessionStatus.RUNNING;
-      }
-      break;
+function decodePayloadAsSession(payload: SessionEvent['payload']): Session | null {
+  try {
+    const payloadStr =
+      typeof payload === 'string' ? payload : new TextDecoder().decode(payload as Uint8Array);
+    return JSON.parse(payloadStr) as Session;
+  } catch {
+    return null;
   }
+}
 
-  next.set(event.sessionId, updated);
-  return next;
+function decodeTransitionPayload(payload: SessionEvent['payload']): { from?: string; to?: string } {
+  try {
+    const payloadStr =
+      typeof payload === 'string' ? payload : new TextDecoder().decode(payload as Uint8Array);
+    return JSON.parse(payloadStr) as { from?: string; to?: string };
+  } catch {
+    return {};
+  }
 }
 
 function reducer(state: SessionState, action: Action): SessionState {
@@ -81,40 +66,43 @@ function reducer(state: SessionState, action: Action): SessionState {
       return { ...state, connected: false, error: action.error ?? null };
 
     case 'RESET':
-      return { sessions: new Map(), events: new Map(), connected: false, error: null };
-
-    case 'SNAPSHOT': {
-      const sessions = new Map(state.sessions);
-      sessions.set(action.session.id, action.session);
-      return { ...state, sessions };
-    }
+      return {
+        sessions: new Map(),
+        events: new Map(),
+        connected: false,
+        error: null,
+        lastSeq: 0n,
+      };
 
     case 'EVENT': {
       const event = action.event;
+      const seq = BigInt(event.seq ?? 0n);
 
+      // snapshot.session: server pushes the row at a known seq. Apply
+      // only if the snapshot's last_event_seq is at least as fresh as
+      // any delta we already saw for this session.
       if (event.type === 'snapshot.session') {
+        const parsed = decodePayloadAsSession(event.payload);
+        if (!parsed) return state;
         const sessions = new Map(state.sessions);
-        try {
-          const payloadStr = typeof event.payload === 'string'
-            ? event.payload
-            : new TextDecoder().decode(event.payload as Uint8Array);
-          const parsed = JSON.parse(payloadStr) as Session;
-          sessions.set(parsed.id, parsed);
-        } catch {
-          // ignore
+        const existing = sessions.get(parsed.id);
+        const incomingSeq = BigInt(parsed.lastEventSeq ?? 0n);
+        const existingSeq = BigInt(existing?.lastEventSeq ?? 0n);
+        // Snapshot regression guard (anti-pattern #7).
+        if (existing && incomingSeq < existingSeq) {
+          return state; // ignore stale snapshot
         }
-        return { ...state, sessions };
+        sessions.set(parsed.id, parsed);
+        return { ...state, sessions, lastSeq: maxSeq(state.lastSeq, seq) };
       }
 
-      // session.deleted fires when DeleteSession / PruneSessions runs
-      // server-side. Drop the row (and its event history) so the UI reacts
-      // immediately without waiting for a full ListSessions refetch.
+      // session.deleted: drop the row.
       if (event.type === 'session.deleted') {
         const sessions = new Map(state.sessions);
         sessions.delete(event.sessionId);
         const events = new Map(state.events);
         events.delete(event.sessionId);
-        return { ...state, sessions, events };
+        return { ...state, sessions, events, lastSeq: maxSeq(state.lastSeq, seq) };
       }
 
       // Artifact / session-link events carry the full proto as payload —
@@ -134,14 +122,17 @@ function reducer(state: SessionState, action: Action): SessionState {
         return state;
       }
 
+
       const events = new Map(state.events);
       const sessionEvents = events.get(event.sessionId) ?? [];
-      const updatedEvents = [...sessionEvents, event].slice(-20);
-      events.set(event.sessionId, updatedEvents);
+      events.set(event.sessionId, [...sessionEvents, event].slice(-20));
 
-      const sessions = applyEvent(state.sessions, event);
+      // session.transition events carry a from/to body. For now we
+      // don't apply status from them either — the snapshot.session
+      // event(s) the server emits at the same seq carry the new row
+      // verbatim. Keeping derivation server-side is the whole point.
 
-      return { ...state, sessions, events };
+      return { ...state, events, lastSeq: maxSeq(state.lastSeq, seq) };
     }
 
     default:
@@ -154,9 +145,6 @@ const MAX_BACKOFF_MS = 30000;
 
 function notifyAttention(session: Session, projectName: string): void {
   if (document.hasFocus()) return;
-  // iOS Safari (and private-mode browsers) don't expose the Notification API
-  // at all — `Notification` is undefined, so .permission throws ReferenceError.
-  // Gate on the property existing on `window` before touching it.
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
   const sessionLabel = session.name || session.id.slice(0, 8);
@@ -179,21 +167,24 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     events: new Map(),
     connected: false,
     error: null,
+    lastSeq: 0n,
   });
 
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
   const abortRef = useRef<AbortController | null>(null);
-  // Tracks the pending backoff reconnect timer so resume-triggered reconnects
-  // can cancel it and retry immediately. Without this, an iOS/Android PWA
-  // that was suspended mid-backoff may be stuck waiting up to MAX_BACKOFF_MS
-  // after resume because background timers are heavily throttled.
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Tracks whether we currently believe the stream is live. Used by the
-  // resume handler to decide whether to force-reconnect.
   const isConnectedRef = useRef(false);
-  const prevStatusRef = useRef<Map<string, SessionStatus>>(new Map());
   const projectsRef = useRef<Project[]>(projects ?? []);
   projectsRef.current = projects ?? [];
+
+  // Mutable ref tracking the highest seq we've shipped to the server
+  // on reconnect. Lives outside React state so the reconnect callback
+  // can read it without re-rendering.
+  const lastSeqRef = useRef<bigint>(0n);
+  // Keep lastSeqRef in sync with the reducer state.
+  if (state.lastSeq !== lastSeqRef.current && state.lastSeq > lastSeqRef.current) {
+    lastSeqRef.current = state.lastSeq;
+  }
 
   const connect = useCallback(async () => {
     abortRef.current?.abort();
@@ -207,7 +198,11 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
 
     try {
       const stream = gruClient.subscribeEvents(
-        { projectIds: projectId ? [projectId] : [], minAttention: 0 },
+        {
+          projectIds: projectId ? [projectId] : [],
+          minAttention: 0,
+          sinceSeq: lastSeqRef.current,
+        },
         { signal: abort.signal }
       );
 
@@ -251,10 +246,7 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     };
   }, [connect]);
 
-  // Resume-aware reconnect: when the PWA comes back to the foreground (or the
-  // network comes back), mobile browsers may have silently killed the stream
-  // while we were suspended. Force an immediate reconnect instead of waiting
-  // out whatever backoff was pending when the tab was frozen.
+  // Resume-aware reconnect.
   useEffect(() => {
     const reconnectNow = () => {
       if (isConnectedRef.current) return;
@@ -283,19 +275,23 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     };
   }, [connect]);
 
+  // Notification trigger: fire on explicit server-emitted
+  // session.transition events whose `to` is "needs_attention". The
+  // server is the only thing that knows about transitions, and the
+  // event includes the full {from, to, why} payload.
   useEffect(() => {
-    for (const [id, session] of state.sessions) {
-      const prev = prevStatusRef.current.get(id);
-      if (
-        session.status === SessionStatus.NEEDS_ATTENTION &&
-        prev !== SessionStatus.NEEDS_ATTENTION
-      ) {
-        const project = projectsRef.current.find((p) => p.id === session.projectId);
-        notifyAttention(session, project?.name ?? '');
-      }
-      prevStatusRef.current.set(id, session.status);
+    for (const [sessionId, evts] of state.events) {
+      if (evts.length === 0) continue;
+      const last = evts[evts.length - 1];
+      if (last.type !== 'session.transition') continue;
+      const body = decodeTransitionPayload(last.payload);
+      if (body.to !== 'needs_attention') continue;
+      const session = state.sessions.get(sessionId);
+      if (!session) continue;
+      const project = projectsRef.current.find((p) => p.id === session.projectId);
+      notifyAttention(session, project?.name ?? '');
     }
-  }, [state.sessions]);
+  }, [state.events, state.sessions]);
 
   const sessionsSortedByAttention = useCallback(
     (pid: string): Session[] => {
@@ -305,12 +301,14 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
           result.push(session);
         }
       }
-      // Coerce nullish to 0 — protojson omits zero-valued fields, so a session
-      // with engine score 0 arrives as undefined here (NaN subtraction breaks sort).
       return result.sort((a, b) => (b.attentionScore || 0) - (a.attentionScore || 0));
     },
     [state.sessions]
   );
+
+  // Re-export SessionStatus so consumers don't have to import from
+  // ../types just to compare.
+  void SessionStatus;
 
   return { ...state, sessionsSortedByAttention };
 }
