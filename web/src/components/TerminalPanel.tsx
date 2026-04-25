@@ -101,6 +101,11 @@ export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscree
         // through. Default (1000) is fine on desktop but feels short when
         // the terminal is the primary surface.
         scrollback: 5000,
+        // Unicode11Addon and term.unicode.* are flagged as proposed API in
+        // xterm.js — accessing them without this opt-in throws during
+        // addon activation, which propagates out of React's commit phase
+        // and unmounts the whole app (blank #root).
+        allowProposedApi: true,
       });
 
       fitAddon = new FitAddon();
