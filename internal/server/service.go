@@ -340,12 +340,18 @@ func (s *Service) KillSession(
 		s.tailerMgr.RemoveSession(sessionID)
 	}
 
+	transPayload, _ := json.Marshal(map[string]string{
+		"from": row.Status,
+		"to":   "killed",
+		"why":  "user_kill",
+	})
 	s.pub.PublishSynthetic(&gruv1.SessionEvent{
 		SessionId: sessionID,
 		ProjectId: row.ProjectID,
 		Runtime:   row.Runtime,
-		Type:      "session.killed",
+		Type:      "session.transition",
 		Timestamp: timestamppb.Now(),
+		Payload:   transPayload,
 	})
 
 	return connect.NewResponse(&gruv1.KillSessionResponse{Success: true}), nil

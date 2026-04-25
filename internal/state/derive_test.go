@@ -236,6 +236,44 @@ func TestDerive_supervisorPidExitIdleToCompleted(t *testing.T) {
 	}
 }
 
+// ── terminal guard: supervisor pid_exit must not overwrite already-terminal statuses ────
+
+func TestDerive_supervisorPidExitSkipsKilled(t *testing.T) {
+	st := state.Initial()
+	st.Status = state.StatusKilled
+	next, p := state.Derive(st, state.SourceSupervisor, []byte(`{"kind":"claude_pid_exit"}`))
+	if next.Status != state.StatusKilled {
+		t.Fatalf("killed session should stay killed, got %q", next.Status)
+	}
+	if p != nil {
+		t.Fatalf("killed session should emit no projection, got %+v", p)
+	}
+}
+
+func TestDerive_supervisorPidExitSkipsErrored(t *testing.T) {
+	st := state.Initial()
+	st.Status = state.StatusErrored
+	next, p := state.Derive(st, state.SourceSupervisor, []byte(`{"kind":"claude_pid_exit"}`))
+	if next.Status != state.StatusErrored {
+		t.Fatalf("errored session should stay errored, got %q", next.Status)
+	}
+	if p != nil {
+		t.Fatalf("errored session should emit no projection, got %+v", p)
+	}
+}
+
+func TestDerive_supervisorPidExitSkipsCompleted(t *testing.T) {
+	st := state.Initial()
+	st.Status = state.StatusCompleted
+	next, p := state.Derive(st, state.SourceSupervisor, []byte(`{"kind":"claude_pid_exit"}`))
+	if next.Status != state.StatusCompleted {
+		t.Fatalf("completed session should stay completed, got %q", next.Status)
+	}
+	if p != nil {
+		t.Fatalf("completed session should emit no projection, got %+v", p)
+	}
+}
+
 // ── determinism: same inputs → same outputs (regression for §3.2) ────
 
 func TestDerive_replayFromZeroProducesSameFinalState(t *testing.T) {

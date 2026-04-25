@@ -306,6 +306,11 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     };
   }, [connect]);
 
+  // Tracks the highest seq for which a needs_attention notification has fired,
+  // keyed by session ID. Prevents re-firing on every render when the
+  // session.transition is still the last item in the ring buffer.
+  const notifiedSeqRef = useRef<Map<string, bigint>>(new Map());
+
   // Notification trigger: fire on explicit server-emitted
   // session.transition events whose `to` is "needs_attention". The
   // server is the only thing that knows about transitions, and the
@@ -317,6 +322,9 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
       if (last.type !== 'session.transition') continue;
       const body = decodeTransitionPayload(last.payload);
       if (body.to !== 'needs_attention') continue;
+      const seq = BigInt(last.seq ?? 0n);
+      if (seq <= (notifiedSeqRef.current.get(sessionId) ?? 0n)) continue;
+      notifiedSeqRef.current.set(sessionId, seq);
       const session = state.sessions.get(sessionId);
       if (!session) continue;
       const project = projectsRef.current.find((p) => p.id === session.projectId);
@@ -336,10 +344,6 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
     },
     [state.sessions]
   );
-
-  // Re-export SessionStatus so consumers don't have to import from
-  // ../types just to compare.
-  void SessionStatus;
 
   return { ...state, sessionsSortedByAttention };
 }
