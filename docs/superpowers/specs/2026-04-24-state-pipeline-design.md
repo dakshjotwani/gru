@@ -192,8 +192,8 @@ Each Claude Code session continuously writes a real-time, append-only JSONL tran
 **Properties:**
 
 - **Durable by construction.** Claude flushes lines as events complete. Independent of any network call we'd make.
-- **Append-only with stable byte offsets.** The byte offset *is* a per-session resource version: equivalent to K8s `resourceVersion` (§2.1), Redis `last-delivered-id` (§2.5), and SSE `Last-Event-ID` (§2.6) — for free.
-- **Naturally resumable.** Restart the server, re-`lseek` to the last-known offset, replay forward.
+- **Append-only with stable byte offsets.** The byte offset *is* a per-session resource version: equivalent to K8s `resourceVersion` (§2.1), Redis `last-delivered-id` (§2.5), and SSE `Last-Event-ID` (§2.6) — for free, and crucially we don't have to *persist* it to use it (see §3.2).
+- **Cheap to re-derive from scratch.** A 7 MB transcript parses in ~hundreds of ms; sessions aren't long-lived enough for files to grow pathological. On Gru restart we just replay each transcript from byte 0 — the offset never has to leave RAM.
 - **Per-session totally ordered.** No global ordering across sessions, but we don't need one — the UI is already a session-keyed view.
 - **No backpressure / loss surface.** Nothing between Claude and disk that can drop events.
 - **Documented for external consumption.** The `transcript_path` is part of the published `statusLine` contract.
@@ -246,34 +246,38 @@ There is one capability the JSONL doesn't expose — explicit "blocked on permis
 
 For each non-terminal session, one goroutine:
 
-1. Looks up `transcript_path` and `transcript_offset` from the `sessions` row (these are persisted, see §3.3). On first launch of a session, `transcript_path` is resolved at session start by mapping `cwd` to Claude's project-hash directory and listing `*.jsonl` for the session's `claude_session_id`.
-2. Opens the file, `lseek`s to `transcript_offset`.
+1. Looks up `transcript_path` from the `sessions` row. On first launch of a session, `transcript_path` is resolved at session start by mapping `cwd` to Claude's project-hash directory and listing `*.jsonl` for the session's `claude_session_id`.
+2. **Opens the file at byte 0** and clears any existing entries for this session from the events-projection cache. The byte offset lives only in this goroutine's local variable from here on.
 3. Reads forward, parsing complete JSON lines (a partial trailing line is buffered until the next read).
 4. For each parsed line:
    - Runs the **state-derivation function** (§3.4) which returns a tuple `(maybe_new_status, maybe_attention_delta, maybe_projected_event)`.
-   - In a single SQLite transaction: insert the projected event row (if any), update `sessions(status, attention_score, last_event_at, transcript_offset, claude_stop_reason, permission_mode)` to the new values.
+   - In a single SQLite transaction: insert the projected event row (if any), update `sessions(status, attention_score, last_event_at, claude_stop_reason, permission_mode)` to the new values.
    - On commit, signals the publisher.
 5. Watches the file via `fsnotify`. If `fsnotify` is unavailable (rare), falls back to a 250 ms poll of `os.Stat`.
-6. Also reads `~/.gru/notify/<sid>.jsonl` (the permission hook's local file) as a second input source — same pattern, separate offset.
+6. Also reads `~/.gru/notify/<sid>.jsonl` (the permission hook's local file) as a second input source — same pattern, separate in-memory offset.
 
 A *single* control goroutine starts/stops these on session create/terminate (`SessionStart`/`SessionEnd`/`SessionCrash` derived state), and on Gru server startup re-spawns one per non-terminal row in `sessions`.
 
-**Rotation / compaction.** Claude does not rotate transcript files within a session (compaction is recorded inline as a `compact_boundary` line). If a session ID changes, that's a new session and a new file; nothing to handle. Defensive: if `Stat()` shows the file shrunk below `transcript_offset`, log loudly and re-derive from offset 0 — should never happen in practice.
+**Why no persisted offset.** Replaying the entire transcript on (re)start is cheap at our scale: ~hundreds of ms per session, parallelizable across the ~20 of them, well under a second wall-clock. State derivation is a deterministic fold over the lines, so replay produces the same `sessions` row every time. Persisting an offset would buy us a few ms of startup speed at the cost of an extra failure mode (offset advanced, state not updated → silent drop). The simpler design wins.
+
+**Idempotency of the events-projection cache.** Since startup wipes-and-rebuilds the cache from byte 0, there is no risk of duplicate event rows. During steady-state running, the in-memory offset advances only after the SQL transaction commits, so a tailer crash mid-batch just means the next start re-reads the same lines.
+
+**Rotation / compaction.** Claude does not rotate transcript files within a session (compaction is recorded inline as a `compact_boundary` line). If a session ID changes, that's a new session and a new file; nothing to handle. Defensive: if `Stat()` shows the file shrunk below the in-memory offset during steady-state running, log loudly and reset the offset to 0 — should never happen in practice.
 
 ### 3.3 SQLite — what stays, what goes
 
-**Stays:** the `sessions` table, but with two new columns:
+**Stays:** the `sessions` table, with new columns for state derived by the tailer:
 
 - `transcript_path TEXT NOT NULL` — full path to Claude's JSONL file
-- `transcript_offset INTEGER NOT NULL DEFAULT 0` — byte offset of the next unread line
-- `notify_offset INTEGER NOT NULL DEFAULT 0` — same for the per-session notification file
 - `claude_stop_reason TEXT` — last seen `assistant.stop_reason` (`end_turn`, `tool_use`, etc.)
 - `permission_mode TEXT` — last seen `permission-mode` value
 
-**Stays, but downgraded:** an `events` table, retained as a **derived projection** for the UI's recent-events ring buffer (per-session). The tailer writes one row per *interesting* JSONL line — we ignore noise like `file-history-snapshot`. The events table is no longer authoritative; it can be dropped and rebuilt from the JSONL files at any time.
+Note the absence of any persisted offset — see §3.2.
+
+**Stays, but downgraded:** an `events` table, retained as a **derived projection** for the UI's recent-events ring buffer (per-session). The tailer writes one row per *interesting* JSONL line — we ignore noise like `file-history-snapshot`. The events table is not authoritative; it is dropped per-session and rebuilt from the JSONL on every Gru startup.
 
 - Add `seq INTEGER PRIMARY KEY AUTOINCREMENT` for the publisher's tail.
-- Add a unique constraint on `(session_id, transcript_offset)` so the tailer is idempotent if it crashes mid-batch.
+- No idempotency constraint needed — the wipe-and-rebuild discipline (§3.2) prevents duplicates by construction.
 
 **Goes:** the `/events` HTTP endpoint, the in-memory attention engine's reliance on hook-call timing, the `gru-hook.sh` curl post.
 
@@ -405,7 +409,7 @@ The rev-1 design proposed: keep the hook → HTTP → ingestion handler path, bu
 
 11. **Don't re-derive state on the client.** Both the rev-1 and rev-2 designs centralize state derivation server-side for the same reason: any time the same finite-state machine lives in two languages, it drifts. Render dumb.
 
-12. **Don't tail without persisting the offset transactionally with the state update.** If the offset advances but the state write fails, you've silently dropped an event — the failure mode that motivates this whole spec, just relocated. One transaction, both writes, or neither.
+12. **Don't optimize startup by persisting the tailer's offset.** Tempting — "just save the byte offset so we don't have to re-read the file on restart" — but it reintroduces exactly the failure mode this spec is designed to eliminate (offset advances, state write fails, event silently dropped). Replay-from-zero is cheap at our scale; pay the few hundred ms instead of the bug class.
 
 ---
 
@@ -414,8 +418,8 @@ The rev-1 design proposed: keep the hook → HTTP → ingestion handler path, bu
 - **Resolving `transcript_path` at session launch.** We need to map a session's `cwd` (and Claude's session ID) to the project-hash directory under `~/.claude/projects/`. Worth a 30-line probe to confirm Anthropic's hashing scheme is stable; alternatives are running a one-shot statusLine script ourselves to ask Claude for the path (the contract publishes it), or watching `~/.claude/projects/` for new files.
 - **fsnotify on macOS.** The `fsnotify` Go library uses `kqueue` on Darwin. Reliability across editor save patterns isn't a concern for us (Claude is the only writer), but worth a brief soak test. Polling fallback at 250 ms is a sufficient backstop for 20 sessions.
 - **Detecting a stuck Claude process.** With no hooks firing and the JSONL not growing, "Claude is wedged" looks identical to "Claude is idle." The supervisor's tmux-pane probe + the existing staleness ramp cover this; no new mechanism needed, but we should confirm the heuristic still feels right after the rewrite.
-- **Backfill on first run / migration.** When we deploy the tailer for an existing session that's already been running, do we re-derive from offset 0 or trust whatever's currently in `sessions`? Default: re-derive, since the JSONL is canonical and the session row may be wrong (which is the whole point).
-- **Events-projection retention.** The events table is now derived. Proposal: keep last 24 h or 10 k rows per session. Older state can be re-derived from the JSONL on demand if a UI ever wants deep history.
+- **Replay cost at scale.** Per-session replay-from-zero on (re)start is the single piece of the design that scales with transcript size. At today's observed sizes (a few MB after long sessions) it's ~hundreds of ms; if we ever see sessions large enough to make startup feel slow (10s of MB, 100k+ lines) we can add a periodic checkpoint — *not* of the offset, but of the derived `sessions` row at a known JSONL line, replayed forward from there. Don't pre-build this; revisit if startup ever exceeds ~2 s wall-clock for a typical fleet.
+- **Events-projection retention.** The events table is rebuilt on each restart. Proposal during steady-state: keep last 24 h or 10 k rows per session. Older state can be re-derived from the JSONL on demand if a UI ever wants deep history.
 - **gRPC vs. raw SSE.** Same question as rev 1 — `EventSource` reconnect-with-`Last-Event-ID` is free in the browser; gRPC-web is awkward for that. Worth prototyping.
 
 ## Out of scope
