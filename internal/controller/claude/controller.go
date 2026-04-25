@@ -60,7 +60,19 @@ func NewClaudeController(host, port string, envs *env.Registry, defaultAdapter s
 	}
 	bin, err := exec.LookPath("claude")
 	if err != nil {
-		bin = "claude" // fall back; let the shell report at launch time
+		// launchd's PATH (/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin)
+		// omits ~/.local/bin where claude is typically installed. If PATH
+		// search fails, probe the well-known install location so launches
+		// don't silently fail with "command not found" inside the tmux pane.
+		if home, herr := os.UserHomeDir(); herr == nil {
+			candidate := filepath.Join(home, ".local", "bin", "claude")
+			if _, serr := os.Stat(candidate); serr == nil {
+				bin = candidate
+			}
+		}
+		if bin == "" {
+			bin = "claude"
+		}
 	}
 	return &ClaudeController{
 		host:           host,
