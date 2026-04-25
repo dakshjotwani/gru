@@ -60,7 +60,11 @@ func (p *PersistentPty) Start(ctx context.Context, e env.Environment, inst env.I
 	if st.Exists {
 		return nil
 	}
-	args := []string{"tmux", "new-session", "-d", "-s", name}
+	// -u forces UTF-8 mode regardless of LC_CTYPE. Under launchd gru
+	// inherits no locale env, so without -u a freshly-started tmux server
+	// (i.e. gru is the first client) locks itself into single-byte mode
+	// for its whole lifetime — multi-byte glyphs render as underscores.
+	args := []string{"tmux", "-u", "new-session", "-d", "-s", name}
 	if workdir != "" {
 		args = append(args, "-c", workdir)
 	}
@@ -90,7 +94,7 @@ func (p *PersistentPty) Attach(ctx context.Context, e env.Environment, inst env.
 	if !hasTmux(inst) {
 		return nil, fmt.Errorf("persistentpty: instance has no tmux in PtyHolders")
 	}
-	return e.ExecPty(ctx, inst, []string{"tmux", "attach-session", "-t", name})
+	return e.ExecPty(ctx, inst, []string{"tmux", "-u", "attach-session", "-t", name})
 }
 
 // Status reports whether the named tmux session exists.

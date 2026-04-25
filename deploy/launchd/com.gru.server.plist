@@ -37,6 +37,14 @@
          entry on every modern macOS. -->
     <key>TERM</key>
     <string>xterm-256color</string>
+    <!-- launchd also strips locale env. Without LC_CTYPE/LANG, tmux clients
+         detect a C locale and downgrade multi-byte glyphs (box-drawing,
+         emoji, powerline, nerd-font) to single-byte placeholders before
+         they reach the PTY. The -u flag we now pass to tmux is the
+         primary defense; LANG here is belt-and-suspenders so any other
+         locale-aware tool gru spawns sees UTF-8 too. -->
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
     <!-- Pin web/dist to the install dir; otherwise FindWebDist falls back to
          <cwd>/web/dist or <exe-dir>/web/dist, both of which are wrong when
          we run outside the repo. -->

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { Session } from '../types';
 import { resolveWebSocketUrl } from '../utils/serverUrl';
@@ -104,6 +105,14 @@ export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscree
 
       fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
+
+      // Unicode 11 width tables — without this xterm uses Unicode 6
+      // wcwidth, which sizes newer emoji and nerd-font glyphs as one
+      // cell when they should be two. Manifests as misaligned columns
+      // and overlapping glyphs when Claude Code emits powerline / nerd-
+      // font output. unicodeVersion must be set after loadAddon().
+      term.loadAddon(new Unicode11Addon());
+      term.unicode.activeVersion = '11';
 
       // Web-links addon — detects URLs in the buffer and registers a link
       // provider with xterm. On desktop, xterm's link service activates the

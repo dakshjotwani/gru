@@ -68,7 +68,12 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	// Spawn tmux attach in a PTY so we get a proper terminal with ANSI output.
-	cmd := exec.Command("tmux", "attach-session", "-t", target)
+	// -u forces tmux to assume UTF-8 regardless of locale. Under launchd the
+	// server inherits no LC_CTYPE/LANG, so without -u tmux's client detects a
+	// C locale and silently downgrades multi-byte glyphs (box-drawing, emoji,
+	// powerline, nerd-font) to single-byte placeholders before they reach the
+	// PTY. See `tmux(1)` flag -u.
+	cmd := exec.Command("tmux", "-u", "attach-session", "-t", target)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		log.Printf("terminal: pty start %s: %v", target, err)
