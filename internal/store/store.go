@@ -29,6 +29,8 @@ type UpdateSessionStatusParams    = db.UpdateSessionStatusParams
 type UpdateSessionLastEventParams = db.UpdateSessionLastEventParams
 type UpdateSessionAttentionScoreParams = db.UpdateSessionAttentionScoreParams
 type RenameProjectParams = db.RenameProjectParams
+type CreateArtifactParams = db.CreateArtifactParams
+type CreateSessionLinkParams = db.CreateSessionLinkParams
 
 // Open opens (or creates) the SQLite database at path, enables WAL mode,
 // and runs migrations.

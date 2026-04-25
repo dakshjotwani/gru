@@ -24,6 +24,19 @@ service GruService {
   rpc UpdateProject(UpdateProjectRequest) returns (Project);
   rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
 
+  // Artifacts (byte payloads surfaced by an agent: PDFs, Markdown, etc.)
+  // Creation is an HTTP multipart POST to /artifacts; this RPC surface is
+  // for listing and deletion, mirroring the rest of the dashboard API.
+  rpc ListArtifacts(ListArtifactsRequest)   returns (ListArtifactsResponse);
+  rpc DeleteArtifact(DeleteArtifactRequest) returns (DeleteArtifactResponse);
+
+  // Session links (external URLs an agent attaches to a session: PRs,
+  // Slack threads, Figma files). All-gRPC since there are no bytes to
+  // multipart-upload.
+  rpc AddSessionLink(AddSessionLinkRequest)       returns (SessionLink);
+  rpc ListSessionLinks(ListSessionLinksRequest)   returns (ListSessionLinksResponse);
+  rpc DeleteSessionLink(DeleteSessionLinkRequest) returns (DeleteSessionLinkResponse);
+
   // Real-time event stream
   rpc SubscribeEvents(SubscribeEventsRequest) returns (stream SessionEvent);
 }
@@ -194,3 +207,60 @@ message SuggestSessionNameResponse {
   string name        = 1;
   string description = 2;
 }
+
+// Artifact: a byte payload (PDF, Markdown, etc.) surfaced by an agent.
+// `url` is the full server-relative path including the capability token
+// (e.g. /artifacts/<base64url-token>) — anyone holding that URL can fetch
+// the bytes, anyone who doesn't cannot.
+message Artifact {
+  string id          = 1;
+  string session_id  = 2;
+  string title       = 3;
+  string mime_type   = 4;
+  int64  size_bytes  = 5;
+  string url         = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message ListArtifactsRequest {
+  string session_id = 1;
+}
+
+// ListArtifactsResponse exposes count + bytes_used so an agent can
+// pre-check whether a planned upload will hit the per-session caps. The
+// 409 cap-exceeded response from POST /artifacts returns the same fields.
+message ListArtifactsResponse {
+  repeated Artifact artifacts  = 1;
+  int32             count      = 2;
+  int64             bytes_used = 3;
+}
+
+message DeleteArtifactRequest  { string id = 1; }
+message DeleteArtifactResponse { bool   success = 1; }
+
+// SessionLink: an external URL pointer attached to a session. Icons are
+// derived client-side from the URL hostname — the server does not store one.
+message SessionLink {
+  string id         = 1;
+  string session_id = 2;
+  string title      = 3;
+  string url        = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message AddSessionLinkRequest {
+  string session_id = 1;
+  string title      = 2;
+  string url        = 3;
+}
+
+message ListSessionLinksRequest {
+  string session_id = 1;
+}
+
+message ListSessionLinksResponse {
+  repeated SessionLink links = 1;
+}
+
+message DeleteSessionLinkRequest  { string id = 1; }
+message DeleteSessionLinkResponse { bool   success = 1; }

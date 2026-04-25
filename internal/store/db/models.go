@@ -11,6 +11,16 @@ type ActionLog struct {
 	ResolvedAt string
 }
 
+type Artifact struct {
+	ID        string
+	SessionID string
+	Title     string
+	MimeType  string
+	SizeBytes int64
+	Token     string
+	CreatedAt string
+}
+
 type Device struct {
 	ID                string
 	Label             string
@@ -65,4 +75,12 @@ type Session struct {
 	Description    string
 	Prompt         string
 	Role           string
+}
+
+type SessionLink struct {
+	ID        string
+	SessionID string
+	Title     string
+	Url       string
+	CreatedAt string
 }

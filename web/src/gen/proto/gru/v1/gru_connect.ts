@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { DeleteSessionRequest, DeleteSessionResponse, GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionsRequest, ListSessionsResponse, Project, PruneSessionsRequest, PruneSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SubscribeEventsRequest, SuggestSessionNameRequest, SuggestSessionNameResponse, UpdateProjectRequest } from "./gru_pb.js";
+import { AddSessionLinkRequest, DeleteArtifactRequest, DeleteArtifactResponse, DeleteSessionLinkRequest, DeleteSessionLinkResponse, DeleteSessionRequest, DeleteSessionResponse, GetSessionRequest, KillSessionRequest, KillSessionResponse, LaunchSessionRequest, LaunchSessionResponse, ListArtifactsRequest, ListArtifactsResponse, ListProfilesRequest, ListProfilesResponse, ListProjectsRequest, ListProjectsResponse, ListSessionLinksRequest, ListSessionLinksResponse, ListSessionsRequest, ListSessionsResponse, Project, PruneSessionsRequest, PruneSessionsResponse, SendInputRequest, SendInputResponse, Session, SessionEvent, SessionLink, SubscribeEventsRequest, SuggestSessionNameRequest, SuggestSessionNameResponse, UpdateProjectRequest } from "./gru_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -115,6 +115,59 @@ export const GruService = {
       name: "ListProfiles",
       I: ListProfilesRequest,
       O: ListProfilesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Artifacts (byte payloads surfaced by an agent: PDFs, Markdown, etc.)
+     * Creation is an HTTP multipart POST to /artifacts; this RPC surface is
+     * for listing and deletion, mirroring the rest of the dashboard API.
+     *
+     * @generated from rpc gru.v1.GruService.ListArtifacts
+     */
+    listArtifacts: {
+      name: "ListArtifacts",
+      I: ListArtifactsRequest,
+      O: ListArtifactsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc gru.v1.GruService.DeleteArtifact
+     */
+    deleteArtifact: {
+      name: "DeleteArtifact",
+      I: DeleteArtifactRequest,
+      O: DeleteArtifactResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Session links (external URLs an agent attaches to a session: PRs,
+     * Slack threads, Figma files). All-gRPC since there are no bytes to
+     * multipart-upload.
+     *
+     * @generated from rpc gru.v1.GruService.AddSessionLink
+     */
+    addSessionLink: {
+      name: "AddSessionLink",
+      I: AddSessionLinkRequest,
+      O: SessionLink,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc gru.v1.GruService.ListSessionLinks
+     */
+    listSessionLinks: {
+      name: "ListSessionLinks",
+      I: ListSessionLinksRequest,
+      O: ListSessionLinksResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc gru.v1.GruService.DeleteSessionLink
+     */
+    deleteSessionLink: {
+      name: "DeleteSessionLink",
+      I: DeleteSessionLinkRequest,
+      O: DeleteSessionLinkResponse,
       kind: MethodKind.Unary,
     },
     /**

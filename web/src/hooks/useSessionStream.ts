@@ -117,6 +117,23 @@ function reducer(state: SessionState, action: Action): SessionState {
         return { ...state, sessions, events };
       }
 
+      // Artifact / session-link events carry the full proto as payload —
+      // re-broadcast as a window-level CustomEvent so useSessionArtifacts
+      // can update local state without subscribing to the gRPC stream
+      // separately. The reducer is otherwise a no-op for these.
+      if (event.type === 'artifact.created') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('gru:artifact-event', { detail: { event } }));
+        }
+        return state;
+      }
+      if (event.type === 'session_link.created') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('gru:link-event', { detail: { event } }));
+        }
+        return state;
+      }
+
       const events = new Map(state.events);
       const sessionEvents = events.get(event.sessionId) ?? [];
       const updatedEvents = [...sessionEvents, event].slice(-20);

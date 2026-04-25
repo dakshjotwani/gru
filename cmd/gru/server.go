@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/adapter"
 	claudeadapter "github.com/dakshjotwani/gru/internal/adapter/claude"
+	"github.com/dakshjotwani/gru/internal/artifacts"
 	"github.com/dakshjotwani/gru/internal/attention"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
@@ -112,6 +113,23 @@ func runServer(portFilePath string) error {
 	svc := server.NewService(s, pub)
 	svc.SetControllerRegistry(ctrlReg)
 
+	// Artifact manager: on-disk under <stateDir>/artifacts, default caps
+	// from the design doc. The HTTP upload + download handlers and the
+	// gRPC List/Delete handlers all share this single manager so caps
+	// and on-disk lifecycle are consistent.
+	artifactRoot := filepath.Join(stateDir(), "artifacts")
+	artifactMgr, err := artifacts.NewManager(s, artifactRoot, artifacts.DefaultCaps(), pub)
+	if err != nil {
+		return fmt.Errorf("init artifact manager: %w", err)
+	}
+	svc.SetArtifactManager(artifactMgr)
+	// Boot-time orphan sweep: removes session-id directories whose row is
+	// gone, and bin/tmp files without a matching artifact row. Errors are
+	// logged inside the sweeper; not fatal to startup.
+	if err := artifactMgr.SweepOrphans(context.Background()); err != nil {
+		log.Printf("artifacts: boot sweep: %v", err)
+	}
+
 	// Build the attention engine from config-provided weights. Any zero
 	// field falls back to the documented defaults.
 	attnWeights := attention.DefaultWeights()
@@ -174,6 +192,14 @@ func runServer(portFilePath string) error {
 
 	// Hook event ingestion (plain HTTP POST).
 	mux.Handle("POST /events", ingestionHandler)
+
+	// Artifact upload (multipart) + download (capability-token GET). Both
+	// share the artifact manager wired above. The download path is the
+	// only credential — anyone with the URL can fetch the bytes, anyone
+	// without cannot. CORS-wide so iframes from opaque origins (sandbox="")
+	// can fetch.
+	mux.Handle("POST /artifacts", ingestion.NewArtifactUploadHandler(artifactMgr))
+	mux.Handle("GET /artifacts/{token}", ingestion.NewArtifactDownloadHandler(artifactMgr))
 
 	// WebSocket terminal: streams a tmux pane over a PTY.
 	mux.Handle("GET /terminal/{session_id}", server.NewTerminalHandler(s))

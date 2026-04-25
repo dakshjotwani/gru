@@ -257,8 +257,18 @@ func buildClaudeCmd(
 	if opts.Prompt != "" {
 		args = append(args, shellQuote(opts.Prompt))
 	}
-	return fmt.Sprintf("GRU_SESSION_ID=%s GRU_HOST=%s GRU_PORT=%s %s %s",
-		sessionID, host, port, bin, strings.Join(args, " "))
+	// Propagate GRU_STATE_DIR so the launched session's CLI helpers
+	// (gru artifact add, gru link add) resolve server.yaml from the
+	// same state dir this server was started with — important when
+	// the operator runs a non-default test instance alongside their
+	// primary one. tmux scrubs env on new-session, so we must set it
+	// explicitly on the command line.
+	stateDir := ""
+	if d := os.Getenv("GRU_STATE_DIR"); d != "" {
+		stateDir = "GRU_STATE_DIR=" + d + " "
+	}
+	return fmt.Sprintf("%sGRU_SESSION_ID=%s GRU_HOST=%s GRU_PORT=%s %s %s",
+		stateDir, sessionID, host, port, bin, strings.Join(args, " "))
 }
 
 func shellQuote(s string) string {

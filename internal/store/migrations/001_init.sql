@@ -47,6 +47,37 @@ CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp  ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_type       ON events(type);
 
+-- Artifacts: byte payloads (PDFs, Markdown, etc.) surfaced by an agent for
+-- the operator. Bytes live on disk under ~/.gru/artifacts/<session_id>/<id>.bin;
+-- this row holds metadata + the capability token that gates GET access.
+-- Cascade-deletes when the parent session is removed (the server also rm -rf's
+-- the directory so disk doesn't accumulate orphans).
+CREATE TABLE IF NOT EXISTS artifacts (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    mime_type   TEXT NOT NULL,
+    size_bytes  INTEGER NOT NULL,
+    token       TEXT NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_session_id ON artifacts(session_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_token ON artifacts(token);
+
+-- Session links: external URL pointers an agent attaches to a session
+-- (GitHub PR, Slack thread, Figma file, etc.). Rendered as a chip row
+-- above the active tab. No bytes, no token, no rendering.
+CREATE TABLE IF NOT EXISTS session_links (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_links_session_id ON session_links(session_id);
+
 -- Schema version tracking (for future migrations).
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version    INTEGER PRIMARY KEY,

@@ -22,3 +22,4 @@ cp -r skills/gru .claude/skills/gru
 |---|---|
 | [`gru/scaffold-env`](./gru/scaffold-env/SKILL.md) | Setting up a new Gru environment spec, or auditing an existing project's env for Gru compatibility |
 | [`gru/gru-on-gru-minion`](./gru/gru-on-gru-minion/SKILL.md) | You are a minion spawned to work on the Gru codebase itself via `.gru/envs/minion-*.yaml`. Tells you how your ports/state dir are set up and what the ground rules are. |
+| [`gru/using-gru`](./gru/using-gru/SKILL.md) | You're a minion that has produced a deliverable (PDF, Markdown design doc, rendered spec) the operator should review, or want to attach an external URL (PR, Slack, Figma) to the current session. Catalogs `gru artifact add` / `gru link add`. |
