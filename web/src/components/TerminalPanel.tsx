@@ -33,6 +33,9 @@ interface TerminalPanelProps {
   focusRef?: React.RefObject<(() => void) | null>;
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** When true, suppresses the in-panel title bar — the parent (SessionTabs)
+   *  is rendering its own tab bar instead and would duplicate the chrome. */
+  hideTitleBar?: boolean;
 }
 
 // hasCoarsePointer is true on phones / tablets without an attached mouse —
@@ -43,7 +46,7 @@ function hasCoarsePointer(): boolean {
   return window.matchMedia('(pointer: coarse)').matches;
 }
 
-export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscreen }: TerminalPanelProps) {
+export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscreen, hideTitleBar }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -461,23 +464,25 @@ export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscree
 
   return (
     <div className={[styles.panel, fullscreen ? styles.panelFullscreen : ''].filter(Boolean).join(' ')}>
-      <div className={styles.titleBar}>
-        <span className={styles.sessionName}>{session.name || session.id.slice(0, 8)}</span>
-        {session.tmuxSession && (
-          <span className={styles.tmuxTarget}>{session.tmuxSession}</span>
-        )}
-        {onToggleFullscreen && (
-          <button
-            type="button"
-            className={styles.fullscreenBtn}
-            onClick={onToggleFullscreen}
-            title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (Ctrl+Shift+F)'}
-            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          >
-            {fullscreen ? '↙' : '⤢'}
-          </button>
-        )}
-      </div>
+      {!hideTitleBar && (
+        <div className={styles.titleBar}>
+          <span className={styles.sessionName}>{session.name || session.id.slice(0, 8)}</span>
+          {session.tmuxSession && (
+            <span className={styles.tmuxTarget}>{session.tmuxSession}</span>
+          )}
+          {onToggleFullscreen && (
+            <button
+              type="button"
+              className={styles.fullscreenBtn}
+              onClick={onToggleFullscreen}
+              title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (Ctrl+Shift+F)'}
+              aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {fullscreen ? '↙' : '⤢'}
+            </button>
+          )}
+        </div>
+      )}
       <div ref={containerRef} className={styles.terminal} data-gru-terminal />
     </div>
   );

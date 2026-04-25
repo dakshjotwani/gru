@@ -72,6 +72,8 @@ func newRootCmd() *cobra.Command {
 		newAttachCmd(state),
 		newEnvCmd(),
 		newProjectsCmd(state),
+		newArtifactCmd(state),
+		newLinkCmd(state),
 	)
 
 	return root

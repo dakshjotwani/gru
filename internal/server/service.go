@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/dakshjotwani/gru/internal/artifacts"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/env"
@@ -94,6 +95,10 @@ type Service struct {
 	pub           *ingestion.Publisher
 	controllerReg *controller.Registry
 	suggester     nameSuggester // nil means feature disabled
+	// artifactMgr handles byte payloads + on-disk lifecycle. Wired at
+	// server startup via SetArtifactManager. nil-safe: ListArtifacts
+	// returns an empty result and Add/Delete return CodeFailedPrecondition.
+	artifactMgr *artifacts.Manager
 }
 
 var _ gruv1connect.GruServiceHandler = (*Service)(nil)
@@ -359,6 +364,15 @@ func (s *Service) DeleteSession(
 	if err := s.store.Queries().DeleteSession(ctx, sessionID); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("delete session: %w", err))
 	}
+	// Artifact rows are removed by ON DELETE CASCADE; the on-disk
+	// directory is not, so the manager rm -rf's it. Best-effort: a
+	// failure here is logged but doesn't fail the whole delete (the
+	// boot-time orphan sweep will clean up anything we leak).
+	if s.artifactMgr != nil {
+		if err := s.artifactMgr.CleanupSession(ctx, sessionID); err != nil {
+			log.Printf("DeleteSession: cleanup artifact dir for %s: %v", sessionID, err)
+		}
+	}
 	s.pub.Publish(&gruv1.SessionEvent{
 		Type:      "session.deleted",
 		SessionId: sessionID,
@@ -393,6 +407,14 @@ func (s *Service) PruneSessions(
 		if err := s.store.Queries().DeleteSession(ctx, id); err != nil {
 			log.Printf("PruneSessions: delete session %s: %v", id, err)
 			continue
+		}
+		// Same cleanup pattern as DeleteSession — best-effort rm -rf of
+		// the on-disk artifact directory; the orphan sweep on next boot
+		// is the safety net if this fails.
+		if s.artifactMgr != nil {
+			if err := s.artifactMgr.CleanupSession(ctx, id); err != nil {
+				log.Printf("PruneSessions: cleanup artifact dir for %s: %v", id, err)
+			}
 		}
 		s.pub.Publish(&gruv1.SessionEvent{
 			Type:      "session.deleted",

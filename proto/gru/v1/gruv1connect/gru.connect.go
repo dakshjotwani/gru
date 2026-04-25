@@ -60,6 +60,21 @@ const (
 	GruServiceUpdateProjectProcedure = "/gru.v1.GruService/UpdateProject"
 	// GruServiceListProfilesProcedure is the fully-qualified name of the GruService's ListProfiles RPC.
 	GruServiceListProfilesProcedure = "/gru.v1.GruService/ListProfiles"
+	// GruServiceListArtifactsProcedure is the fully-qualified name of the GruService's ListArtifacts
+	// RPC.
+	GruServiceListArtifactsProcedure = "/gru.v1.GruService/ListArtifacts"
+	// GruServiceDeleteArtifactProcedure is the fully-qualified name of the GruService's DeleteArtifact
+	// RPC.
+	GruServiceDeleteArtifactProcedure = "/gru.v1.GruService/DeleteArtifact"
+	// GruServiceAddSessionLinkProcedure is the fully-qualified name of the GruService's AddSessionLink
+	// RPC.
+	GruServiceAddSessionLinkProcedure = "/gru.v1.GruService/AddSessionLink"
+	// GruServiceListSessionLinksProcedure is the fully-qualified name of the GruService's
+	// ListSessionLinks RPC.
+	GruServiceListSessionLinksProcedure = "/gru.v1.GruService/ListSessionLinks"
+	// GruServiceDeleteSessionLinkProcedure is the fully-qualified name of the GruService's
+	// DeleteSessionLink RPC.
+	GruServiceDeleteSessionLinkProcedure = "/gru.v1.GruService/DeleteSessionLink"
 	// GruServiceSubscribeEventsProcedure is the fully-qualified name of the GruService's
 	// SubscribeEvents RPC.
 	GruServiceSubscribeEventsProcedure = "/gru.v1.GruService/SubscribeEvents"
@@ -81,6 +96,17 @@ type GruServiceClient interface {
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
 	ListProfiles(context.Context, *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error)
+	// Artifacts (byte payloads surfaced by an agent: PDFs, Markdown, etc.)
+	// Creation is an HTTP multipart POST to /artifacts; this RPC surface is
+	// for listing and deletion, mirroring the rest of the dashboard API.
+	ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error)
+	DeleteArtifact(context.Context, *connect.Request[v1.DeleteArtifactRequest]) (*connect.Response[v1.DeleteArtifactResponse], error)
+	// Session links (external URLs an agent attaches to a session: PRs,
+	// Slack threads, Figma files). All-gRPC since there are no bytes to
+	// multipart-upload.
+	AddSessionLink(context.Context, *connect.Request[v1.AddSessionLinkRequest]) (*connect.Response[v1.SessionLink], error)
+	ListSessionLinks(context.Context, *connect.Request[v1.ListSessionLinksRequest]) (*connect.Response[v1.ListSessionLinksResponse], error)
+	DeleteSessionLink(context.Context, *connect.Request[v1.DeleteSessionLinkRequest]) (*connect.Response[v1.DeleteSessionLinkResponse], error)
 	// Real-time event stream
 	SubscribeEvents(context.Context, *connect.Request[v1.SubscribeEventsRequest]) (*connect.ServerStreamForClient[v1.SessionEvent], error)
 }
@@ -162,6 +188,36 @@ func NewGruServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(gruServiceMethods.ByName("ListProfiles")),
 			connect.WithClientOptions(opts...),
 		),
+		listArtifacts: connect.NewClient[v1.ListArtifactsRequest, v1.ListArtifactsResponse](
+			httpClient,
+			baseURL+GruServiceListArtifactsProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("ListArtifacts")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteArtifact: connect.NewClient[v1.DeleteArtifactRequest, v1.DeleteArtifactResponse](
+			httpClient,
+			baseURL+GruServiceDeleteArtifactProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("DeleteArtifact")),
+			connect.WithClientOptions(opts...),
+		),
+		addSessionLink: connect.NewClient[v1.AddSessionLinkRequest, v1.SessionLink](
+			httpClient,
+			baseURL+GruServiceAddSessionLinkProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("AddSessionLink")),
+			connect.WithClientOptions(opts...),
+		),
+		listSessionLinks: connect.NewClient[v1.ListSessionLinksRequest, v1.ListSessionLinksResponse](
+			httpClient,
+			baseURL+GruServiceListSessionLinksProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("ListSessionLinks")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteSessionLink: connect.NewClient[v1.DeleteSessionLinkRequest, v1.DeleteSessionLinkResponse](
+			httpClient,
+			baseURL+GruServiceDeleteSessionLinkProcedure,
+			connect.WithSchema(gruServiceMethods.ByName("DeleteSessionLink")),
+			connect.WithClientOptions(opts...),
+		),
 		subscribeEvents: connect.NewClient[v1.SubscribeEventsRequest, v1.SessionEvent](
 			httpClient,
 			baseURL+GruServiceSubscribeEventsProcedure,
@@ -184,6 +240,11 @@ type gruServiceClient struct {
 	listProjects       *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
 	updateProject      *connect.Client[v1.UpdateProjectRequest, v1.Project]
 	listProfiles       *connect.Client[v1.ListProfilesRequest, v1.ListProfilesResponse]
+	listArtifacts      *connect.Client[v1.ListArtifactsRequest, v1.ListArtifactsResponse]
+	deleteArtifact     *connect.Client[v1.DeleteArtifactRequest, v1.DeleteArtifactResponse]
+	addSessionLink     *connect.Client[v1.AddSessionLinkRequest, v1.SessionLink]
+	listSessionLinks   *connect.Client[v1.ListSessionLinksRequest, v1.ListSessionLinksResponse]
+	deleteSessionLink  *connect.Client[v1.DeleteSessionLinkRequest, v1.DeleteSessionLinkResponse]
 	subscribeEvents    *connect.Client[v1.SubscribeEventsRequest, v1.SessionEvent]
 }
 
@@ -242,6 +303,31 @@ func (c *gruServiceClient) ListProfiles(ctx context.Context, req *connect.Reques
 	return c.listProfiles.CallUnary(ctx, req)
 }
 
+// ListArtifacts calls gru.v1.GruService.ListArtifacts.
+func (c *gruServiceClient) ListArtifacts(ctx context.Context, req *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error) {
+	return c.listArtifacts.CallUnary(ctx, req)
+}
+
+// DeleteArtifact calls gru.v1.GruService.DeleteArtifact.
+func (c *gruServiceClient) DeleteArtifact(ctx context.Context, req *connect.Request[v1.DeleteArtifactRequest]) (*connect.Response[v1.DeleteArtifactResponse], error) {
+	return c.deleteArtifact.CallUnary(ctx, req)
+}
+
+// AddSessionLink calls gru.v1.GruService.AddSessionLink.
+func (c *gruServiceClient) AddSessionLink(ctx context.Context, req *connect.Request[v1.AddSessionLinkRequest]) (*connect.Response[v1.SessionLink], error) {
+	return c.addSessionLink.CallUnary(ctx, req)
+}
+
+// ListSessionLinks calls gru.v1.GruService.ListSessionLinks.
+func (c *gruServiceClient) ListSessionLinks(ctx context.Context, req *connect.Request[v1.ListSessionLinksRequest]) (*connect.Response[v1.ListSessionLinksResponse], error) {
+	return c.listSessionLinks.CallUnary(ctx, req)
+}
+
+// DeleteSessionLink calls gru.v1.GruService.DeleteSessionLink.
+func (c *gruServiceClient) DeleteSessionLink(ctx context.Context, req *connect.Request[v1.DeleteSessionLinkRequest]) (*connect.Response[v1.DeleteSessionLinkResponse], error) {
+	return c.deleteSessionLink.CallUnary(ctx, req)
+}
+
 // SubscribeEvents calls gru.v1.GruService.SubscribeEvents.
 func (c *gruServiceClient) SubscribeEvents(ctx context.Context, req *connect.Request[v1.SubscribeEventsRequest]) (*connect.ServerStreamForClient[v1.SessionEvent], error) {
 	return c.subscribeEvents.CallServerStream(ctx, req)
@@ -263,6 +349,17 @@ type GruServiceHandler interface {
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
 	ListProfiles(context.Context, *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error)
+	// Artifacts (byte payloads surfaced by an agent: PDFs, Markdown, etc.)
+	// Creation is an HTTP multipart POST to /artifacts; this RPC surface is
+	// for listing and deletion, mirroring the rest of the dashboard API.
+	ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error)
+	DeleteArtifact(context.Context, *connect.Request[v1.DeleteArtifactRequest]) (*connect.Response[v1.DeleteArtifactResponse], error)
+	// Session links (external URLs an agent attaches to a session: PRs,
+	// Slack threads, Figma files). All-gRPC since there are no bytes to
+	// multipart-upload.
+	AddSessionLink(context.Context, *connect.Request[v1.AddSessionLinkRequest]) (*connect.Response[v1.SessionLink], error)
+	ListSessionLinks(context.Context, *connect.Request[v1.ListSessionLinksRequest]) (*connect.Response[v1.ListSessionLinksResponse], error)
+	DeleteSessionLink(context.Context, *connect.Request[v1.DeleteSessionLinkRequest]) (*connect.Response[v1.DeleteSessionLinkResponse], error)
 	// Real-time event stream
 	SubscribeEvents(context.Context, *connect.Request[v1.SubscribeEventsRequest], *connect.ServerStream[v1.SessionEvent]) error
 }
@@ -340,6 +437,36 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(gruServiceMethods.ByName("ListProfiles")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gruServiceListArtifactsHandler := connect.NewUnaryHandler(
+		GruServiceListArtifactsProcedure,
+		svc.ListArtifacts,
+		connect.WithSchema(gruServiceMethods.ByName("ListArtifacts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gruServiceDeleteArtifactHandler := connect.NewUnaryHandler(
+		GruServiceDeleteArtifactProcedure,
+		svc.DeleteArtifact,
+		connect.WithSchema(gruServiceMethods.ByName("DeleteArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gruServiceAddSessionLinkHandler := connect.NewUnaryHandler(
+		GruServiceAddSessionLinkProcedure,
+		svc.AddSessionLink,
+		connect.WithSchema(gruServiceMethods.ByName("AddSessionLink")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gruServiceListSessionLinksHandler := connect.NewUnaryHandler(
+		GruServiceListSessionLinksProcedure,
+		svc.ListSessionLinks,
+		connect.WithSchema(gruServiceMethods.ByName("ListSessionLinks")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gruServiceDeleteSessionLinkHandler := connect.NewUnaryHandler(
+		GruServiceDeleteSessionLinkProcedure,
+		svc.DeleteSessionLink,
+		connect.WithSchema(gruServiceMethods.ByName("DeleteSessionLink")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gruServiceSubscribeEventsHandler := connect.NewServerStreamHandler(
 		GruServiceSubscribeEventsProcedure,
 		svc.SubscribeEvents,
@@ -370,6 +497,16 @@ func NewGruServiceHandler(svc GruServiceHandler, opts ...connect.HandlerOption) 
 			gruServiceUpdateProjectHandler.ServeHTTP(w, r)
 		case GruServiceListProfilesProcedure:
 			gruServiceListProfilesHandler.ServeHTTP(w, r)
+		case GruServiceListArtifactsProcedure:
+			gruServiceListArtifactsHandler.ServeHTTP(w, r)
+		case GruServiceDeleteArtifactProcedure:
+			gruServiceDeleteArtifactHandler.ServeHTTP(w, r)
+		case GruServiceAddSessionLinkProcedure:
+			gruServiceAddSessionLinkHandler.ServeHTTP(w, r)
+		case GruServiceListSessionLinksProcedure:
+			gruServiceListSessionLinksHandler.ServeHTTP(w, r)
+		case GruServiceDeleteSessionLinkProcedure:
+			gruServiceDeleteSessionLinkHandler.ServeHTTP(w, r)
 		case GruServiceSubscribeEventsProcedure:
 			gruServiceSubscribeEventsHandler.ServeHTTP(w, r)
 		default:
@@ -423,6 +560,26 @@ func (UnimplementedGruServiceHandler) UpdateProject(context.Context, *connect.Re
 
 func (UnimplementedGruServiceHandler) ListProfiles(context.Context, *connect.Request[v1.ListProfilesRequest]) (*connect.Response[v1.ListProfilesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.ListProfiles is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.ListArtifacts is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) DeleteArtifact(context.Context, *connect.Request[v1.DeleteArtifactRequest]) (*connect.Response[v1.DeleteArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.DeleteArtifact is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) AddSessionLink(context.Context, *connect.Request[v1.AddSessionLinkRequest]) (*connect.Response[v1.SessionLink], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.AddSessionLink is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) ListSessionLinks(context.Context, *connect.Request[v1.ListSessionLinksRequest]) (*connect.Response[v1.ListSessionLinksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.ListSessionLinks is not implemented"))
+}
+
+func (UnimplementedGruServiceHandler) DeleteSessionLink(context.Context, *connect.Request[v1.DeleteSessionLinkRequest]) (*connect.Response[v1.DeleteSessionLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gru.v1.GruService.DeleteSessionLink is not implemented"))
 }
 
 func (UnimplementedGruServiceHandler) SubscribeEvents(context.Context, *connect.Request[v1.SubscribeEventsRequest], *connect.ServerStream[v1.SessionEvent]) error {

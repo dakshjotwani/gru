@@ -9,22 +9,34 @@ import (
 )
 
 type Querier interface {
+	CountSessionLinksForSession(ctx context.Context, sessionID string) (int64, error)
+	CreateArtifact(ctx context.Context, arg CreateArtifactParams) (Artifact, error)
 	CreateDevice(ctx context.Context, arg CreateDeviceParams) (Device, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateSessionLink(ctx context.Context, arg CreateSessionLinkParams) (SessionLink, error)
+	DeleteArtifact(ctx context.Context, id string) error
 	DeleteDevice(ctx context.Context, id string) error
 	DeleteEventsForSession(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
+	DeleteSessionLink(ctx context.Context, id string) error
 	GetAction(ctx context.Context, arg GetActionParams) (ActionLog, error)
+	GetArtifact(ctx context.Context, id string) (Artifact, error)
+	GetArtifactByToken(ctx context.Context, token string) (Artifact, error)
 	GetAssistantSession(ctx context.Context) (Session, error)
 	GetDevice(ctx context.Context, id string) (Device, error)
 	GetEvent(ctx context.Context, id string) (Event, error)
 	GetLatestEventForSession(ctx context.Context, sessionID string) (Event, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetSession(ctx context.Context, id string) (Session, error)
+	GetSessionLink(ctx context.Context, id string) (SessionLink, error)
+	ListAllArtifactSessionDirs(ctx context.Context) ([]string, error)
+	ListArtifactIDsBySession(ctx context.Context, sessionID string) ([]string, error)
+	ListArtifactsBySession(ctx context.Context, sessionID string) ([]Artifact, error)
 	ListDevices(ctx context.Context) ([]Device, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]Event, error)
 	ListProjects(ctx context.Context) ([]Project, error)
+	ListSessionLinksBySession(ctx context.Context, sessionID string) ([]SessionLink, error)
 	ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error)
 	// Returns IDs of every terminal (completed/errored/killed) session, skipping
 	// assistant-role singletons. Used by PruneSessions to delete in a single
@@ -33,6 +45,7 @@ type Querier interface {
 	MarkDeviceStale(ctx context.Context, id string) error
 	RecordAction(ctx context.Context, arg RecordActionParams) error
 	RenameProject(ctx context.Context, arg RenameProjectParams) (Project, error)
+	SumArtifactsForSession(ctx context.Context, sessionID string) (SumArtifactsForSessionRow, error)
 	TouchDevice(ctx context.Context, id string) error
 	UpdateDeviceSubscription(ctx context.Context, arg UpdateDeviceSubscriptionParams) (Device, error)
 	UpdateSessionAttentionScore(ctx context.Context, arg UpdateSessionAttentionScoreParams) (Session, error)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AttentionQueue } from './components/AttentionQueue';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
-import { TerminalPanel } from './components/TerminalPanel';
+import { SessionTabs } from './components/SessionTabs';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useProjects } from './hooks/useProjects';
 import { SessionStatus } from './types';
@@ -216,7 +216,7 @@ export function App() {
 
         <main className={styles.main}>
           {mainSession ? (
-            <TerminalPanel
+            <SessionTabs
               key={mainSession.id}
               session={mainSession}
               focusRef={focusTerminalRef}

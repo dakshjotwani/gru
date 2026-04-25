@@ -1495,6 +1495,611 @@ func (x *SuggestSessionNameResponse) GetDescription() string {
 	return ""
 }
 
+// Artifact: a byte payload (PDF, Markdown, etc.) surfaced by an agent.
+// `url` is the full server-relative path including the capability token
+// (e.g. /artifacts/<base64url-token>) — anyone holding that URL can fetch
+// the bytes, anyone who doesn't cannot.
+type Artifact struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	MimeType      string                 `protobuf:"bytes,4,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Url           string                 `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Artifact) Reset() {
+	*x = Artifact{}
+	mi := &file_gru_v1_gru_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Artifact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Artifact) ProtoMessage() {}
+
+func (x *Artifact) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Artifact.ProtoReflect.Descriptor instead.
+func (*Artifact) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *Artifact) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Artifact) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *Artifact) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Artifact) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *Artifact) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *Artifact) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *Artifact) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type ListArtifactsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListArtifactsRequest) Reset() {
+	*x = ListArtifactsRequest{}
+	mi := &file_gru_v1_gru_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListArtifactsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListArtifactsRequest) ProtoMessage() {}
+
+func (x *ListArtifactsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListArtifactsRequest.ProtoReflect.Descriptor instead.
+func (*ListArtifactsRequest) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListArtifactsRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// ListArtifactsResponse exposes count + bytes_used so an agent can
+// pre-check whether a planned upload will hit the per-session caps. The
+// 409 cap-exceeded response from POST /artifacts returns the same fields.
+type ListArtifactsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Artifacts     []*Artifact            `protobuf:"bytes,1,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	Count         int32                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	BytesUsed     int64                  `protobuf:"varint,3,opt,name=bytes_used,json=bytesUsed,proto3" json:"bytes_used,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListArtifactsResponse) Reset() {
+	*x = ListArtifactsResponse{}
+	mi := &file_gru_v1_gru_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListArtifactsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListArtifactsResponse) ProtoMessage() {}
+
+func (x *ListArtifactsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListArtifactsResponse.ProtoReflect.Descriptor instead.
+func (*ListArtifactsResponse) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ListArtifactsResponse) GetArtifacts() []*Artifact {
+	if x != nil {
+		return x.Artifacts
+	}
+	return nil
+}
+
+func (x *ListArtifactsResponse) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *ListArtifactsResponse) GetBytesUsed() int64 {
+	if x != nil {
+		return x.BytesUsed
+	}
+	return 0
+}
+
+type DeleteArtifactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteArtifactRequest) Reset() {
+	*x = DeleteArtifactRequest{}
+	mi := &file_gru_v1_gru_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteArtifactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteArtifactRequest) ProtoMessage() {}
+
+func (x *DeleteArtifactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteArtifactRequest.ProtoReflect.Descriptor instead.
+func (*DeleteArtifactRequest) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *DeleteArtifactRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteArtifactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteArtifactResponse) Reset() {
+	*x = DeleteArtifactResponse{}
+	mi := &file_gru_v1_gru_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteArtifactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteArtifactResponse) ProtoMessage() {}
+
+func (x *DeleteArtifactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteArtifactResponse.ProtoReflect.Descriptor instead.
+func (*DeleteArtifactResponse) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *DeleteArtifactResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+// SessionLink: an external URL pointer attached to a session. Icons are
+// derived client-side from the URL hostname — the server does not store one.
+type SessionLink struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionLink) Reset() {
+	*x = SessionLink{}
+	mi := &file_gru_v1_gru_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionLink) ProtoMessage() {}
+
+func (x *SessionLink) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionLink.ProtoReflect.Descriptor instead.
+func (*SessionLink) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *SessionLink) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SessionLink) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SessionLink) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *SessionLink) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *SessionLink) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type AddSessionLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Url           string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddSessionLinkRequest) Reset() {
+	*x = AddSessionLinkRequest{}
+	mi := &file_gru_v1_gru_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddSessionLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddSessionLinkRequest) ProtoMessage() {}
+
+func (x *AddSessionLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddSessionLinkRequest.ProtoReflect.Descriptor instead.
+func (*AddSessionLinkRequest) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *AddSessionLinkRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AddSessionLinkRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *AddSessionLinkRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type ListSessionLinksRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionLinksRequest) Reset() {
+	*x = ListSessionLinksRequest{}
+	mi := &file_gru_v1_gru_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionLinksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionLinksRequest) ProtoMessage() {}
+
+func (x *ListSessionLinksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionLinksRequest.ProtoReflect.Descriptor instead.
+func (*ListSessionLinksRequest) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListSessionLinksRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type ListSessionLinksResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Links         []*SessionLink         `protobuf:"bytes,1,rep,name=links,proto3" json:"links,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionLinksResponse) Reset() {
+	*x = ListSessionLinksResponse{}
+	mi := &file_gru_v1_gru_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionLinksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionLinksResponse) ProtoMessage() {}
+
+func (x *ListSessionLinksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionLinksResponse.ProtoReflect.Descriptor instead.
+func (*ListSessionLinksResponse) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ListSessionLinksResponse) GetLinks() []*SessionLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+type DeleteSessionLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSessionLinkRequest) Reset() {
+	*x = DeleteSessionLinkRequest{}
+	mi := &file_gru_v1_gru_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSessionLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSessionLinkRequest) ProtoMessage() {}
+
+func (x *DeleteSessionLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSessionLinkRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSessionLinkRequest) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *DeleteSessionLinkRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteSessionLinkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSessionLinkResponse) Reset() {
+	*x = DeleteSessionLinkResponse{}
+	mi := &file_gru_v1_gru_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSessionLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSessionLinkResponse) ProtoMessage() {}
+
+func (x *DeleteSessionLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gru_v1_gru_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSessionLinkResponse.ProtoReflect.Descriptor instead.
+func (*DeleteSessionLinkResponse) Descriptor() ([]byte, []int) {
+	return file_gru_v1_gru_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *DeleteSessionLinkResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 var File_gru_v1_gru_proto protoreflect.FileDescriptor
 
 const file_gru_v1_gru_proto_rawDesc = "" +
@@ -1597,7 +2202,52 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\"R\n" +
 	"\x1aSuggestSessionNameResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription*\xfa\x01\n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\"\xd8\x01\n" +
+	"\bArtifact\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x1b\n" +
+	"\tmime_type\x18\x04 \x01(\tR\bmimeType\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes\x12\x10\n" +
+	"\x03url\x18\x06 \x01(\tR\x03url\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"5\n" +
+	"\x14ListArtifactsRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"|\n" +
+	"\x15ListArtifactsResponse\x12.\n" +
+	"\tartifacts\x18\x01 \x03(\v2\x10.gru.v1.ArtifactR\tartifacts\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count\x12\x1d\n" +
+	"\n" +
+	"bytes_used\x18\x03 \x01(\x03R\tbytesUsed\"'\n" +
+	"\x15DeleteArtifactRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"2\n" +
+	"\x16DeleteArtifactResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x9f\x01\n" +
+	"\vSessionLink\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\x129\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"^\n" +
+	"\x15AddSessionLinkRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x10\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\"8\n" +
+	"\x17ListSessionLinksRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"E\n" +
+	"\x18ListSessionLinksResponse\x12)\n" +
+	"\x05links\x18\x01 \x03(\v2\x13.gru.v1.SessionLinkR\x05links\"*\n" +
+	"\x18DeleteSessionLinkRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"5\n" +
+	"\x19DeleteSessionLinkResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess*\xfa\x01\n" +
 	"\rSessionStatus\x12\x1e\n" +
 	"\x1aSESSION_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17SESSION_STATUS_STARTING\x10\x01\x12\x1a\n" +
@@ -1606,7 +2256,8 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x1eSESSION_STATUS_NEEDS_ATTENTION\x10\x04\x12\x1c\n" +
 	"\x18SESSION_STATUS_COMPLETED\x10\x05\x12\x1a\n" +
 	"\x16SESSION_STATUS_ERRORED\x10\x06\x12\x19\n" +
-	"\x15SESSION_STATUS_KILLED\x10\a2\x83\a\n" +
+	"\x15SESSION_STATUS_KILLED\x10\a2\x99\n" +
+	"\n" +
 	"\n" +
 	"GruService\x12I\n" +
 	"\fListSessions\x12\x1b.gru.v1.ListSessionsRequest\x1a\x1c.gru.v1.ListSessionsResponse\x128\n" +
@@ -1620,7 +2271,12 @@ const file_gru_v1_gru_proto_rawDesc = "" +
 	"\x12SuggestSessionName\x12!.gru.v1.SuggestSessionNameRequest\x1a\".gru.v1.SuggestSessionNameResponse\x12I\n" +
 	"\fListProjects\x12\x1b.gru.v1.ListProjectsRequest\x1a\x1c.gru.v1.ListProjectsResponse\x12>\n" +
 	"\rUpdateProject\x12\x1c.gru.v1.UpdateProjectRequest\x1a\x0f.gru.v1.Project\x12I\n" +
-	"\fListProfiles\x12\x1b.gru.v1.ListProfilesRequest\x1a\x1c.gru.v1.ListProfilesResponse\x12I\n" +
+	"\fListProfiles\x12\x1b.gru.v1.ListProfilesRequest\x1a\x1c.gru.v1.ListProfilesResponse\x12L\n" +
+	"\rListArtifacts\x12\x1c.gru.v1.ListArtifactsRequest\x1a\x1d.gru.v1.ListArtifactsResponse\x12O\n" +
+	"\x0eDeleteArtifact\x12\x1d.gru.v1.DeleteArtifactRequest\x1a\x1e.gru.v1.DeleteArtifactResponse\x12D\n" +
+	"\x0eAddSessionLink\x12\x1d.gru.v1.AddSessionLinkRequest\x1a\x13.gru.v1.SessionLink\x12U\n" +
+	"\x10ListSessionLinks\x12\x1f.gru.v1.ListSessionLinksRequest\x1a .gru.v1.ListSessionLinksResponse\x12X\n" +
+	"\x11DeleteSessionLink\x12 .gru.v1.DeleteSessionLinkRequest\x1a!.gru.v1.DeleteSessionLinkResponse\x12I\n" +
 	"\x0fSubscribeEvents\x12\x1e.gru.v1.SubscribeEventsRequest\x1a\x14.gru.v1.SessionEvent0\x01B\x7f\n" +
 	"\n" +
 	"com.gru.v1B\bGruProtoP\x01Z.github.com/dakshjotwani/gru/proto/gru/v1;gruv1\xa2\x02\x03GXX\xaa\x02\x06Gru.V1\xca\x02\x06Gru\\V1\xe2\x02\x12Gru\\V1\\GPBMetadata\xea\x02\aGru::V1b\x06proto3"
@@ -1638,7 +2294,7 @@ func file_gru_v1_gru_proto_rawDescGZIP() []byte {
 }
 
 var file_gru_v1_gru_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_gru_v1_gru_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_gru_v1_gru_proto_goTypes = []any{
 	(SessionStatus)(0),                 // 0: gru.v1.SessionStatus
 	(*Session)(nil),                    // 1: gru.v1.Session
@@ -1666,49 +2322,74 @@ var file_gru_v1_gru_proto_goTypes = []any{
 	(*SubscribeEventsRequest)(nil),     // 23: gru.v1.SubscribeEventsRequest
 	(*SuggestSessionNameRequest)(nil),  // 24: gru.v1.SuggestSessionNameRequest
 	(*SuggestSessionNameResponse)(nil), // 25: gru.v1.SuggestSessionNameResponse
-	(*timestamppb.Timestamp)(nil),      // 26: google.protobuf.Timestamp
+	(*Artifact)(nil),                   // 26: gru.v1.Artifact
+	(*ListArtifactsRequest)(nil),       // 27: gru.v1.ListArtifactsRequest
+	(*ListArtifactsResponse)(nil),      // 28: gru.v1.ListArtifactsResponse
+	(*DeleteArtifactRequest)(nil),      // 29: gru.v1.DeleteArtifactRequest
+	(*DeleteArtifactResponse)(nil),     // 30: gru.v1.DeleteArtifactResponse
+	(*SessionLink)(nil),                // 31: gru.v1.SessionLink
+	(*AddSessionLinkRequest)(nil),      // 32: gru.v1.AddSessionLinkRequest
+	(*ListSessionLinksRequest)(nil),    // 33: gru.v1.ListSessionLinksRequest
+	(*ListSessionLinksResponse)(nil),   // 34: gru.v1.ListSessionLinksResponse
+	(*DeleteSessionLinkRequest)(nil),   // 35: gru.v1.DeleteSessionLinkRequest
+	(*DeleteSessionLinkResponse)(nil),  // 36: gru.v1.DeleteSessionLinkResponse
+	(*timestamppb.Timestamp)(nil),      // 37: google.protobuf.Timestamp
 }
 var file_gru_v1_gru_proto_depIdxs = []int32{
 	0,  // 0: gru.v1.Session.status:type_name -> gru.v1.SessionStatus
-	26, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
-	26, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
-	26, // 3: gru.v1.Session.last_event_at:type_name -> google.protobuf.Timestamp
-	26, // 4: gru.v1.Project.created_at:type_name -> google.protobuf.Timestamp
-	26, // 5: gru.v1.SessionEvent.timestamp:type_name -> google.protobuf.Timestamp
+	37, // 1: gru.v1.Session.started_at:type_name -> google.protobuf.Timestamp
+	37, // 2: gru.v1.Session.ended_at:type_name -> google.protobuf.Timestamp
+	37, // 3: gru.v1.Session.last_event_at:type_name -> google.protobuf.Timestamp
+	37, // 4: gru.v1.Project.created_at:type_name -> google.protobuf.Timestamp
+	37, // 5: gru.v1.SessionEvent.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 6: gru.v1.ListSessionsRequest.status:type_name -> gru.v1.SessionStatus
 	1,  // 7: gru.v1.ListSessionsResponse.sessions:type_name -> gru.v1.Session
 	1,  // 8: gru.v1.LaunchSessionResponse.session:type_name -> gru.v1.Session
 	2,  // 9: gru.v1.ListProjectsResponse.projects:type_name -> gru.v1.Project
 	18, // 10: gru.v1.ListProfilesResponse.profiles:type_name -> gru.v1.AgentProfile
-	4,  // 11: gru.v1.GruService.ListSessions:input_type -> gru.v1.ListSessionsRequest
-	6,  // 12: gru.v1.GruService.GetSession:input_type -> gru.v1.GetSessionRequest
-	7,  // 13: gru.v1.GruService.LaunchSession:input_type -> gru.v1.LaunchSessionRequest
-	9,  // 14: gru.v1.GruService.KillSession:input_type -> gru.v1.KillSessionRequest
-	11, // 15: gru.v1.GruService.DeleteSession:input_type -> gru.v1.DeleteSessionRequest
-	13, // 16: gru.v1.GruService.PruneSessions:input_type -> gru.v1.PruneSessionsRequest
-	21, // 17: gru.v1.GruService.SendInput:input_type -> gru.v1.SendInputRequest
-	24, // 18: gru.v1.GruService.SuggestSessionName:input_type -> gru.v1.SuggestSessionNameRequest
-	15, // 19: gru.v1.GruService.ListProjects:input_type -> gru.v1.ListProjectsRequest
-	17, // 20: gru.v1.GruService.UpdateProject:input_type -> gru.v1.UpdateProjectRequest
-	19, // 21: gru.v1.GruService.ListProfiles:input_type -> gru.v1.ListProfilesRequest
-	23, // 22: gru.v1.GruService.SubscribeEvents:input_type -> gru.v1.SubscribeEventsRequest
-	5,  // 23: gru.v1.GruService.ListSessions:output_type -> gru.v1.ListSessionsResponse
-	1,  // 24: gru.v1.GruService.GetSession:output_type -> gru.v1.Session
-	8,  // 25: gru.v1.GruService.LaunchSession:output_type -> gru.v1.LaunchSessionResponse
-	10, // 26: gru.v1.GruService.KillSession:output_type -> gru.v1.KillSessionResponse
-	12, // 27: gru.v1.GruService.DeleteSession:output_type -> gru.v1.DeleteSessionResponse
-	14, // 28: gru.v1.GruService.PruneSessions:output_type -> gru.v1.PruneSessionsResponse
-	22, // 29: gru.v1.GruService.SendInput:output_type -> gru.v1.SendInputResponse
-	25, // 30: gru.v1.GruService.SuggestSessionName:output_type -> gru.v1.SuggestSessionNameResponse
-	16, // 31: gru.v1.GruService.ListProjects:output_type -> gru.v1.ListProjectsResponse
-	2,  // 32: gru.v1.GruService.UpdateProject:output_type -> gru.v1.Project
-	20, // 33: gru.v1.GruService.ListProfiles:output_type -> gru.v1.ListProfilesResponse
-	3,  // 34: gru.v1.GruService.SubscribeEvents:output_type -> gru.v1.SessionEvent
-	23, // [23:35] is the sub-list for method output_type
-	11, // [11:23] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	37, // 11: gru.v1.Artifact.created_at:type_name -> google.protobuf.Timestamp
+	26, // 12: gru.v1.ListArtifactsResponse.artifacts:type_name -> gru.v1.Artifact
+	37, // 13: gru.v1.SessionLink.created_at:type_name -> google.protobuf.Timestamp
+	31, // 14: gru.v1.ListSessionLinksResponse.links:type_name -> gru.v1.SessionLink
+	4,  // 15: gru.v1.GruService.ListSessions:input_type -> gru.v1.ListSessionsRequest
+	6,  // 16: gru.v1.GruService.GetSession:input_type -> gru.v1.GetSessionRequest
+	7,  // 17: gru.v1.GruService.LaunchSession:input_type -> gru.v1.LaunchSessionRequest
+	9,  // 18: gru.v1.GruService.KillSession:input_type -> gru.v1.KillSessionRequest
+	11, // 19: gru.v1.GruService.DeleteSession:input_type -> gru.v1.DeleteSessionRequest
+	13, // 20: gru.v1.GruService.PruneSessions:input_type -> gru.v1.PruneSessionsRequest
+	21, // 21: gru.v1.GruService.SendInput:input_type -> gru.v1.SendInputRequest
+	24, // 22: gru.v1.GruService.SuggestSessionName:input_type -> gru.v1.SuggestSessionNameRequest
+	15, // 23: gru.v1.GruService.ListProjects:input_type -> gru.v1.ListProjectsRequest
+	17, // 24: gru.v1.GruService.UpdateProject:input_type -> gru.v1.UpdateProjectRequest
+	19, // 25: gru.v1.GruService.ListProfiles:input_type -> gru.v1.ListProfilesRequest
+	27, // 26: gru.v1.GruService.ListArtifacts:input_type -> gru.v1.ListArtifactsRequest
+	29, // 27: gru.v1.GruService.DeleteArtifact:input_type -> gru.v1.DeleteArtifactRequest
+	32, // 28: gru.v1.GruService.AddSessionLink:input_type -> gru.v1.AddSessionLinkRequest
+	33, // 29: gru.v1.GruService.ListSessionLinks:input_type -> gru.v1.ListSessionLinksRequest
+	35, // 30: gru.v1.GruService.DeleteSessionLink:input_type -> gru.v1.DeleteSessionLinkRequest
+	23, // 31: gru.v1.GruService.SubscribeEvents:input_type -> gru.v1.SubscribeEventsRequest
+	5,  // 32: gru.v1.GruService.ListSessions:output_type -> gru.v1.ListSessionsResponse
+	1,  // 33: gru.v1.GruService.GetSession:output_type -> gru.v1.Session
+	8,  // 34: gru.v1.GruService.LaunchSession:output_type -> gru.v1.LaunchSessionResponse
+	10, // 35: gru.v1.GruService.KillSession:output_type -> gru.v1.KillSessionResponse
+	12, // 36: gru.v1.GruService.DeleteSession:output_type -> gru.v1.DeleteSessionResponse
+	14, // 37: gru.v1.GruService.PruneSessions:output_type -> gru.v1.PruneSessionsResponse
+	22, // 38: gru.v1.GruService.SendInput:output_type -> gru.v1.SendInputResponse
+	25, // 39: gru.v1.GruService.SuggestSessionName:output_type -> gru.v1.SuggestSessionNameResponse
+	16, // 40: gru.v1.GruService.ListProjects:output_type -> gru.v1.ListProjectsResponse
+	2,  // 41: gru.v1.GruService.UpdateProject:output_type -> gru.v1.Project
+	20, // 42: gru.v1.GruService.ListProfiles:output_type -> gru.v1.ListProfilesResponse
+	28, // 43: gru.v1.GruService.ListArtifacts:output_type -> gru.v1.ListArtifactsResponse
+	30, // 44: gru.v1.GruService.DeleteArtifact:output_type -> gru.v1.DeleteArtifactResponse
+	31, // 45: gru.v1.GruService.AddSessionLink:output_type -> gru.v1.SessionLink
+	34, // 46: gru.v1.GruService.ListSessionLinks:output_type -> gru.v1.ListSessionLinksResponse
+	36, // 47: gru.v1.GruService.DeleteSessionLink:output_type -> gru.v1.DeleteSessionLinkResponse
+	3,  // 48: gru.v1.GruService.SubscribeEvents:output_type -> gru.v1.SessionEvent
+	32, // [32:49] is the sub-list for method output_type
+	15, // [15:32] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_gru_v1_gru_proto_init() }
@@ -1722,7 +2403,7 @@ func file_gru_v1_gru_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gru_v1_gru_proto_rawDesc), len(file_gru_v1_gru_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   25,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
