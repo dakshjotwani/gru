@@ -1,8 +1,10 @@
 # State Pipeline — Design / Research Spec
 
-**Date:** 2026-04-24
+**Date:** 2026-04-24 (rev 2: 2026-04-25)
 **Status:** Draft (research + design, no implementation)
 **Scope:** Reliability of the session-state pipeline that feeds the web UI's session list, priority queue, and push-notification system. Covers ingestion → store → publisher → SSE → frontend. Out of scope: launch UX, attention scoring weights, the underlying tmux/env adapter contract.
+
+**Revision 2 (2026-04-25):** Rewrote §3 to lead with a **transcript-tailer** architecture after discovering that Claude Code already maintains a per-session, real-time, append-only event log at `~/.claude/projects/<hash>/<session-id>.jsonl`. That file gives us the same properties we were going to build (durable append-only log, monotonic position via byte offset, replay-on-reconnect) with no new infrastructure. The previous SQLite-outbox design from rev 1 is preserved as a rejected alternative. §1 audit and §2 reference systems are unchanged; §4 anti-patterns are lightly edited so they still apply to the new direction.
 
 ---
 
@@ -171,110 +173,211 @@ What to steal: the **mental model** — `session.status` and `attention_score` s
 
 Source: https://docs.temporal.io/workflow-execution/event
 
+### 2.7 Claude Code's per-session transcript JSONL — *the closest fit, and it's already running*
+
+Each Claude Code session continuously writes a real-time, append-only JSONL transcript to `~/.claude/projects/<project-hash>/<session-id>.jsonl`, with the path also handed to any configured `statusLine` script as `transcript_path`. Inspection of a live session's file (~7 MB, thousands of lines) shows the following entry types:
+
+| `type` (and `subtype` where present) | What it tells us |
+|---|---|
+| `assistant` (carries `message.stop_reason`: `end_turn` / `tool_use`) | Turn boundaries — `end_turn` ≈ idle, `tool_use` ≈ mid-tool |
+| `user` (with `tool_use_id` for tool results) | Tool result returned, pairs with the assistant `tool_use` |
+| `system` / `stop_hook_summary` | Every Stop-hook invocation, with `command`, `durationMs`, `hookErrors`, `preventedContinuation` — including Gru's own hook script's executions |
+| `system` / `turn_duration` | Per-turn timing |
+| `system` / `compact_boundary` | Context-compaction events |
+| `system` / `informational` | Misc system messages |
+| `permission-mode` | Current permission mode (`default` / `acceptEdits` / `plan` / ...) |
+| `last-prompt` | Most recent user prompt verbatim |
+| `file-history-snapshot`, `worktree-state`, `attachment`, `queue-operation` | Misc context Claude tracks |
+
+**Properties:**
+
+- **Durable by construction.** Claude flushes lines as events complete. Independent of any network call we'd make.
+- **Append-only with stable byte offsets.** The byte offset *is* a per-session resource version: equivalent to K8s `resourceVersion` (§2.1), Redis `last-delivered-id` (§2.5), and SSE `Last-Event-ID` (§2.6) — for free.
+- **Naturally resumable.** Restart the server, re-`lseek` to the last-known offset, replay forward.
+- **Per-session totally ordered.** No global ordering across sessions, but we don't need one — the UI is already a session-keyed view.
+- **No backpressure / loss surface.** Nothing between Claude and disk that can drop events.
+- **Documented for external consumption.** The `transcript_path` is part of the published `statusLine` contract.
+
+**The one gap** — explicit "blocked on permission prompt" signals are *not* in the transcript. The closest signal is "assistant turn ended with `stop_reason: tool_use` and the matching `user` tool-result has not yet arrived," but that's also the signature of a long-running tool. The `Notification` hook is the only definitive source for permission prompts.
+
+**Footprint:** zero new processes, zero new dependencies. The producer (Claude Code) is already writing this file whether we tail it or not.
+
+**Fit for Gru:** dominant. The K8s + outbox + SSE design from §2.1–§2.6 was a sketch of what we'd have built to provide these properties. They're already provided.
+
+Sources:
+- https://code.claude.com/docs/en/statusline
+- https://gist.github.com/AKCodez/ffb420ba6a7662b5c3dda2edce7783de (community field reference)
+- https://github.com/withLinda/claude-JSONL-browser (community transcript parser)
+
 ---
 
 ## 3. Recommended direction
 
-**Thesis:** make SQLite the single source of truth for **both** session state and the event feed, give every event a monotonic `seq`, and replace the fire-and-forget publisher with an outbox-tailing informer that speaks SSE-with-`Last-Event-ID` to the browser. Keep the supervisor, but demote it to a *liveness probe + resync trigger,* not an authoritative writer of session status.
+**Thesis:** Stop trying to build a durable event log and pretend Gru is the producer. **Claude Code is already producing one — the per-session JSONL transcript.** Make Gru a *tailer* of those files. The hook → HTTP → outbox → publisher chain reduces to: tailer goroutine per session → SQLite (derived state only) → existing pub/sub → frontend. The byte offset of each transcript is the per-session resume token.
 
-### 3.1 Data model
+There is one capability the JSONL doesn't expose — explicit "blocked on permission" notifications — so we keep exactly **one** hook (`Notification`), and we wire it through a *local file* rather than HTTP. End state: zero in-band network calls in the producer path. The producer can't lose events because it's not making any.
 
-Add to the existing `events` table:
+### 3.1 Architecture
 
-- `seq INTEGER PRIMARY KEY AUTOINCREMENT` — monotonic across the whole DB.
-- An index on `(session_id, seq)` for per-session replay and bounded retention scans.
+```
+┌──────────────────────────────────────────────────────────┐
+│  Claude Code (in tmux pane)                              │
+│   ├─ writes ~/.claude/projects/<hash>/<sid>.jsonl        │ ◀── source of truth (durable, append-only)
+│   └─ Notification hook → appends ~/.gru/notify/<sid>.jsonl│ ◀── only signal not in transcript
+└────────────────────────┬─────────────────────────────────┘
+                         │ fsnotify (or 250 ms poll fallback)
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│  Gru server                                              │
+│   ├─ per-session Tailer goroutine                        │
+│   │     parses new JSONL lines from last byte offset,    │
+│   │     applies state-derivation, writes to SQLite       │
+│   │     (sessions row + recent-events projection),       │
+│   │     signals publisher                                │
+│   ├─ Publisher: tails SQLite event projection by seq     │
+│   ├─ Supervisor: tmux liveness probe (no status writes)  │
+│   └─ gRPC SubscribeEvents: snapshot+stream with seq      │
+└────────────────────────┬─────────────────────────────────┘
+                         ▼
+                     React client
+```
 
-Demote `sessions.status` and `sessions.attention_score` to **derived materialized columns**:
+### 3.2 The Tailer (per-session goroutine)
 
-- They are kept up-to-date by the same transaction that inserts the event.
-- A periodic (and on-demand) job can rebuild them by folding the event log per session. If they ever disagree with the fold, the fold wins.
+For each non-terminal session, one goroutine:
 
-Add `sessions.last_event_seq INTEGER` so any reader can answer "is this row caught up to seq N yet?" cheaply.
+1. Looks up `transcript_path` and `transcript_offset` from the `sessions` row (these are persisted, see §3.3). On first launch of a session, `transcript_path` is resolved at session start by mapping `cwd` to Claude's project-hash directory and listing `*.jsonl` for the session's `claude_session_id`.
+2. Opens the file, `lseek`s to `transcript_offset`.
+3. Reads forward, parsing complete JSON lines (a partial trailing line is buffered until the next read).
+4. For each parsed line:
+   - Runs the **state-derivation function** (§3.4) which returns a tuple `(maybe_new_status, maybe_attention_delta, maybe_projected_event)`.
+   - In a single SQLite transaction: insert the projected event row (if any), update `sessions(status, attention_score, last_event_at, transcript_offset, claude_stop_reason, permission_mode)` to the new values.
+   - On commit, signals the publisher.
+5. Watches the file via `fsnotify`. If `fsnotify` is unavailable (rare), falls back to a 250 ms poll of `os.Stat`.
+6. Also reads `~/.gru/notify/<sid>.jsonl` (the permission hook's local file) as a second input source — same pattern, separate offset.
 
-### 3.2 Writer path (POST /events)
+A *single* control goroutine starts/stops these on session create/terminate (`SessionStart`/`SessionEnd`/`SessionCrash` derived state), and on Gru server startup re-spawns one per non-terminal row in `sessions`.
 
-Single transaction, in this order:
+**Rotation / compaction.** Claude does not rotate transcript files within a session (compaction is recorded inline as a `compact_boundary` line). If a session ID changes, that's a new session and a new file; nothing to handle. Defensive: if `Stat()` shows the file shrunk below `transcript_offset`, log loudly and re-derive from offset 0 — should never happen in practice.
 
-1. `INSERT INTO events (...) VALUES (...) RETURNING seq`.
-2. `UPDATE sessions SET status = ?, attention_score = ?, last_event_seq = ?, last_event_at = ? WHERE id = ?` — derived from the just-inserted event by a single shared status-derivation function.
-3. Commit.
-4. Signal the in-process publisher: "new seq available."
+### 3.3 SQLite — what stays, what goes
 
-Status derivation moves to **one place, server-side** (`internal/state` package or similar). The frontend stops deriving status from event types — it just reads `session.status` from snapshots and updates. This kills the dual-derivation drift class entirely.
+**Stays:** the `sessions` table, but with two new columns:
 
-Return `202` only **after** commit. (We are on a Mac mini; the per-event commit cost is fine. We are not optimizing for throughput.)
+- `transcript_path TEXT NOT NULL` — full path to Claude's JSONL file
+- `transcript_offset INTEGER NOT NULL DEFAULT 0` — byte offset of the next unread line
+- `notify_offset INTEGER NOT NULL DEFAULT 0` — same for the per-session notification file
+- `claude_stop_reason TEXT` — last seen `assistant.stop_reason` (`end_turn`, `tool_use`, etc.)
+- `permission_mode TEXT` — last seen `permission-mode` value
 
-### 3.3 Publisher (informer)
+**Stays, but downgraded:** an `events` table, retained as a **derived projection** for the UI's recent-events ring buffer (per-session). The tailer writes one row per *interesting* JSONL line — we ignore noise like `file-history-snapshot`. The events table is no longer authoritative; it can be dropped and rebuilt from the JSONL files at any time.
 
-Replace `internal/ingestion/Publisher` with a single goroutine that:
+- Add `seq INTEGER PRIMARY KEY AUTOINCREMENT` for the publisher's tail.
+- Add a unique constraint on `(session_id, transcript_offset)` so the tailer is idempotent if it crashes mid-batch.
 
-1. Maintains `tail_seq`.
-2. On signal *or* after a 250 ms timeout, runs `SELECT id, session_id, type, payload, ts, seq FROM events WHERE seq > ? ORDER BY seq`.
-3. Fans out each row to subscribers, advancing `tail_seq` as it goes.
-4. **Per-subscriber backpressure: if a subscriber's buffer would overflow, the publisher *closes that subscriber's connection.* It does not drop events.** The client's reconnect-with-`Last-Event-ID` machinery will pick up the slack from the durable log. This is the central reliability win.
+**Goes:** the `/events` HTTP endpoint, the in-memory attention engine's reliance on hook-call timing, the `gru-hook.sh` curl post.
 
-### 3.4 Wire protocol (SSE-style stream)
+### 3.4 State derivation — one place, server-side
 
-We can keep using gRPC `SubscribeEvents` for now, but the contract changes:
+A pure Go function, e.g. `internal/state/derive.go`:
 
-- The request takes an optional `since_seq`.
-- The response stream begins with **either** a snapshot (when `since_seq == 0`, or when `since_seq` is older than retention) **or** with replayed events from `seq > since_seq` to current head.
-- Each `SessionEvent` carries its `seq`. The client persists the highest `seq` it has seen.
-- On reconnect the client sends its last `seq` as `since_seq`. The server resumes losslessly from the outbox.
+```go
+func DeriveFromTranscriptLine(prev SessionState, line []byte) (next SessionState, projected *Event)
+```
 
-If we ever drop gRPC for raw SSE for the web client, the same fields map cleanly: `id: <seq>` on each event, `Last-Event-ID` on reconnect.
+Cases (sketch, not exhaustive):
 
-### 3.5 Snapshot semantics
+- `assistant` with `stop_reason == "end_turn"` → `status = idle`
+- `assistant` with `stop_reason == "tool_use"` → `status = running`, remember the tool_use_id(s)
+- `user` with matching `tool_use_id` → tool resolved; if all outstanding tool_use_ids resolved, status follows the next `assistant` line
+- `system / stop_hook_summary` → idle confirmation (and exposes Stop hook diagnostics for free)
+- `permission-mode` → update `permission_mode`; if it transitioned to `plan` from `default`, that's a useful UI signal
+- `last-prompt` → just record it for the dashboard's "what was this agent told to do" surface
 
-The current "snapshot then subscribe" race is fixed by reversing the order in the server's stream handler:
+Plus a *second* function consuming the notification file:
 
-1. Read current head `head_seq` from the publisher.
-2. Subscribe to the publisher's fan-out, buffered, starting from `head_seq + 1`.
-3. Read the snapshot of `sessions` at `head_seq` (transactionally; a `BEGIN; SELECT ...; SELECT MAX(seq) FROM events; COMMIT` to confirm).
-4. Send snapshot to the client.
-5. Pump live events from the buffered subscription onward.
+- Notification of `permission_prompt` → `status = needs_attention`, set `attention_score` to the configured "blocked on permission" weight. A subsequent `assistant` `tool_use` resolution clears it.
 
-Equivalent to the K8s `LIST + resourceVersion + WATCH` pattern.
+The frontend never re-derives status. It reads `sessions.status` and renders.
 
-### 3.6 Hook delivery reliability
+### 3.5 The one residual hook: Notification → local file
 
-Replace the fire-and-forget `curl -m 2 &` with:
+Replace the entire `gru-hook.sh` (which currently fires for all events) with a tiny script that runs **only** on the `Notification` hook event and **only writes to a local file**:
 
-- **Synchronous** post (Claude Code hooks already block the agent; we are not making that worse — a 2 s timeout is fine).
-- **Bounded retry** on connection failure / 5xx (e.g. 3 attempts, exponential backoff, total ≤ 5 s) — Claude Code hook timeouts are higher than this.
-- **Idempotency key** — a UUID generated client-side per hook invocation, sent as `X-Gru-Event-ID`. The server `INSERT OR IGNORE`s on this key. This makes retry safe at-least-once → effectively at-most-once-effect.
-- **On final failure, write a local fallback file** (`~/.gru/hooks/pending/<id>.json`) and the supervisor (see below) sweeps and re-POSTs.
+```bash
+#!/bin/bash
+# Append the hook payload to a per-session JSONL file. No network.
+SID=$(jq -r .session_id < "$1")  # or read via env / .gru/session-id
+mkdir -p "$HOME/.gru/notify"
+cat "$1" >> "$HOME/.gru/notify/$SID.jsonl"
+```
 
-This is the only place we add net-new server-side machinery: a pending-event sweeper. It costs ~30 lines and closes the silent-loss hole.
+Atomic-append on POSIX; the tailer reads it byte-offset-tracked, exactly like the transcript. **No retry logic needed because there is no failure mode.** If Gru is down, the file simply grows; on next start the tailer catches up.
 
-### 3.7 Supervisor — narrowed role
+This collapses the entire hook-reliability subproblem to a `>>` redirect.
 
-The supervisor today writes `sessions.status` directly. **Stop doing that.** It becomes:
+### 3.6 Wire protocol
 
-1. **Liveness probe.** Walks tmux windows, decides "is the pane alive?" Emits *events* (`session.crash`, `session.killed`) into the same outbox the hook pipeline uses. The state derivation function turns those into status — so there is exactly one writer of `sessions.status`.
-2. **Pending-hook sweeper.** Scans `~/.gru/hooks/pending/`, retries posts, deletes on success.
-3. **Resync trigger.** On a slow tick (e.g. 5 min), recomputes `attention_score` for all live sessions by folding the event log, and writes if it disagrees with the cached value. This catches any drift.
+`SubscribeEvents` keeps its current shape but its semantics tighten:
 
-### 3.8 Frontend
+- Request takes `since_seq` (server-wide event seq, from the events projection table).
+- Response begins with a **snapshot of `sessions`** at the current head seq, then streams events with `seq > head_seq`. The snapshot carries each session's `last_event_seq` so the client can detect which deltas it has already applied.
+- On reconnect the client sends its last seen `seq`. Server replays everything since.
+- Per-subscriber backpressure: **on overflow, close the connection.** The client reconnects with its last seen `seq` and the server replays from the events projection.
 
-- Remove the duplicate `applyEvent` status switch. Rely on `session.status` from the server.
-- On reconnect, replay-style: track highest `seq` seen, send it as `since_seq`. If the server replays events, run them through a *display-only* reducer (counts, ring buffer of recent events). State comes from the snapshot or the latest session-update event.
-- Notification trigger keys off the **server-derived** transition, which we add as an explicit `session.transition` event (`from`, `to`) emitted by the writer when status changes. Client doesn't need to diff state itself.
-- Make snapshot merges **conditional on `last_event_seq`**: if an incoming snapshot has a lower `last_event_seq` for a session than the client currently holds, ignore it. This kills the stale-snapshot regression class.
+If we drop gRPC for raw SSE later, the same shape maps onto `id:` lines + `Last-Event-ID`. No protocol change required.
 
-### 3.9 Build vs. buy
+### 3.7 Snapshot semantics
+
+Same fix as before — subscribe before snapshotting, with the snapshot pinned to `head_seq`. K8s `LIST + WATCH`, just with the events projection as the watch target instead of an outbox.
+
+### 3.8 Supervisor — narrowed further
+
+The supervisor's role shrinks again:
+
+1. **Tmux liveness probe.** Walks tmux windows. When a pane disappears, writes `claude_pid_exit` event into the events projection — derivation function turns that into `status = errored` or `status = killed` based on context.
+2. **Tailer health watchdog.** If a Tailer goroutine has not advanced its offset in N minutes despite the file growing, restart it.
+3. **No status writes.** Status is exclusively the tailer's output.
+4. **Attention score recompute.** On a slow tick (5 min), folds the per-session events projection to recompute `attention_score`; corrects drift if any.
+
+The pending-hook sweeper from rev 1 is gone — there are no pending hooks.
+
+### 3.9 Frontend
+
+Largely unchanged from rev 1's prescription:
+
+- Drop the client-side `applyEvent` status switch. Trust `session.status` from the server.
+- Track highest `seq` seen; resume on reconnect via `since_seq`.
+- Notifications fire on server-emitted `session.transition` events (`from` → `to`), not on diff-the-map.
+- Snapshot merges are guarded by `last_event_seq` to prevent stale-snapshot regressions.
+
+### 3.10 Build vs. buy
 
 | Component | Decision | Rationale |
 |---|---|---|
-| Durable event log | **Build on SQLite** (outbox pattern + `seq`) | We already have SQLite, WAL, and migrations. Adding a column + index is cheaper than introducing JetStream/Redis. |
-| Pub/sub fan-out | **Build** (~80 lines, single goroutine, tails outbox) | Trivial at our scale; using a third-party adds operational surface. |
-| Reconnect protocol | **Adopt** SSE / `Last-Event-ID` semantics | Standardized, browser does the work; same shape is easy in gRPC stream too. |
-| Idempotency / dedupe | **Build** (`INSERT OR IGNORE` on `event_id`) | One unique constraint, no library needed. |
-| Backpressure | **Build** (close-on-overflow + replay-on-reconnect) | The whole reliability gain comes from this; can't be outsourced. |
-| State derivation | **Build, centralize** | Gru-specific business logic. Just don't write it twice. |
-| CDC / WAL tail | **Skip** (`update_hook` is intra-process; cross-process tailing is solved by the outbox poll + signal) | Don't need it. |
-| JetStream / Redis Streams | **Skip** | Single-machine, 5–20 sessions. New daemon = new ops cost for zero capability we can't get from SQLite. |
-| Temporal | **Skip** | Massive overkill. Borrow the mental model only. |
+| Durable per-session event log | **Reuse Claude's JSONL transcript** | Already exists, already durable, already real-time. We were going to build SQLite-backed equivalent — don't. |
+| Permission-prompt signal | **Build** (one Notification hook, local-file append) | Not in the transcript. Trivially simple — `>>` redirect. |
+| Tailer | **Build** (per-session goroutine, fsnotify + offset tracking) | ~150 lines. Standard fare. |
+| Pub/sub fan-out | **Build** (single goroutine, tails events projection by `seq`) | Same as rev 1; same simplicity. |
+| Reconnect protocol | **Adopt** SSE / `Last-Event-ID` semantics | Same as rev 1. |
+| Backpressure | **Build** (close-on-overflow + replay) | Same as rev 1; the central reliability win. |
+| State derivation | **Build, centralize, server-side** | Gru-specific business logic; one source of truth. |
+| Outbox table | **Skip** | Replaced by Claude's per-session JSONL. The `events` table survives only as a UI projection. |
+| HTTP `/events` endpoint | **Delete** | Producer no longer makes network calls (except to its own filesystem). |
+| `gru-hook.sh` (multi-event) | **Replace** with tiny Notification-only local-file script | Single hook, no curl, no retry. |
+| JetStream / Redis / Temporal | **Skip** | Same as rev 1. |
+
+Net code surface vs. today: smaller. We delete the `/events` ingestion handler and most of `gru-hook.sh`; we add one tailer package and a derivation function. The publisher and frontend changes are the same in either design.
+
+### 3.11 Rejected alternative — SQLite outbox + retried HTTP hooks (rev 1)
+
+The rev-1 design proposed: keep the hook → HTTP → ingestion handler path, but tighten it (synchronous post, idempotency keys, retries, local fallback file for sweeping), make a single SQL transaction write both the event and the derived state, give every event a monotonic `seq` (turning the events table into a transactional outbox), and replace the in-memory publisher with an outbox-tailing informer.
+
+**Why rejected as the primary design:** it builds, in Gru, all the properties Claude Code already provides per-session for free. The seq column duplicates what byte offsets already are; the outbox duplicates what the JSONL already is; the retry/idempotency machinery exists only because we made the producer call us over the network. Removing the network removes the entire failure class — and removing the failure class removes the machinery built to defend against it. The transcript-tailer design is strictly smaller and strictly more robust.
+
+**What rev 1 still gets right and we keep:** single state writer, server-side state derivation, snapshot-after-subscribe with a resource version, close-on-overflow backpressure with reconnect-replay, snapshot regression guard via `last_event_seq`, supervisor demoted away from authoritative writes, anti-pattern list. Most of §3 in rev 1 was correct in *spirit* — it just identified the wrong substrate.
+
+**When rev 1 would beat the tailer design:** if Anthropic ever changes the transcript format incompatibly without notice, or removes/relocates `transcript_path` from the statusLine contract, the tailer stops working. The outbox design is independent of Claude's internals. We accept the format-coupling risk on the bet that (a) it's a published contract and (b) re-targeting the tailer to a new format is days of work, not a foundational redo.
 
 ---
 
@@ -282,9 +385,9 @@ The supervisor today writes `sessions.status` directly. **Stop doing that.** It 
 
 1. **Don't drop slow subscribers silently.** The current `select { case ch <- evt: default: }` in `Publisher.Publish` is the single biggest source of UI lag. If a buffer overflows, **disconnect the subscriber and let it resume from the durable log.** Never drop and pretend.
 
-2. **Don't make `UpdateSessionLastEvent` failure non-fatal.** Today the handler logs and continues, leaving event-log and session-row inconsistent. Either roll it into one transaction, or treat its failure as a hard 5xx so the hook retries.
+2. **Don't have a "non-fatal" write that affects state correctness.** Today's `UpdateSessionLastEvent` failure is logged and ignored, leaving event-log and session-row inconsistent. In the new design the same temptation will appear in the tailer's commit path — resist it. Any write that determines what the UI sees must be all-or-nothing: succeed and advance the offset, or fail and retry from the same offset.
 
-3. **Don't fire-and-forget hooks.** `curl -m 2 &` looks cheap but it makes hook delivery probabilistic. The whole pipeline is downstream of this — if it's not reliable, nothing else can be.
+3. **Don't put the producer on the network.** `curl -m 2 &` looks cheap but it makes hook delivery probabilistic and gives you a whole subsystem (retries, idempotency keys, sweeper) just to fight the failure mode you introduced. The new design has the producer write to its own filesystem and the consumer tail it; nothing in between can fail.
 
 4. **Don't snapshot, then subscribe.** The unguarded gap between a snapshot read and the publisher subscription is silent event loss. Always subscribe first, then read the snapshot at a known `seq`, and let the client deduplicate by `seq`.
 
@@ -300,14 +403,20 @@ The supervisor today writes `sessions.status` directly. **Stop doing that.** It 
 
 10. **Don't treat the SSE/gRPC stream as a delivery guarantee.** The stream is a transport, not a queue. The durable log is the queue. Always combine the two with a `seq` resume token.
 
+11. **Don't re-derive state on the client.** Both the rev-1 and rev-2 designs centralize state derivation server-side for the same reason: any time the same finite-state machine lives in two languages, it drifts. Render dumb.
+
+12. **Don't tail without persisting the offset transactionally with the state update.** If the offset advances but the state write fails, you've silently dropped an event — the failure mode that motivates this whole spec, just relocated. One transaction, both writes, or neither.
+
 ---
 
 ## Open questions
 
-- **Retention.** How long do we keep events? Proposal: 7 days or 100 k rows, whichever is smaller. Old enough that any reasonable client reconnect can replay; bounded enough to keep the DB compact.
-- **Schema migration vs. nuke.** Gru is single-machine and we've been comfortable nuking the DB. The outbox + `seq` migration is small enough to do in-place, but nuking is simpler. Default: nuke.
-- **gRPC vs. raw SSE.** The browser's free `EventSource` reconnect is attractive. gRPC-web doesn't expose the same auto-reconnect-with-`Last-Event-ID` semantics ergonomically. Worth prototyping both.
-- **Per-session attention recomputation cost.** Folding the entire event log for `attention_score` is fine at 5–20 sessions × thousands of events. If this ever becomes hot, snapshot the attention state with a `last_seq` and resume the fold from there.
+- **Resolving `transcript_path` at session launch.** We need to map a session's `cwd` (and Claude's session ID) to the project-hash directory under `~/.claude/projects/`. Worth a 30-line probe to confirm Anthropic's hashing scheme is stable; alternatives are running a one-shot statusLine script ourselves to ask Claude for the path (the contract publishes it), or watching `~/.claude/projects/` for new files.
+- **fsnotify on macOS.** The `fsnotify` Go library uses `kqueue` on Darwin. Reliability across editor save patterns isn't a concern for us (Claude is the only writer), but worth a brief soak test. Polling fallback at 250 ms is a sufficient backstop for 20 sessions.
+- **Detecting a stuck Claude process.** With no hooks firing and the JSONL not growing, "Claude is wedged" looks identical to "Claude is idle." The supervisor's tmux-pane probe + the existing staleness ramp cover this; no new mechanism needed, but we should confirm the heuristic still feels right after the rewrite.
+- **Backfill on first run / migration.** When we deploy the tailer for an existing session that's already been running, do we re-derive from offset 0 or trust whatever's currently in `sessions`? Default: re-derive, since the JSONL is canonical and the session row may be wrong (which is the whole point).
+- **Events-projection retention.** The events table is now derived. Proposal: keep last 24 h or 10 k rows per session. Older state can be re-derived from the JSONL on demand if a UI ever wants deep history.
+- **gRPC vs. raw SSE.** Same question as rev 1 — `EventSource` reconnect-with-`Last-Event-ID` is free in the browser; gRPC-web is awkward for that. Worth prototyping.
 
 ## Out of scope
 
@@ -330,3 +439,7 @@ The supervisor today writes `sessions.status` directly. **Stop doing that.** It 
 - Temporal — Events and Event History: https://docs.temporal.io/workflow-execution/event
 - WHATWG HTML, Server-sent events: https://html.spec.whatwg.org/multipage/server-sent-events.html
 - MDN — Using server-sent events: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
+- Claude Code — Customize your status line (publishes `transcript_path`): https://code.claude.com/docs/en/statusline
+- Claude Code statusline JSON field reference (community gist): https://gist.github.com/AKCodez/ffb420ba6a7662b5c3dda2edce7783de
+- Claude Code JSONL transcript browser (community parser, format reference): https://github.com/withLinda/claude-JSONL-browser
+- fsnotify (Go cross-platform file events): https://github.com/fsnotify/fsnotify
