@@ -15,7 +15,7 @@ func TestRunInit_CreatesHookScriptAndSettings(t *testing.T) {
 	// Point hookSrcPath to the actual hook script in the repo root.
 	// In tests we override via the package-level variable hookScriptSrc.
 	origSrc := hookScriptSrc
-	hookScriptSrc = filepath.Join(repoRoot(), "hooks", "claude-code.sh")
+	hookScriptSrc = filepath.Join(repoRoot(), "hooks", "claude-notify.sh")
 	defer func() { hookScriptSrc = origSrc }()
 
 	if err := runInit([]string{projectDir}); err != nil {
@@ -25,7 +25,7 @@ func TestRunInit_CreatesHookScriptAndSettings(t *testing.T) {
 	// Hook script must be copied to the global location under $HOME/.gru/hooks/.
 	// (Worktree sessions create their own .claude/, bypassing project-level settings,
 	// so the hook must live in a stable global location — see init.go.)
-	hookDst := filepath.Join(fakeHome, ".gru", "hooks", "gru-hook.sh")
+	hookDst := filepath.Join(fakeHome, ".gru", "hooks", "claude-notify.sh")
 	info, err := os.Stat(hookDst)
 	if err != nil {
 		t.Fatalf("hook script not created at %s: %v", hookDst, err)
@@ -51,11 +51,19 @@ func TestRunInit_CreatesHookScriptAndSettings(t *testing.T) {
 		t.Fatal("settings.json missing 'hooks' object")
 	}
 
-	expected := []string{"PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "Stop", "SubagentStart", "SubagentStop"}
+	// Rev-2 installs only the Notification hook. Everything else is
+	// derived by tailing Claude's transcript JSONL.
+	expected := []string{"Notification"}
 	for _, key := range expected {
 		if _, exists := hooks[key]; !exists {
 			t.Errorf("hooks missing key %q", key)
 		}
+	}
+	if _, ok := hooks["PreToolUse"]; ok {
+		t.Errorf("rev 2 must NOT install the PreToolUse hook (transcript-tailer covers it)")
+	}
+	if _, ok := hooks["Stop"]; ok {
+		t.Errorf("rev 2 must NOT install the Stop hook (transcript-tailer covers it)")
 	}
 }
 
@@ -73,7 +81,7 @@ func TestRunInit_MergesExistingSettings(t *testing.T) {
 	}
 
 	origSrc := hookScriptSrc
-	hookScriptSrc = filepath.Join(repoRoot(), "hooks", "claude-code.sh")
+	hookScriptSrc = filepath.Join(repoRoot(), "hooks", "claude-notify.sh")
 	defer func() { hookScriptSrc = origSrc }()
 
 	if err := runInit([]string{projectDir}); err != nil {
@@ -90,8 +98,8 @@ func TestRunInit_MergesExistingSettings(t *testing.T) {
 	}
 
 	hooks := settings["hooks"].(map[string]interface{})
-	// All 7 hook types must be present.
-	for _, key := range []string{"PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "Stop", "SubagentStart", "SubagentStop"} {
+	// Rev 2: only Notification is installed.
+	for _, key := range []string{"Notification"} {
 		if _, exists := hooks[key]; !exists {
 			t.Errorf("hooks missing key %q after merge", key)
 		}

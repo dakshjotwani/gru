@@ -17,26 +17,19 @@ var hookScriptSrc = func() string {
 	// At runtime the binary is built from the repo root; at test time repoRoot() is used.
 	dir, _ := os.Executable()
 	root := filepath.Dir(filepath.Dir(dir)) // binary lives in bin/, go up twice
-	candidate := filepath.Join(root, "hooks", "claude-code.sh")
+	candidate := filepath.Join(root, "hooks", "claude-notify.sh")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
 	}
 	// Fallback: relative to working directory (useful when running directly with `go run`).
-	return filepath.Join("hooks", "claude-code.sh")
+	return filepath.Join("hooks", "claude-notify.sh")
 }()
 
-// hookTypes lists every Claude Code hook event that Gru intercepts.
-// Keep this in sync with the mapEventType function in internal/adapter/claude/normalizer.go.
+// hookTypes is the rev-2 hook list: only Notification. The transcript
+// tailer covers everything else by reading Claude's per-session JSONL.
+// See docs/superpowers/specs/2026-04-24-state-pipeline-design.md.
 var hookTypes = []string{
-	"SessionStart",        // Claude Code session started → running
-	"PreToolUse",          // Tool about to run → running
-	"PostToolUse",         // Tool completed successfully
-	"PostToolUseFailure",  // Tool failed
-	"Notification",        // permission_prompt/elicitation_dialog → needs_attention; others informational
-	"Stop",                // Turn complete, Claude waiting for input → idle
-	"StopFailure",         // API error ended the turn → errored
-	"SubagentStart",       // Subagent spawned
-	"SubagentStop",        // Subagent finished
+	"Notification",
 }
 
 // runInit implements the `gru init <project-dir>` subcommand.
@@ -54,7 +47,8 @@ func runInit(args []string) error {
 	if err != nil {
 		return fmt.Errorf("get home dir: %w", err)
 	}
-	globalHookDst := filepath.Join(homeDir, ".gru", "hooks", "gru-hook.sh")
+	// Single residual hook (rev 2): claude-notify.sh
+	globalHookDst := filepath.Join(homeDir, ".gru", "hooks", "claude-notify.sh")
 	if err := os.MkdirAll(filepath.Dir(globalHookDst), 0o755); err != nil {
 		return fmt.Errorf("create ~/.gru/hooks dir: %w", err)
 	}
@@ -117,23 +111,8 @@ func mergeHookSettings(settingsPath, hookScript string) error {
 			"hooks":   []interface{}{hookEntry},
 		},
 	}
-	// SessionStart requires a specific source matcher.
-	sessionStartBlock := []interface{}{
-		map[string]interface{}{
-			"matcher": "startup",
-			"hooks":   []interface{}{hookEntry},
-		},
-		map[string]interface{}{
-			"matcher": "resume",
-			"hooks":   []interface{}{hookEntry},
-		},
-	}
 	for _, ht := range hookTypes {
-		if ht == "SessionStart" {
-			hooks[ht] = sessionStartBlock
-		} else {
-			hooks[ht] = hookBlock
-		}
+		hooks[ht] = hookBlock
 	}
 	settings["hooks"] = hooks
 
