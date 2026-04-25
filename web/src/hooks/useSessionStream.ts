@@ -309,6 +309,10 @@ export function useSessionStream(projectId?: string, projects?: Project[]): UseS
   // Tracks the highest seq for which a needs_attention notification has fired,
   // keyed by session ID. Prevents re-firing on every render when the
   // session.transition is still the last item in the ring buffer.
+  // Invariant: needs_attention transitions are always committed to the events
+  // table by the tailer and carry a real non-zero seq. Synthetic transitions
+  // (e.g. session.killed from KillSession) have seq=0 and are never
+  // needs_attention, so the seq <= 0n guard never suppresses real notifications.
   const notifiedSeqRef = useRef<Map<string, bigint>>(new Map());
 
   // Notification trigger: fire on explicit server-emitted

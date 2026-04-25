@@ -327,17 +327,20 @@ func (s *Service) KillSession(
 		}
 	}
 
+	// Stop the tailer BEFORE writing the DB status. RemoveSession blocks
+	// until the tailer goroutine exits, so no derivation can overwrite
+	// the "killed" row after this point (eliminates the killed→errored
+	// race from a concurrent claude_pid_exit replay).
+	if s.tailerMgr != nil {
+		s.tailerMgr.RemoveSession(sessionID)
+	}
+
 	_, err = s.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
 		Status: "killed",
 		ID:     sessionID,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("update status: %w", err))
-	}
-
-	// Stop the tailer — terminal sessions no longer drive state.
-	if s.tailerMgr != nil {
-		s.tailerMgr.RemoveSession(sessionID)
 	}
 
 	transPayload, _ := json.Marshal(map[string]string{

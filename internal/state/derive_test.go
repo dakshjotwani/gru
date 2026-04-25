@@ -274,6 +274,17 @@ func TestDerive_supervisorPidExitSkipsCompleted(t *testing.T) {
 	}
 }
 
+func TestDerive_supervisorPidExitStartingBecomesErrored(t *testing.T) {
+	// A session killed before it transitioned out of "starting" (e.g. user
+	// hit KillSession immediately after launch) should land on errored, not
+	// completed — the process never ran a useful turn.
+	st := state.Initial() // StatusStarting
+	next, _ := state.Derive(st, state.SourceSupervisor, []byte(`{"kind":"claude_pid_exit"}`))
+	if next.Status != state.StatusErrored {
+		t.Fatalf("starting + pid_exit should become errored, got %q", next.Status)
+	}
+}
+
 // ── determinism: same inputs → same outputs (regression for §3.2) ────
 
 func TestDerive_replayFromZeroProducesSameFinalState(t *testing.T) {
