@@ -195,7 +195,11 @@ func (h *ArtifactDownloadHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", row.MimeType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cross-Origin-Resource-Policy", "same-site")
+	// cross-origin (not same-site) so the dashboard can iframe artifacts
+	// served from a different host:port than the dashboard itself
+	// (gru server commonly runs on a separate port from Vite). The
+	// capability-URL token is the credential; CORP isn't load-bearing.
+	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	disposition := "attachment"
 	if _, ok := previewableMIMEs[row.MimeType]; ok {

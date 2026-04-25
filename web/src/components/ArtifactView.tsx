@@ -96,10 +96,17 @@ export function ArtifactView({ artifact }: ArtifactViewProps) {
     return (
       <iframe
         className={styles.iframe}
-        // Empty sandbox = opaque origin: no cookies, no localStorage, no
-        // scripts, no top-level navigation, no parent-DOM access. Enough
-        // to neutralize any JS embedded in the PDF.
-        sandbox=""
+        // No sandbox: Chrome's built-in PDF viewer ships its UI as a chrome
+        // extension that needs same-origin scripting to render — both
+        // sandbox="" and sandbox="allow-scripts" turn the tab blank. Defense
+        // for PDF instead leans on (a) the server's %PDF- magic-byte check,
+        // (b) Content-Type: application/pdf + X-Content-Type-Options:
+        // nosniff so the browser cannot reinterpret as HTML, and (c) the
+        // artifact endpoint being a different origin from the dashboard
+        // (different host:port), which gives the iframe natural same-origin-
+        // policy isolation from dashboard cookies / localStorage / DOM.
+        // Single-origin deployments would need a different strategy (e.g.
+        // serving artifacts from a sub-origin), but Gru is local-only today.
         src={downloadHref}
         referrerPolicy="no-referrer"
         title={artifact.title}
