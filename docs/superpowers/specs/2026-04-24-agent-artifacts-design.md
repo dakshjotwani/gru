@@ -67,7 +67,7 @@ The server validates per MIME:
 | `application/pdf` | Magic-byte sniff: bytes start with `%PDF-`. Per-MIME size cap (25 MB).     |
 | `text/markdown`   | UTF-8 decodes cleanly; no NUL bytes; per-MIME size cap (5 MB). The bytes are stored as-is — no server-side rendering and no dual on-disk format. |
 
-Plus the universal checks: declared MIME is on the allowlist, total bytes within per-session caps, session not in a terminal state (§5). On success, returns the full `Artifact` proto serialized as JSON, including the capability URL.
+Plus the universal checks: declared MIME is on the allowlist, total bytes within per-session caps, session not in a terminal state (§6). On success, returns the full `Artifact` proto serialized as JSON, including the capability URL.
 
 A new event type `artifact.created` is published on success carrying the same `Artifact` proto so UI subscribers don't have to refetch.
 
@@ -77,7 +77,7 @@ A new event type `artifact.created` is published on success carrying the same `A
 
 Instead, each artifact has an unguessable token (32 bytes from `crypto/rand`, base64url-encoded) generated at upload. The full URL `/artifacts/<token>` is the capability — anyone who holds the URL can fetch the bytes, anyone who doesn't cannot. The token is what gets baked into the iframe `src`. Tokens are stored in the DB and never reissued for a given artifact ID, so cached URLs stay valid until the artifact (or its session) is deleted.
 
-This keeps the GET endpoint simple (no header parsing, no per-request key derivation) and forward-compatible: if Gru ever serves over the public internet, add an expiry timestamp + HMAC and the design is the same shape. Cross-agent isolation (one minion holding another minion's token) is a non-goal; see §4.
+This keeps the GET endpoint simple (no header parsing, no per-request key derivation) and forward-compatible: if Gru ever serves over the public internet, add an expiry timestamp + HMAC and the design is the same shape. Cross-agent isolation (one minion holding another minion's token) is a non-goal; see §5.
 
 ### Storage
 
@@ -195,7 +195,47 @@ Same session-id and server-config lookup as the artifact helper. Icons are deriv
 
 ---
 
-## 3. UI Integration
+## 3. Agent discovery
+
+Two questions an agent has to answer before it can use any of this:
+
+1. **Am I running inside a Gru session?** A minion's process tree, env vars, and `cwd` look the same as a human-launched Claude Code instance; nothing in the agent's standard context says "you're being managed." Without that signal, even an agent that *knows* about `gru artifact add` can't tell whether running it would surface anything useful.
+2. **What can I do?** Beyond artifacts and links, future Gru-provided capabilities (push notifications to the operator, agent-to-agent messaging, attention-queue annotations) will land. Each one needs a way to surface itself without bloating the agent's system prompt or requiring per-session prompting.
+
+The mechanism uses two primitives that already exist in this codebase:
+
+### "Am I in Gru?" — the `.gru/session-id` file
+
+Every `gru launch` writes `<cwd>/.gru/session-id` containing the session UUID; the Claude Code hook in `hooks/claude-code.sh` already reads it the same way. An agent (or shell) detecting Gru just walks up from `cwd` looking for `.gru/session-id` — same shape as detecting a git checkout via `.git/`. If present: you're a minion. The file is also the key the CLI helpers use to scope their actions.
+
+This is deliberately *not* an env var. Hooks scrub env aggressively, and worktree-rooted sessions may drop parent env vars; a file in cwd is the one signal that survives reliably.
+
+### "What can I do?" — a single `using-gru` skill
+
+Ship one skill at `skills/using-gru/SKILL.md` that catalogs every Gru-provided capability the agent can invoke. The skill description triggers on intent — *"Use when you have a deliverable to surface to the operator, or want to attach a URL to the current session"* — so the body loads exactly when the agent needs it, not as part of the system prompt.
+
+The skill body contains:
+
+1. The "am I in Gru?" check (above), so the skill no-ops cleanly outside a Gru session.
+2. A short catalog of CLI subcommands: `gru artifact add`, `gru link add`. Each with one example invocation.
+3. Guidance on *when* to use each — e.g. "produce an artifact when you generate a deliverable the operator should review (a PDF report, a Markdown design doc, a rendered spec), not for intermediate scratch work or in-progress notes."
+4. The convention for extending: any new Gru-provided capability adds a `gru <verb>` subcommand and a section in this skill — no new discovery file, no new env var.
+
+This reuses the existing skills mechanism Gru already has for repo-shipped agent guidance (`skills/` symlinked into `.claude/skills/`, per CLAUDE.md). No new framework: no MCP server, no plugin install, no per-session system-prompt injection. The skill becomes available because it ships in the worktree the session launches into.
+
+### Reusability
+
+Future Gru-provided capabilities follow the same shape:
+
+- A new CLI subcommand under `gru ...` for the action.
+- A new section in `skills/using-gru/SKILL.md` describing when to use it.
+- The cwd-rooted `.gru/session-id` remains the "you're in Gru" signal; no per-capability discovery files.
+
+This keeps the agent's mental model flat: one source of truth for what Gru lets you do, one file that says you're inside it.
+
+---
+
+## 4. UI Integration
 
 ### Tab bar above the main pane
 
@@ -257,7 +297,7 @@ Mobile / narrow viewport: tabs scroll horizontally; the link row wraps. The exis
 
 ---
 
-## 4. Security
+## 5. Security
 
 ### Threat model
 
@@ -300,6 +340,18 @@ The dashboard runs on `localhost:3000`, the API on `:7777`. The bearer (`VITE_GR
 
 Every minion holds the same bearer and can `ListArtifacts` / `ListSessionLinks` for any session. Today this is fine: Gru is single-operator and minions are presumed to trust each other. If multi-tenant or cross-agent mistrust ever becomes a real requirement, scope the bearer per session at launch. Calling this out so an implementer doesn't accidentally lean on it.
 
+### Implementation deviations from this design
+
+End-to-end browser testing surfaced two security-relevant gaps between this spec and what actually works:
+
+**PDF iframe drops `sandbox` entirely.** The design specifies `<iframe sandbox="" src="…">` for PDFs to neutralize embedded JS. In Chrome, this leaves the tab blank — the built-in PDF viewer ships its UI as a chrome-extension that needs same-origin scripting to bootstrap, and any sandbox value (empty *or* `allow-scripts`) prevents that bootstrap. The implementation drops the `sandbox` attribute for PDF specifically.
+
+The defense for PDF therefore reduces to: server-side `%PDF-` magic-byte check (so it really is a PDF, not malicious HTML), `Content-Type: application/pdf` plus `X-Content-Type-Options: nosniff` (so the browser can't reinterpret it as HTML), and the artifact endpoint running on a different origin from the dashboard (so embedded PDF JS sits in a separate same-origin-policy bucket from the dashboard's cookies and DOM). Acceptable for Gru's local-only single-operator threat model. Single-origin deployments would need to revisit — the obvious option is serving artifacts from a sub-origin.
+
+The Markdown rendering path is **unchanged**: `markdown-it html:false` + `DOMPurify` + `<iframe sandbox="" srcdoc>` are all still load-bearing, end-to-end-verified to neutralize `<script>`, `onerror=`, and `javascript:` URLs.
+
+**`Cross-Origin-Resource-Policy` is `cross-origin`, not `same-site`.** The design said `same-site`. In practice the dashboard and artifact server commonly run on different ports, which Chrome treats as cross-origin enough that `same-site` blocked the iframe load. Switched to `cross-origin`. The capability-URL token is the credential here; CORP wasn't load-bearing.
+
 ### Out of scope
 
 - Signed/expiring URLs. Capability URLs with no expiry are correct for the local-only deployment. Add HMAC + expiry the day Gru goes public.
@@ -308,7 +360,7 @@ Every minion holds the same bearer and can `ListArtifacts` / `ListSessionLinks` 
 
 ---
 
-## 5. Lifecycle
+## 6. Lifecycle
 
 ### Creation
 
@@ -353,7 +405,7 @@ session_links:
 
 ---
 
-## 6. Minimum Viable Scope
+## 7. Minimum Viable Scope
 
 Goal: an agent says "here's a PDF," "here's a Markdown report," or "here's a link" and the operator sees it.
 
@@ -361,7 +413,7 @@ Goal: an agent says "here's a PDF," "here's a Markdown report," or "here's a lin
 1. Two new tables (`artifacts`, `session_links`); `001_init.sql` patched in place.
 2. Proto: `Artifact` and `SessionLink` messages; `ListArtifacts`, `DeleteArtifact`, `AddSessionLink`, `ListSessionLinks`, `DeleteSessionLink` RPCs. Two new event types: `artifact.created`, `session_link.created`.
 3. `POST /artifacts` HTTP handler — multipart only, MIME allowlist of `application/pdf` and `text/markdown`, per-MIME validation, capability-token URL minted at upload, atomic create.
-4. `GET /artifacts/<token>` streamer with the §4 hardening headers.
+4. `GET /artifacts/<token>` streamer with the §5 hardening headers.
 5. CLI: `gru artifact add` and `gru link add`.
 6. Web UI: replace `TerminalPanel`'s title bar with `SessionTabs.tsx`; PDF tabs render as `<iframe sandbox="" src="…">`; Markdown tabs render via `markdown-it` + `DOMPurify` in the parent, then injected as `<iframe sandbox="" srcdoc="…">`; link row shown when ≥ 1 link exists. `markdown-it` and `DOMPurify` vendored as dashboard deps.
 7. Lifecycle: cascade-delete on session delete; per-session caps enforced; orphan-directory + orphan-file sweep on boot; `410` on uploads to terminal sessions.
@@ -390,3 +442,4 @@ The MVP exercises the full path — agent → CLI → server → DB + disk → p
 - **2026-04-24** — Initial draft.
 - **2026-04-25** — Revised after design review. Split byte artifacts and external links into separate tables and RPCs (was one polymorphic `artifacts` table with conditional columns). Removed the `kind` enum entirely — server validates by MIME, UI renders by MIME, MVP allowlist is just `application/pdf`. Removed the `icon` field and the server-side Markdown rendering path (both speculation). Removed `project_id` from the artifacts schema (recoverable via `sessions.project_id`, unused). Replaced the bearer-token auth story for artifact GETs with a capability-URL token, since iframe `src` does not carry `Authorization`. Added explicit cross-origin / CSRF / cross-agent sections to the threat model. Added `count` + `bytes_used` to `ListArtifactsResponse` and the 409 response so agents can act on cap exceedance. Added a 410-on-terminal-session precondition to fix the upload-vs-kill race. Cut UI fluff (3-second tab pulse, empty-state details, the `replaces` future-extension hint).
 - **2026-04-25 (later)** — Added `text/markdown` to the MVP MIME allowlist. Agents already produce most of their output as Markdown (specs, design docs, code reviews, progress reports), so MD has clear day-one value. Architecture is deliberately different from the v1 server-rendered approach the previous review cut: bytes are stored as-is, rendering happens client-side in the dashboard via `markdown-it` (with `html: false`) + `DOMPurify`, and the sanitized HTML is injected into a sandboxed iframe via `srcdoc`. Three independent layers in front of the iframe sandbox, no server-side rendering, no dual on-disk format. Updated caps to a per-MIME map (PDF 25 MB, MD 5 MB).
+- **2026-04-25 (after first implementation pass)** — Added §3 "Agent discovery." The design specified the wire protocol and the CLI helpers but skipped the question of *how* an agent inside a Gru session realizes it is in a Gru session, and *how* it discovers what capabilities are available — a real gap surfaced by the first implementer report. Two primitives that already exist in the codebase carry the load: `<cwd>/.gru/session-id` is the "you're in Gru" file (already written by `gru launch`, already read by `hooks/claude-code.sh`), and a single `skills/using-gru/SKILL.md` catalogs everything the minion can call. Future Gru-provided capabilities follow the same shape: new `gru <verb>` subcommand, new section in the skill, no new discovery file. Also added a "Implementation deviations from this design" subsection in §5 documenting two gaps end-to-end browser testing surfaced: PDF iframe drops `sandbox` entirely (Chrome's PDF viewer can't bootstrap inside any sandbox flag combination), and `Cross-Origin-Resource-Policy` is `cross-origin` not `same-site` (different-port dashboard/artifact deployments need it). Renumbered sections to fit the new §3.
