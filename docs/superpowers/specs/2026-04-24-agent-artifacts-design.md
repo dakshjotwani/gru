@@ -2,13 +2,15 @@
 
 **Date:** 2026-04-24 (revised 2026-04-25 after design review)
 **Status:** Draft
-**Scope:** Lets a Gru-managed agent (minion) surface a piece of work — a rendered PDF — and attach session-level external links (GitHub PR, Slack thread, Figma) to a session. Extends the per-session main pane (currently just the Terminal tab) with artifact tabs and a compact link row.
+**Scope:** Lets a Gru-managed agent (minion) surface a piece of work — a rendered PDF or a Markdown report — and attach session-level external links (GitHub PR, Slack thread, Figma) to a session. Extends the per-session main pane (currently just the Terminal tab) with artifact tabs and a compact link row.
 
 ---
 
 ## Goal
 
-Today, when a minion produces something the operator should look at — a resume, a design-review writeup, a freshly-opened GitHub PR — the only surface is the terminal scrollback. The operator has to scroll, copy URLs, and run their own viewer. Every minion ends up reinventing this with a different markdown blob.
+Today, when a minion produces something the operator should look at — a resume, a design-review writeup, a rendered spec, a freshly-opened GitHub PR — the only surface is the terminal scrollback. The operator has to scroll, copy URLs, and run their own viewer. Every minion ends up reinventing this with a different Markdown blob pasted into chat.
+
+Markdown deserves first-class treatment because it's how agents already write: nearly every spec, design doc, code review, and progress report a minion produces is `.md`. The MVP renders Markdown inline so those land somewhere readable instead of getting lost in scrollback.
 
 Give agents one well-defined way to say "here's an artifact" and one well-defined way to say "here's where this session lives in your other tools."
 
@@ -29,14 +31,15 @@ These have separate tables, separate RPCs, separate UI. Cross-references between
 
 ### Model
 
-An artifact is bytes addressed by an opaque, unguessable URL token. Metadata is just title + MIME type + size. The MVP server accepts only `application/pdf`; the upload path is shaped so that adding another MIME type later is purely an allowlist change. There is no `kind` field — the wire protocol describes the data, not the rendering decision.
+An artifact is bytes addressed by an opaque, unguessable URL token. Metadata is just title + MIME type + size. The MVP server accepts `application/pdf` and `text/markdown`; the upload path is shaped so that adding another MIME type later is purely an allowlist change. There is no `kind` field — the wire protocol describes the data, not the rendering decision.
 
-| Limit                      | Default      | Configurable in `~/.gru/server.yaml` |
-|----------------------------|--------------|--------------------------------------|
-| Per-artifact bytes         | 25 MB        | yes                                  |
-| Per-session count          | 50           | yes                                  |
-| Per-session total bytes    | 100 MB       | yes                                  |
-| Allowed MIME (MVP)         | `application/pdf` | yes (allowlist)                |
+| Limit                                | Default            | Configurable in `~/.gru/server.yaml` |
+|--------------------------------------|--------------------|--------------------------------------|
+| Per-artifact bytes (PDF)             | 25 MB              | yes                                  |
+| Per-artifact bytes (Markdown)        | 5 MB               | yes                                  |
+| Per-session count                    | 50                 | yes                                  |
+| Per-session total bytes              | 100 MB             | yes                                  |
+| Allowed MIME (MVP)                   | `application/pdf`, `text/markdown` | yes (allowlist)  |
 
 Caps exist to keep SQLite small and to stop a runaway agent from filling the disk.
 
@@ -57,7 +60,14 @@ Multipart fields:
 | `title`    | yes      | ≤ 80 chars, displayed as the tab label                             |
 | `content`  | yes      | the file bytes; the part's `Content-Type` is the canonical MIME    |
 
-The server validates: MIME on the allowlist, magic-byte sniff matches the declared MIME (PDF must start with `%PDF-`), bytes within caps, session not in a terminal state (§5). On success, returns the full `Artifact` proto serialized as JSON, including the capability URL.
+The server validates per MIME:
+
+| MIME              | Validation                                                                 |
+|-------------------|----------------------------------------------------------------------------|
+| `application/pdf` | Magic-byte sniff: bytes start with `%PDF-`. Per-MIME size cap (25 MB).     |
+| `text/markdown`   | UTF-8 decodes cleanly; no NUL bytes; per-MIME size cap (5 MB). The bytes are stored as-is — no server-side rendering and no dual on-disk format. |
+
+Plus the universal checks: declared MIME is on the allowlist, total bytes within per-session caps, session not in a terminal state (§5). On success, returns the full `Artifact` proto serialized as JSON, including the capability URL.
 
 A new event type `artifact.created` is published on success carrying the same `Artifact` proto so UI subscribers don't have to refetch.
 
@@ -212,13 +222,36 @@ Tabs are rendered by a new `SessionTabs.tsx`. Artifacts and links come from `Lis
 
 ### Per-tab content rendering
 
-For MVP, the only previewable MIME is `application/pdf`:
+The renderer is MIME-driven, not kind-driven. Adding another MIME type (image, sanitized HTML, etc.) is a server allowlist change plus a renderer branch, not a wire-protocol change. Anything outside the MVP allowlist falls back to a download CTA — server sends `Content-Disposition: attachment` and the UI shows a card with title, size, and a download button.
+
+**`application/pdf`** — embed directly:
 
 ```html
 <iframe sandbox="" src="/artifacts/<token>" referrerpolicy="no-referrer" />
 ```
 
-The renderer is MIME-driven, not kind-driven. Adding another MIME type (image, sanitized HTML, etc.) is a server allowlist change plus a renderer branch, not a wire-protocol change. Anything outside the allowlist falls back to a download CTA — server sends `Content-Disposition: attachment` and the UI shows a card with title, size, and a download button.
+The browser's native PDF viewer handles rendering. Empty `sandbox=""` neutralizes any JS embedded in the PDF.
+
+**`text/markdown`** — render client-side, isolate via iframe:
+
+The dashboard fetches `/artifacts/<token>` to get the bytes, parses the Markdown with `markdown-it` configured `html: false` (so raw `<script>` etc. in the Markdown source is escaped, not passed through), runs the result through `DOMPurify.sanitize()` as defense in depth, and injects the sanitized HTML into a sandboxed iframe via `srcdoc`:
+
+```jsx
+const dirty = markdownIt({ html: false, linkify: true }).render(mdBytes);
+const clean = DOMPurify.sanitize(dirty);
+const doc = `<!doctype html><base target="_blank"><style>${MD_STYLE}</style>${clean}`;
+return <iframe sandbox="" srcDoc={doc} referrerPolicy="no-referrer" />;
+```
+
+Three independent layers, each blocking the script-execution threat:
+
+1. `markdown-it` with `html: false` doesn't emit raw HTML from the source.
+2. `DOMPurify` strips anything that might still be unsafe (`<script>`, `on*=`, `javascript:` URLs, etc.).
+3. The iframe has `sandbox=""` (no flags) — even if both above are bypassed, scripts can't execute, no top-level navigation, no form submission, no popups, no parent-DOM access.
+
+`<base target="_blank">` makes any links the operator clicks open in a new browser tab instead of trapping the iframe. Both `markdown-it` and `DOMPurify` are vendored as dashboard dependencies; no external CDN fetch.
+
+**Anything else** — download card. No preview is rendered; the operator clicks to download.
 
 Mobile / narrow viewport: tabs scroll horizontally; the link row wraps. The existing `coarse-pointer` tap handling in `TerminalPanel` for link activation remains unchanged.
 
@@ -242,9 +275,16 @@ The threats:
 
 ### Defense
 
-**Server-side validation at upload.** MIME allowlist + magic-byte sniff for every accepted type (PDF must start with `%PDF-`). Title length-capped. URL scheme allowlist for links, with RFC1918 / link-local hostname rejection. When the MVP's MIME allowlist grows beyond PDF, each new type carries its own validation rule (e.g., HTML through `bluemonday.UGCPolicy()` with `<script>`, `<iframe>`, `<object>`, `<embed>`, `<link>`, `<meta>`, `on*` attrs all denied). PDF needs no body sanitization — the iframe sandbox is enough.
+**Server-side validation at upload.** MIME allowlist + per-MIME validation:
 
-**Browser-side sandbox.** Every artifact is rendered inside `<iframe sandbox="" src="…" referrerpolicy="no-referrer">`. Empty `sandbox=""` (no flags) gives the iframe an opaque origin: no cookies, no localStorage, no parent-DOM access, no script execution, no top-level navigation, no form submission, no popups. Even if upload-time validation is bypassed and `<script>` reaches the iframe, it cannot run.
+- `application/pdf` — magic-byte sniff (bytes must start with `%PDF-`).
+- `text/markdown` — UTF-8 decodes cleanly; no NUL bytes. Stored as-is; not parsed or rendered server-side.
+
+Title length-capped. URL scheme allowlist for links, with RFC1918 / link-local hostname rejection. When the MIME allowlist grows beyond PDF + MD (e.g., HTML), each new type carries its own validation rule (HTML would route through `bluemonday.UGCPolicy()` with `<script>`, `<iframe>`, `<object>`, `<embed>`, `<link>`, `<meta>`, `on*` attrs all denied).
+
+**Browser-side sandbox.** Every artifact is rendered inside `<iframe sandbox="" referrerpolicy="no-referrer">`. Empty `sandbox=""` (no flags) gives the iframe an opaque origin: no cookies, no localStorage, no parent-DOM access, no script execution, no top-level navigation, no form submission, no popups. Even if upload-time validation or client-side rendering is bypassed and `<script>` reaches the iframe, it cannot run.
+
+**Markdown-specific layered defense.** Markdown is the one MVP type whose rendered form *is* HTML, so it gets two extra independent layers in front of the iframe sandbox: (1) the parser is `markdown-it` with `html: false`, so raw `<script>` and `<iframe>` in the Markdown source are escaped to entities, not passed through; (2) the parser output is run through `DOMPurify.sanitize()` before being injected as iframe `srcdoc`. PDF doesn't need this: the iframe sandbox alone neutralizes any JS embedded in a PDF.
 
 **Hardening headers on `/artifacts/<token>`.** `Content-Type` set explicitly per artifact (no sniff), `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-site`, `Content-Disposition` either `inline` for previewable MIMEs or `attachment` otherwise. CSP `sandbox` is intentionally not listed as a separate "layer" — it overlaps the iframe sandbox and behavior across browsers (especially with the native PDF viewer) is uneven enough that it's not load-bearing here.
 
@@ -302,10 +342,11 @@ The dashboard is plain Vite + React 19 today, no service worker. If a service wo
 ```yaml
 # ~/.gru/server.yaml
 artifacts:
-  per_artifact_max_bytes: 25_000_000
   per_session_max_bytes:  100_000_000
   per_session_max_count:  50
-  allowed_mime: ["application/pdf"]
+  mime_limits:
+    application/pdf:  25_000_000
+    text/markdown:     5_000_000
 session_links:
   per_session_max_count:  20
 ```
@@ -314,19 +355,19 @@ session_links:
 
 ## 6. Minimum Viable Scope
 
-Goal: an agent says "here's a PDF" or "here's a link" and the operator sees it.
+Goal: an agent says "here's a PDF," "here's a Markdown report," or "here's a link" and the operator sees it.
 
 **In MVP:**
 1. Two new tables (`artifacts`, `session_links`); `001_init.sql` patched in place.
 2. Proto: `Artifact` and `SessionLink` messages; `ListArtifacts`, `DeleteArtifact`, `AddSessionLink`, `ListSessionLinks`, `DeleteSessionLink` RPCs. Two new event types: `artifact.created`, `session_link.created`.
-3. `POST /artifacts` HTTP handler — multipart only, MIME allowlist of `application/pdf`, capability-token URL minted at upload, atomic create.
+3. `POST /artifacts` HTTP handler — multipart only, MIME allowlist of `application/pdf` and `text/markdown`, per-MIME validation, capability-token URL minted at upload, atomic create.
 4. `GET /artifacts/<token>` streamer with the §4 hardening headers.
 5. CLI: `gru artifact add` and `gru link add`.
-6. Web UI: replace `TerminalPanel`'s title bar with `SessionTabs.tsx`; render PDF tabs as `<iframe sandbox="">`; render the link row when ≥ 1 link exists.
+6. Web UI: replace `TerminalPanel`'s title bar with `SessionTabs.tsx`; PDF tabs render as `<iframe sandbox="" src="…">`; Markdown tabs render via `markdown-it` + `DOMPurify` in the parent, then injected as `<iframe sandbox="" srcdoc="…">`; link row shown when ≥ 1 link exists. `markdown-it` and `DOMPurify` vendored as dashboard deps.
 7. Lifecycle: cascade-delete on session delete; per-session caps enforced; orphan-directory + orphan-file sweep on boot; `410` on uploads to terminal sessions.
 
 **Deferred:**
-1. Additional MIME types (HTML with sanitization, Markdown, images, generic file downloads). Each is a server-allowlist + renderer change against the same wire shape.
+1. Additional MIME types — HTML (needs `bluemonday` server-side sanitization), images, generic file downloads. Each is a server-allowlist + renderer change against the same wire shape.
 2. A `surfacing-artifacts` skill for agents to know when to use the helper. Worth doing once we know how the primitive feels.
 3. Auto-attaching links from session activity (e.g., a hook that detects `gh pr create` and posts a `session_link`).
 
@@ -348,3 +389,4 @@ The MVP exercises the full path — agent → CLI → server → DB + disk → p
 
 - **2026-04-24** — Initial draft.
 - **2026-04-25** — Revised after design review. Split byte artifacts and external links into separate tables and RPCs (was one polymorphic `artifacts` table with conditional columns). Removed the `kind` enum entirely — server validates by MIME, UI renders by MIME, MVP allowlist is just `application/pdf`. Removed the `icon` field and the server-side Markdown rendering path (both speculation). Removed `project_id` from the artifacts schema (recoverable via `sessions.project_id`, unused). Replaced the bearer-token auth story for artifact GETs with a capability-URL token, since iframe `src` does not carry `Authorization`. Added explicit cross-origin / CSRF / cross-agent sections to the threat model. Added `count` + `bytes_used` to `ListArtifactsResponse` and the 409 response so agents can act on cap exceedance. Added a 410-on-terminal-session precondition to fix the upload-vs-kill race. Cut UI fluff (3-second tab pulse, empty-state details, the `replaces` future-extension hint).
+- **2026-04-25 (later)** — Added `text/markdown` to the MVP MIME allowlist. Agents already produce most of their output as Markdown (specs, design docs, code reviews, progress reports), so MD has clear day-one value. Architecture is deliberately different from the v1 server-rendered approach the previous review cut: bytes are stored as-is, rendering happens client-side in the dashboard via `markdown-it` (with `html: false`) + `DOMPurify`, and the sanitized HTML is injected into a sandboxed iframe via `srcdoc`. Three independent layers in front of the iframe sandbox, no server-side rendering, no dual on-disk format. Updated caps to a per-MIME map (PDF 25 MB, MD 5 MB).
