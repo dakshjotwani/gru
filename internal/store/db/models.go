@@ -34,6 +34,7 @@ type Device struct {
 }
 
 type Event struct {
+	Seq       int64
 	ID        string
 	SessionID string
 	ProjectID string
@@ -58,23 +59,26 @@ type SchemaMigration struct {
 }
 
 type Session struct {
-	ID             string
-	ProjectID      string
-	Runtime        string
-	Status         string
-	Profile        *string
-	Pid            *int64
-	Pgid           *int64
-	AttentionScore float64
-	StartedAt      string
-	EndedAt        *string
-	LastEventAt    *string
-	TmuxSession    *string
-	TmuxWindow     *string
-	Name           string
-	Description    string
-	Prompt         string
-	Role           string
+	ID               string
+	ProjectID        string
+	Runtime          string
+	Status           string
+	Profile          *string
+	Pid              *int64
+	Pgid             *int64
+	AttentionScore   float64
+	StartedAt        string
+	EndedAt          *string
+	LastEventAt      *string
+	TmuxSession      *string
+	TmuxWindow       *string
+	Name             string
+	Description      string
+	Prompt           string
+	Role             string
+	TranscriptPath   string
+	ClaudeStopReason string
+	PermissionMode   string
 }
 
 type SessionLink struct {

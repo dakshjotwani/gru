@@ -20,17 +20,23 @@ type Store struct {
 	queries *db.Queries
 }
 
-// Re-export sqlc param types so callers don't need to import the generated db package.
+// Re-export sqlc param + row types so callers don't need to import the generated db package.
 type UpsertProjectParams  = db.UpsertProjectParams
 type CreateSessionParams  = db.CreateSessionParams
 type CreateEventParams    = db.CreateEventParams
 type ListSessionsParams   = db.ListSessionsParams
-type UpdateSessionStatusParams    = db.UpdateSessionStatusParams
-type UpdateSessionLastEventParams = db.UpdateSessionLastEventParams
+type UpdateSessionStatusParams       = db.UpdateSessionStatusParams
+type UpdateSessionDerivedParams      = db.UpdateSessionDerivedParams
 type UpdateSessionAttentionScoreParams = db.UpdateSessionAttentionScoreParams
+type ListEventsAfterSeqParams        = db.ListEventsAfterSeqParams
 type RenameProjectParams = db.RenameProjectParams
 type CreateArtifactParams = db.CreateArtifactParams
 type CreateSessionLinkParams = db.CreateSessionLinkParams
+
+// Row types
+type Event   = db.Event
+type Session = db.Session
+type Project = db.Project
 
 // Open opens (or creates) the SQLite database at path, enables WAL mode,
 // and runs migrations.

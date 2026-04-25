@@ -10,25 +10,26 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window, name, description, prompt, role)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role
+INSERT INTO sessions (id, project_id, runtime, status, profile, pid, pgid, tmux_session, tmux_window, name, description, prompt, role, transcript_path)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode
 `
 
 type CreateSessionParams struct {
-	ID          string
-	ProjectID   string
-	Runtime     string
-	Status      string
-	Profile     *string
-	Pid         *int64
-	Pgid        *int64
-	TmuxSession *string
-	TmuxWindow  *string
-	Name        string
-	Description string
-	Prompt      string
-	Role        string
+	ID             string
+	ProjectID      string
+	Runtime        string
+	Status         string
+	Profile        *string
+	Pid            *int64
+	Pgid           *int64
+	TmuxSession    *string
+	TmuxWindow     *string
+	Name           string
+	Description    string
+	Prompt         string
+	Role           string
+	TranscriptPath string
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -46,6 +47,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.Description,
 		arg.Prompt,
 		arg.Role,
+		arg.TranscriptPath,
 	)
 	var i Session
 	err := row.Scan(
@@ -66,6 +68,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.Description,
 		&i.Prompt,
 		&i.Role,
+		&i.TranscriptPath,
+		&i.ClaudeStopReason,
+		&i.PermissionMode,
 	)
 	return i, err
 }
@@ -89,7 +94,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getAssistantSession = `-- name: GetAssistantSession :one
-SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role FROM sessions
+SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode FROM sessions
 WHERE role = 'assistant'
   AND status IN ('starting','running','idle','needs_attention')
 ORDER BY started_at DESC
@@ -117,12 +122,15 @@ func (q *Queries) GetAssistantSession(ctx context.Context) (Session, error) {
 		&i.Description,
 		&i.Prompt,
 		&i.Role,
+		&i.TranscriptPath,
+		&i.ClaudeStopReason,
+		&i.PermissionMode,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role FROM sessions WHERE id = ? LIMIT 1
+SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode FROM sessions WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -146,12 +154,66 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.Description,
 		&i.Prompt,
 		&i.Role,
+		&i.TranscriptPath,
+		&i.ClaudeStopReason,
+		&i.PermissionMode,
 	)
 	return i, err
 }
 
+const listNonTerminalSessions = `-- name: ListNonTerminalSessions :many
+SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode FROM sessions
+WHERE status IN ('starting','running','idle','needs_attention')
+`
+
+// Used by the tailer manager at startup to find every session that needs a
+// live tailer goroutine.
+func (q *Queries) ListNonTerminalSessions(ctx context.Context) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listNonTerminalSessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Runtime,
+			&i.Status,
+			&i.Profile,
+			&i.Pid,
+			&i.Pgid,
+			&i.AttentionScore,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.LastEventAt,
+			&i.TmuxSession,
+			&i.TmuxWindow,
+			&i.Name,
+			&i.Description,
+			&i.Prompt,
+			&i.Role,
+			&i.TranscriptPath,
+			&i.ClaudeStopReason,
+			&i.PermissionMode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessions = `-- name: ListSessions :many
-SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role FROM sessions
+SELECT id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode FROM sessions
 WHERE project_id = COALESCE(NULLIF(?1, ''), project_id)
   AND status = COALESCE(NULLIF(?2, ''), status)
 ORDER BY started_at DESC
@@ -189,6 +251,9 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 			&i.Description,
 			&i.Prompt,
 			&i.Role,
+			&i.TranscriptPath,
+			&i.ClaudeStopReason,
+			&i.PermissionMode,
 		); err != nil {
 			return nil, err
 		}
@@ -239,7 +304,7 @@ const updateSessionAttentionScore = `-- name: UpdateSessionAttentionScore :one
 UPDATE sessions
 SET attention_score = ?1
 WHERE id = ?2
-RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role
+RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode
 `
 
 type UpdateSessionAttentionScoreParams struct {
@@ -268,30 +333,43 @@ func (q *Queries) UpdateSessionAttentionScore(ctx context.Context, arg UpdateSes
 		&i.Description,
 		&i.Prompt,
 		&i.Role,
+		&i.TranscriptPath,
+		&i.ClaudeStopReason,
+		&i.PermissionMode,
 	)
 	return i, err
 }
 
-const updateSessionLastEvent = `-- name: UpdateSessionLastEvent :exec
+const updateSessionDerived = `-- name: UpdateSessionDerived :exec
 UPDATE sessions
-SET status = ?,
-    last_event_at = ?,
-    attention_score = ?
+SET status             = ?,
+    attention_score    = ?,
+    last_event_at      = ?,
+    claude_stop_reason = ?,
+    permission_mode    = ?
 WHERE id = ?
 `
 
-type UpdateSessionLastEventParams struct {
-	Status         string
-	LastEventAt    *string
-	AttentionScore float64
-	ID             string
+type UpdateSessionDerivedParams struct {
+	Status           string
+	AttentionScore   float64
+	LastEventAt      *string
+	ClaudeStopReason string
+	PermissionMode   string
+	ID               string
 }
 
-func (q *Queries) UpdateSessionLastEvent(ctx context.Context, arg UpdateSessionLastEventParams) error {
-	_, err := q.db.ExecContext(ctx, updateSessionLastEvent,
+// Single writer of derived fields, called from the tailer's commit
+// transaction. Combines status / attention_score / claude_stop_reason /
+// permission_mode / last_event_at into one statement so the row never
+// transiently disagrees with the events projection.
+func (q *Queries) UpdateSessionDerived(ctx context.Context, arg UpdateSessionDerivedParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionDerived,
 		arg.Status,
-		arg.LastEventAt,
 		arg.AttentionScore,
+		arg.LastEventAt,
+		arg.ClaudeStopReason,
+		arg.PermissionMode,
 		arg.ID,
 	)
 	return err
@@ -317,7 +395,7 @@ UPDATE sessions
 SET status   = ?1,
     ended_at = COALESCE(ended_at, ?2)
 WHERE id = ?3
-RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role
+RETURNING id, project_id, runtime, status, profile, pid, pgid, attention_score, started_at, ended_at, last_event_at, tmux_session, tmux_window, name, description, prompt, role, transcript_path, claude_stop_reason, permission_mode
 `
 
 type UpdateSessionStatusParams struct {
@@ -347,6 +425,23 @@ func (q *Queries) UpdateSessionStatus(ctx context.Context, arg UpdateSessionStat
 		&i.Description,
 		&i.Prompt,
 		&i.Role,
+		&i.TranscriptPath,
+		&i.ClaudeStopReason,
+		&i.PermissionMode,
 	)
 	return i, err
+}
+
+const updateSessionTranscriptPath = `-- name: UpdateSessionTranscriptPath :exec
+UPDATE sessions SET transcript_path = ? WHERE id = ?
+`
+
+type UpdateSessionTranscriptPathParams struct {
+	TranscriptPath string
+	ID             string
+}
+
+func (q *Queries) UpdateSessionTranscriptPath(ctx context.Context, arg UpdateSessionTranscriptPathParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionTranscriptPath, arg.TranscriptPath, arg.ID)
+	return err
 }
