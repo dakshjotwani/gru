@@ -7,9 +7,8 @@
   before bootstrapping into launchd.
 
   The deployed binary + frontend live in __INSTALL__ (default
-  ~/.local/share/gru), separate from the dev repo. Git hooks under
-  scripts/git-hooks/ rebuild and `kickstart -k` this service whenever
-  main moves on the deploy host.
+  ~/.local/share/gru), separate from the dev repo. Run scripts/redeploy.sh
+  by hand to rebuild and `kickstart -k` this service after `main` moves.
 -->
 <plist version="1.0">
 <dict>

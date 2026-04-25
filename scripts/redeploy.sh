@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # redeploy.sh — rebuild gru, install to $INSTALL_DIR, kickstart launchd service.
 #
-# Invoked async from git hooks (scripts/git-hooks/_deploy). Holds a lock so
-# concurrent invocations skip cleanly.
+# Run by hand whenever you want the launchd-supervised server to pick up new
+# code on `main`. Holds a lock so concurrent invocations skip cleanly.
 #
 # Env overrides:
 #   GRU_AUTODEPLOY_REPO     repo path             (default: $HOME/workspace/gru)

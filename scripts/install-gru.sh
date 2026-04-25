@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# install-gru.sh — install/uninstall the gru server LaunchAgent + git hooks.
+# install-gru.sh — install/uninstall the gru server LaunchAgent.
 #
 # Layout after install:
 #   binary:     ~/.local/share/gru/gru
 #   frontend:   ~/.local/share/gru/web/dist/
 #   CLI:        ~/.local/bin/gru -> ~/.local/share/gru/gru
 #   server:     com.gru.server LaunchAgent (launchd-supervised, KeepAlive)
-#   hooks:      core.hooksPath = scripts/git-hooks   (in this repo)
 #   state:      ~/.gru/{deployed.sha,gru.db,server.yaml,...}
 #   logs:       ~/Library/Logs/gru/{server.log,autodeploy.log}
 #
-# The git hooks rebuild and restart the server whenever local `main` moves
-# (commit, pull, rebase, amend, branch checkout). No polling daemon.
+# After install, run scripts/redeploy.sh by hand whenever you want the
+# launchd-supervised server to pick up new code. No git-hook automation —
+# the deploy is an explicit operator action.
 #
 # Usage:
-#   scripts/install-gru.sh install     # build + place files + bootstrap + wire hooks
-#   scripts/install-gru.sh uninstall   # bootout + remove install dir + clear hooks
+#   scripts/install-gru.sh install     # build + place files + bootstrap launchd
+#   scripts/install-gru.sh uninstall   # bootout + remove install dir
 #   scripts/install-gru.sh status      # current state
 set -euo pipefail
 
@@ -75,21 +75,19 @@ cmd_install() {
   launchctl enable "gui/${UID_NUM}/${LABEL}" 2>/dev/null || true
   echo "bootstrapped      -> $LABEL"
 
-  # Wire git hooks. Setting core.hooksPath persists in the local repo's
-  # .git/config — applies to this checkout (and its linked worktrees, all of
-  # which share the same git common dir).
-  chmod +x "$ROOT/scripts/redeploy.sh" \
-           "$ROOT/scripts/git-hooks/_deploy" \
-           "$ROOT/scripts/git-hooks/post-commit" \
-           "$ROOT/scripts/git-hooks/post-merge" \
-           "$ROOT/scripts/git-hooks/post-rewrite" \
-           "$ROOT/scripts/git-hooks/post-checkout"
-  git -C "$ROOT" config core.hooksPath scripts/git-hooks
-  echo "wired hooks       -> core.hooksPath=scripts/git-hooks"
+  chmod +x "$ROOT/scripts/redeploy.sh"
+
+  # Migrate away from the legacy git-hook autodeploy: any local repo that
+  # has core.hooksPath pointing at the old scripts/git-hooks/ tree (now
+  # removed) would error on every git op. Clear it on (re)install.
+  if [ "$(git -C "$ROOT" config --get core.hooksPath || true)" = "scripts/git-hooks" ]; then
+    git -C "$ROOT" config --unset core.hooksPath || true
+    echo "removed legacy core.hooksPath"
+  fi
 
   # Seed deployed.sha to main HEAD (not HEAD), so installing from a feature
-  # branch leaves the next switch-back-to-main as a no-op when nothing on
-  # main has changed.
+  # branch leaves the next manual redeploy as a no-op when nothing on main
+  # has changed.
   git -C "$ROOT" rev-parse main > "$STATE_DIR/deployed.sha"
   echo "seeded deployed.sha = $(cat "$STATE_DIR/deployed.sha")"
 
@@ -119,9 +117,10 @@ cmd_uninstall() {
   rm -f "$BIN_DIR/gru"
   rm -rf "$INSTALL_DIR"
 
-  if git -C "$ROOT" config --get core.hooksPath >/dev/null 2>&1; then
+  # Legacy cleanup: pre-2026-04-25 installs wrote core.hooksPath = scripts/git-hooks.
+  if [ "$(git -C "$ROOT" config --get core.hooksPath || true)" = "scripts/git-hooks" ]; then
     git -C "$ROOT" config --unset core.hooksPath || true
-    echo "unset core.hooksPath"
+    echo "unset legacy core.hooksPath"
   fi
 
   rm -f "$STATE_DIR/deployed.sha" "$STATE_DIR/autodeploy.lock"
@@ -141,7 +140,6 @@ cmd_status() {
   echo "branch:         $(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
   echo "main HEAD:      $(git -C "$ROOT" rev-parse main 2>/dev/null || echo '?')"
   echo "deployed.sha:   $(cat "$STATE_DIR/deployed.sha" 2>/dev/null || echo '<unset>')"
-  echo "core.hooksPath: $(git -C "$ROOT" config --get core.hooksPath || echo '<unset>')"
   echo
   echo "--- install layout ---"
   echo "binary:    $INSTALL_DIR/gru ($([ -x "$INSTALL_DIR/gru" ] && echo present || echo MISSING))"
