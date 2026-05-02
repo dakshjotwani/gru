@@ -62,12 +62,20 @@ type Publisher struct {
 
 // NewPublisher returns a publisher that tails the given store. Call
 // Run to start the fan-out loop. The buffer-size knob controls when a
-// subscriber gets dropped on overflow; 256 has been comfortable for a
-// small fleet.
+// subscriber gets dropped on overflow.
+//
+// 4096 covers the replay-from-zero burst on server start: each tailer
+// re-derives its session's transcript from byte 0, which can produce
+// hundreds of events; a fresh UI subscriber arrives with sinceSeq=0
+// and the publisher needs to fan out the whole backlog before the
+// connect-rpc consumer has finished sending its session-snapshot
+// preamble. With the previous 256-slot buffer + non-blocking deliver,
+// the backlog overflowed the channel and the subscriber was kicked
+// before it had drained anything — producing a reconnect storm.
 func NewPublisher(s *store.Store) *Publisher {
 	return &Publisher{
 		store:       s,
-		bufferSize:  256,
+		bufferSize:  4096,
 		logger:      log.New(os.Stderr, "publisher: ", log.LstdFlags|log.Lmsgprefix),
 		subscribers: make(map[string]*Subscriber),
 		wakeup:      make(chan struct{}, 1),
@@ -194,16 +202,31 @@ func (p *Publisher) flush(ctx context.Context) {
 	}
 }
 
-// deliver attempts a non-blocking send. On overflow it closes the
-// subscriber's channel and returns false. The caller stops sending to
-// this subscriber and the consumer's read of a closed channel surfaces
-// the disconnect (anti-pattern #1: never silently drop).
+// deliver tries to send evt to the subscriber. If the buffer is full
+// it blocks briefly for backpressure before declaring overflow and
+// closing the channel — a previous non-blocking-only design kicked
+// subscribers the moment the buffer filled, even if the consumer was
+// only milliseconds behind (e.g. mid-snapshot handshake). The grace
+// window lets transient delays drain without a reconnect storm; truly
+// stuck subscribers still get kicked so they don't block fan-out.
+//
+// Note: this single fan-out goroutine serves all subscribers, so a
+// slow subscriber holds up others for up to deliverGrace. Acceptable
+// at Gru's scale (1–3 UI clients); revisit if we ever need >10.
+const deliverGrace = 500 * time.Millisecond
+
 func (p *Publisher) deliver(sub *Subscriber, evt *gruv1.SessionEvent) bool {
 	select {
 	case sub.events <- evt:
 		return true
 	default:
-		// Buffer full → kick the slow subscriber.
+	}
+	timer := time.NewTimer(deliverGrace)
+	defer timer.Stop()
+	select {
+	case sub.events <- evt:
+		return true
+	case <-timer.C:
 		if sub.closed.CompareAndSwap(false, true) {
 			close(sub.events)
 		}

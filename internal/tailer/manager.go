@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/dakshjotwani/gru/internal/env/spec"
 	"github.com/dakshjotwani/gru/internal/store"
@@ -58,12 +60,51 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Detect transcript_path collisions: if multiple sessions claim the
+	// same file, all but one are stale (the heuristic that wrote them
+	// was wrong). We can't tell which is right, so clear them all and
+	// let notify-driven discovery sort it out per session.
+	tpCount := make(map[string]int, len(rows))
+	for _, r := range rows {
+		if r.TranscriptPath != "" {
+			tpCount[r.TranscriptPath]++
+		}
+	}
 	for _, r := range rows {
 		// Resolve transcript_path: prefer the row's stored value, else
 		// derive it from the project's primary workdir + the row id.
+		// Self-heal: ignore stored paths that don't exist on disk —
+		// historically a misconfiguration could persist a bogus path
+		// (e.g. ~/.gru/.claude/projects/... from a homeDir mixup), and
+		// without this check the tailer would tail a nonexistent file
+		// forever and the session's status would stay stuck.
 		tp := r.TranscriptPath
+		if tp != "" && tpCount[tp] > 1 {
+			m.logger.Printf("session %s: stored transcript_path %q is shared by %d sessions; clearing for self-heal", r.ID, tp, tpCount[tp])
+			tp = ""
+		}
+		if tp != "" {
+			if _, err := os.Stat(tp); err != nil {
+				m.logger.Printf("session %s: stored transcript_path %q does not exist; re-deriving", r.ID, tp)
+				tp = ""
+			}
+		}
 		if tp == "" {
 			tp = m.deriveTranscriptPath(ctx, r.ID, r.ProjectID)
+		}
+		// Last-resort fallback for sessions started before --session-id
+		// was added (no exact filename match) AND that haven't fired
+		// any hook yet (no notify-driven discovery): match by file
+		// birth time within a few seconds of the session's started_at.
+		// Claude creates the .jsonl right when the process boots, so
+		// the windows align tightly. We require an UNAMBIGUOUS match
+		// (exactly one file in the window) to avoid silently picking
+		// the wrong transcript.
+		if tp == "" {
+			tp = m.matchTranscriptByBirth(ctx, r)
+			if tp != "" {
+				m.logger.Printf("session %s: matched transcript_path by birth time: %s", r.ID, tp)
+			}
 		}
 		np := m.notifyPath(r.ID)
 		m.spawn(ctx, spawnArgs{
@@ -210,42 +251,21 @@ func (m *Manager) deriveTranscriptPath(ctx context.Context, sessionID, projectID
 	// we just construct the gru-id path; the file probably won't be
 	// found, and the tailer will recover when Claude actually creates
 	// its file (the watcher catches the create on the parent dir).
-	if entries, err := os.ReadDir(dir); err == nil {
-		// First pass: prefer a file whose name contains the gru
-		// session id (unlikely but cheap to try).
-		short := strings.ReplaceAll(sessionID, "-", "")[:8]
-		for _, e := range entries {
-			if !e.Type().IsRegular() {
-				continue
-			}
-			if strings.Contains(e.Name(), short) {
-				return filepath.Join(dir, e.Name())
-			}
-		}
-		// Otherwise, return the most recently modified .jsonl — this
-		// is the heuristic the spec accepts (open question: see §3.10).
-		var best string
-		var bestMod int64
-		for _, e := range entries {
-			if !strings.HasSuffix(e.Name(), ".jsonl") {
-				continue
-			}
-			info, err := e.Info()
-			if err != nil {
-				continue
-			}
-			if info.ModTime().Unix() > bestMod {
-				best = filepath.Join(dir, e.Name())
-				bestMod = info.ModTime().Unix()
-			}
-		}
-		if best != "" {
-			return best
-		}
+	// Look for an exact filename match: with the controller now passing
+	// --session-id <gru-id>, Claude writes <gru-id>.jsonl deterministically.
+	exact := filepath.Join(dir, sessionID+".jsonl")
+	if _, err := os.Stat(exact); err == nil {
+		return exact
 	}
-	// Speculative path that doesn't exist yet — the tailer's watcher
-	// on the directory will pick up whatever Claude creates.
-	return filepath.Join(dir, sessionID+".jsonl")
+	// No exact match. Return empty rather than guess the most-recently
+	// modified .jsonl: when multiple gru sessions share a project dir
+	// (e.g. the gru repo's own minions plus the gru-state-report
+	// session), every one of them would resolve to the same file and
+	// pollute each other's status. The tailer's notify-driven discovery
+	// (state.NotificationTranscriptPath, applied in Tailer.drainOne)
+	// will set the right path the first time any hook fires for the
+	// session — UserPromptSubmit, PostToolUse, Notification, etc.
+	return ""
 }
 
 // encodeCwd reproduces Claude Code's project-hash convention:
@@ -256,6 +276,64 @@ func (m *Manager) deriveTranscriptPath(ctx context.Context, sessionID, projectID
 // If Anthropic changes the scheme, this is the one place to fix.
 func encodeCwd(cwd string) string {
 	return strings.NewReplacer("/", "-", ".", "-").Replace(cwd)
+}
+
+// matchTranscriptByBirth searches the project's ~/.claude/projects/
+// dir for a single .jsonl whose file-birth time falls within
+// [started_at - 1s, started_at + 10s]. Returns the path if exactly
+// one matches; otherwise "". This is a fallback for sessions started
+// before --session-id was wired through, used when filename-match
+// fails AND no hook has fired yet to discover the path via notify.
+func (m *Manager) matchTranscriptByBirth(ctx context.Context, r store.Session) string {
+	if r.StartedAt == "" {
+		return ""
+	}
+	started, err := time.Parse(time.RFC3339, r.StartedAt)
+	if err != nil {
+		return ""
+	}
+	cwd := m.projectPrimaryWorkdir(ctx, r.ProjectID)
+	if cwd == "" {
+		return ""
+	}
+	dir := filepath.Join(m.homeDir, ".claude", "projects", encodeCwd(cwd))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	lo := started.Add(-1 * time.Second)
+	hi := started.Add(10 * time.Second)
+	var matches []string
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		full := filepath.Join(dir, e.Name())
+		bt := fileBirthTime(full)
+		if bt.IsZero() {
+			continue
+		}
+		if bt.After(lo) && bt.Before(hi) {
+			matches = append(matches, full)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	return ""
+}
+
+// fileBirthTime returns the macOS/BSD birth time for a file (the
+// equivalent of "creation time"). On Linux this returns the zero
+// time — Linux doesn't expose btime through the standard syscall
+// stat struct, and the birth-time fallback is only used for the
+// already-running-on-the-Mac-mini case so that's acceptable.
+func fileBirthTime(path string) time.Time {
+	var st syscall.Stat_t
+	if err := syscall.Stat(path, &st); err != nil {
+		return time.Time{}
+	}
+	return birthTimeFromStat(&st)
 }
 
 // projectPrimaryWorkdir loads the spec at project.id and returns its

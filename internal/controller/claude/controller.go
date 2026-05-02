@@ -241,6 +241,16 @@ func buildClaudeCmd(
 ) string {
 	var args []string
 	args = append(args, adapterArgs...)
+	// Pin Claude's session id to the gru session id. Without this,
+	// Claude generates its own UUID and writes the transcript to
+	// ~/.claude/projects/<encoded-cwd>/<random-uuid>.jsonl — which
+	// the tailer cannot match back to a gru session, so multiple gru
+	// sessions sharing a project dir all resolve to the same
+	// most-recently-modified transcript and their statuses pollute
+	// each other. With --session-id, the transcript is named
+	// <gru-session-id>.jsonl and deriveTranscriptPath finds it
+	// deterministically.
+	args = append(args, "--session-id", sessionID)
 	if opts.AutoMode {
 		args = append(args, "--permission-mode", "auto")
 	}

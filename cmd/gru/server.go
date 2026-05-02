@@ -138,7 +138,14 @@ func runServer(portFilePath string) error {
 	// transcript JSONL, applies state derivation, and writes both the
 	// events projection and the derived sessions row in one
 	// transaction.
-	tailerMgr := tailer.NewManager(s, pub, stateDir())
+	// NOTE: tailer.NewManager and supervisor.NewFileEmitter both append
+	// ".gru/..." and ".claude/..." to the path they're given — they
+	// expect the *user's home dir*, not the gru state dir. Passing
+	// stateDir() (which is already ~/.gru) produced doubled-up paths
+	// like ~/.gru/.gru/notify/ and ~/.gru/.claude/projects/, so the
+	// tailers read empty/nonexistent files and statuses got stuck.
+	homeDir, _ := os.UserHomeDir()
+	tailerMgr := tailer.NewManager(s, pub, homeDir)
 	svc.SetTailerManager(tailerMgr)
 	if err := tailerMgr.Start(serverCtx); err != nil {
 		log.Printf("tailer manager start: %v (continuing; sessions will be tailed on next launch)", err)
@@ -155,7 +162,7 @@ func runServer(portFilePath string) error {
 
 	sv := supervisor.New(
 		&supervisorStoreAdapter{store: s},
-		supervisor.NewFileEmitter(stateDir()),
+		supervisor.NewFileEmitter(homeDir),
 		10*time.Second,
 	)
 	sv.SetJournalRespawner(&journalRespawner{store: s, reg: ctrlReg, cfg: cfg})

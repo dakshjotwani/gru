@@ -103,3 +103,17 @@ Both buf and sqlc are managed as Go tools (declared in `go.mod`), no separate in
 - Hook script: `hooks/claude-notify.sh` (the only hook in rev 2; symlinked from `~/.gru/hooks/`)
 - Claude Code hooks: `.claude/settings.json` registers `claude-notify.sh` for the `Notification` event only — everything else flows through the transcript tailer
 - Frontend env vars: `VITE_GRU_SERVER_URL`, `VITE_GRU_API_KEY`
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues at `dakshjotwani/gru` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

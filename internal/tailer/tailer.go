@@ -231,14 +231,19 @@ func (t *Tailer) State() state.State {
 // drain reads any new bytes from all input files and folds them into
 // state. One commit transaction per file per drain — keeps each batch
 // small enough that a partial failure leaves the offset un-advanced.
+//
+// Order matters: notify is drained BEFORE the transcript so any
+// transcript_path it carries can correct the path we read from THIS
+// pass. Without this, a session whose stored path is wrong would
+// continue to read the wrong file for an extra cycle every drain.
 func (t *Tailer) drain(ctx context.Context) {
-	if err := t.drainOne(ctx, t.cfg.TranscriptPath, &t.transcriptOffset, &t.transcriptBuf, state.SourceTranscript); err != nil {
-		t.cfg.Logger.Printf("drain transcript %s: %v", t.cfg.TranscriptPath, err)
-	}
 	if t.cfg.NotifyPath != "" {
 		if err := t.drainOne(ctx, t.cfg.NotifyPath, &t.notifyOffset, &t.notifyBuf, state.SourceNotification); err != nil {
 			t.cfg.Logger.Printf("drain notify %s: %v", t.cfg.NotifyPath, err)
 		}
+	}
+	if err := t.drainOne(ctx, t.cfg.TranscriptPath, &t.transcriptOffset, &t.transcriptBuf, state.SourceTranscript); err != nil {
+		t.cfg.Logger.Printf("drain transcript %s: %v", t.cfg.TranscriptPath, err)
 	}
 	if t.cfg.SupervisorPath != "" {
 		if err := t.drainOne(ctx, t.cfg.SupervisorPath, &t.supervisorOffset, &t.supervisorBuf, state.SourceSupervisor); err != nil {
@@ -324,10 +329,21 @@ func (t *Tailer) drainOne(ctx context.Context, path string, offset *int64, parti
 
 	// Fold into derivation, queueing projected events.
 	var batch []pendingEvent
+	var learnedTranscriptPath string
 	prevState := t.state
 	for _, ln := range lines {
 		if len(ln) == 0 {
 			continue
+		}
+		// Notify lines carry Claude's own transcript_path. Use the
+		// last value seen in this batch as ground truth for the file
+		// we should be tailing — this is the only reliable way to
+		// reconcile a gru session with its Claude .jsonl when the
+		// project dir contains transcripts from multiple sessions.
+		if src == state.SourceNotification {
+			if tp := state.NotificationTranscriptPath(ln); tp != "" {
+				learnedTranscriptPath = tp
+			}
 		}
 		next, p := state.Derive(prevState, src, ln)
 		prevState = next
@@ -362,6 +378,34 @@ func (t *Tailer) drainOne(ctx context.Context, path string, offset *int64, parti
 	}
 
 	t.state = prevState
+
+	// If we learned a new transcript path from notifications, swap
+	// over for the next drain. Reset the offset so we replay the
+	// real transcript from byte 0 — the events projection has
+	// already been wiped at startup, and replay is idempotent.
+	if learnedTranscriptPath != "" && learnedTranscriptPath != t.cfg.TranscriptPath {
+		t.cfg.Logger.Printf("session %s: learned transcript_path from notify: %s (was %s)",
+			t.cfg.SessionID, learnedTranscriptPath, t.cfg.TranscriptPath)
+		t.cfg.TranscriptPath = learnedTranscriptPath
+		t.transcriptOffset = 0
+		t.transcriptBuf = nil
+		// Persist so a later restart starts from the right path.
+		if err := t.cfg.Store.Queries().UpdateSessionTranscriptPath(ctx, db.UpdateSessionTranscriptPathParams{
+			TranscriptPath: learnedTranscriptPath,
+			ID:             t.cfg.SessionID,
+		}); err != nil {
+			t.cfg.Logger.Printf("session %s: persist learned transcript_path: %v", t.cfg.SessionID, err)
+		}
+		// Wipe events projection so the replay-from-zero of the
+		// new transcript starts from a clean slate. Without this we'd
+		// leave the old transcript's events in place and append the
+		// new ones on top, double-projecting state.
+		if err := t.cfg.Store.Queries().DeleteEventsForSessionByID(ctx, t.cfg.SessionID); err != nil {
+			t.cfg.Logger.Printf("session %s: wipe events projection on transcript swap: %v", t.cfg.SessionID, err)
+		}
+		// Reset derivation state too — we're starting over.
+		t.state = state.Initial()
+	}
 	return nil
 }
 

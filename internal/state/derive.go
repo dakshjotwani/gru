@@ -174,14 +174,18 @@ func deriveTranscript(next State, line []byte) (State, *Projected) {
 		next.ClaudeStopReason = m.StopReason
 		switch m.StopReason {
 		case "end_turn":
-			// Turn fully complete; only flip to idle if no tools are
-			// outstanding (defensive — Claude shouldn't emit end_turn
-			// with pending tool_use blocks, but we don't trust it).
-			if len(next.PendingToolUseIDs) == 0 {
-				next.Status = StatusIdle
-			} else {
-				next.Status = StatusRunning
-			}
+			// Turn fully complete — trust Claude. Older versions of
+			// this code refused to flip to idle while
+			// next.PendingToolUseIDs was non-empty, but in practice
+			// transcripts can carry orphaned tool_use entries from
+			// earlier interrupted turns whose tool_results never
+			// landed; defensively keeping the session "running" then
+			// pins the UI to "Working..." indefinitely even though
+			// the agent is sitting at the prompt. end_turn is the
+			// authoritative signal — clear stale pending ids and
+			// move to idle.
+			next.PendingToolUseIDs = map[string]struct{}{}
+			next.Status = StatusIdle
 		case "tool_use":
 			next.Status = StatusRunning
 		case "stop_sequence", "max_tokens", "refusal":
@@ -270,9 +274,28 @@ func deriveTranscript(next State, line []byte) (State, *Projected) {
 // notificationLine is the shape of one line in ~/.gru/notify/<sid>.jsonl.
 // The hook script appends the raw Claude Code Notification hook JSON,
 // which has hook_event_name=Notification and a notification_type field.
+// It also carries Claude's transcript_path — authoritative ground truth
+// for which JSONL file this session writes to (used by the tailer for
+// live discovery; see Tailer.drainOne).
 type notificationLine struct {
 	HookEventName    string `json:"hook_event_name"`
 	NotificationType string `json:"notification_type"`
+	TranscriptPath   string `json:"transcript_path,omitempty"`
+}
+
+// NotificationTranscriptPath extracts the transcript_path field from a
+// notify-jsonl line, returning "" if the line doesn't carry one. The
+// tailer uses this to learn the real transcript path Claude is writing
+// to — without it, a session whose ~/.claude/projects/<dir>/ contains
+// multiple .jsonl files (multiple gru sessions sharing a cwd) would
+// fall back to the heuristic of "most recently modified" and pollute
+// statuses across sessions.
+func NotificationTranscriptPath(line []byte) string {
+	var n notificationLine
+	if err := json.Unmarshal(line, &n); err != nil {
+		return ""
+	}
+	return n.TranscriptPath
 }
 
 func deriveNotification(next State, line []byte) (State, *Projected) {

@@ -41,7 +41,20 @@ type Project = db.Project
 // Open opens (or creates) the SQLite database at path, enables WAL mode,
 // and runs migrations.
 func Open(path string) (*Store, error) {
-	conn, err := sql.Open("sqlite", path)
+	// Pass PRAGMAs via the DSN so every connection in the pool gets
+	// them — PRAGMA executed via conn.Exec only applies to whichever
+	// connection sql.DB picks for that call. busy_timeout in particular
+	// MUST be per-connection or writers will spuriously see SQLITE_BUSY
+	// (one tailer goroutine per session = a lot of parallel writers).
+	dsn := path
+	if path != ":memory:" {
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		dsn = path + sep + "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+	}
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
@@ -52,16 +65,16 @@ func Open(path string) (*Store, error) {
 	// enable it for :memory: to avoid impacting prod concurrency.)
 	if path == ":memory:" {
 		conn.SetMaxOpenConns(1)
-	}
-
-	// WAL mode for concurrent read/write.
-	if _, err := conn.Exec(`PRAGMA journal_mode=WAL`); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("store: set WAL mode: %w", err)
-	}
-	if _, err := conn.Exec(`PRAGMA foreign_keys=ON`); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("store: enable foreign keys: %w", err)
+		// In-memory DBs can't get the per-connection PRAGMA via DSN
+		// (one connection only), so set them explicitly on the conn.
+		if _, err := conn.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("store: set WAL mode: %w", err)
+		}
+		if _, err := conn.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("store: enable foreign keys: %w", err)
+		}
 	}
 
 	s := &Store{conn: conn, queries: db.New(conn)}
