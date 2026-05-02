@@ -14,6 +14,7 @@ package tailer
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -346,6 +347,33 @@ func (t *Tailer) drainOne(ctx context.Context, path string, offset *int64, parti
 			}
 		}
 		next, p := state.Derive(prevState, src, ln)
+		// Emit a synthetic session.transition row whenever the
+		// derivation function flips Status. The frontend trusts
+		// these events as the single source of truth for status
+		// changes (see web/src/hooks/useSessionStream.ts) and never
+		// re-derives. Without this, transcript-driven flips
+		// (running ↔ idle on tool_use / end_turn) update the
+		// sessions row in SQLite but never reach the UI, which
+		// stays pinned to whatever status the last
+		// notification/supervisor event set.
+		// Skip if Derive already emitted its own transition (notification/
+		// supervisor sources do — we'd double-publish otherwise).
+		alreadyTransition := p != nil && p.Type == "session.transition"
+		if next.Status != prevState.Status && !alreadyTransition {
+			ts := ""
+			if p != nil {
+				ts = p.Timestamp
+			}
+			if ts == "" {
+				ts = time.Now().UTC().Format(time.RFC3339)
+			}
+			tpayload, _ := json.Marshal(map[string]string{
+				"from": string(prevState.Status),
+				"to":   string(next.Status),
+				"why":  "transcript:" + sourceName(src),
+			})
+			batch = append(batch, pendingEvent{evtType: "session.transition", timestamp: ts, payload: tpayload})
+		}
 		prevState = next
 		if p != nil {
 			ts := p.Timestamp
@@ -524,5 +552,18 @@ func watcherErrors(w *fsnotify.Watcher) <-chan error {
 		return nil
 	}
 	return w.Errors
+}
+
+func sourceName(s state.Source) string {
+	switch s {
+	case state.SourceTranscript:
+		return "transcript"
+	case state.SourceNotification:
+		return "notification"
+	case state.SourceSupervisor:
+		return "supervisor"
+	default:
+		return "unknown"
+	}
 }
 
