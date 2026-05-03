@@ -138,12 +138,11 @@ func runServer(portFilePath string) error {
 	// transcript JSONL, applies state derivation, and writes both the
 	// events projection and the derived sessions row in one
 	// transaction.
-	// NOTE: tailer.NewManager and supervisor.NewFileEmitter both append
-	// ".gru/..." and ".claude/..." to the path they're given — they
-	// expect the *user's home dir*, not the gru state dir. Passing
-	// stateDir() (which is already ~/.gru) produced doubled-up paths
-	// like ~/.gru/.gru/notify/ and ~/.gru/.claude/projects/, so the
-	// tailers read empty/nonexistent files and statuses got stuck.
+	// NOTE: tailer.NewManager appends ".gru/notify/" and
+	// ".claude/projects/" to the path it's given — pass the *user's
+	// home dir*, not the gru state dir. Passing stateDir() (which is
+	// already ~/.gru) once produced doubled-up paths like
+	// ~/.gru/.gru/notify/ and the tailers read empty files.
 	homeDir, _ := os.UserHomeDir()
 	tailerMgr := tailer.NewManager(s, pub, homeDir)
 	svc.SetTailerManager(tailerMgr)
@@ -160,9 +159,14 @@ func runServer(portFilePath string) error {
 		log.Printf("journal: ensure failed at startup: %v (supervisor will retry)", err)
 	}
 
+	// Supervisor → tailer routing is in-process: the supervisor calls
+	// tailerMgr.DispatchSupervisorEvent directly when a tmux pane
+	// disappears, and the tailer's run goroutine picks it up via its
+	// supervisorCh. No on-disk IPC; both writer and reader live in
+	// this process.
 	sv := supervisor.New(
 		&supervisorStoreAdapter{store: s},
-		supervisor.NewFileEmitter(homeDir),
+		tailerMgr.DispatchSupervisorEvent,
 		10*time.Second,
 	)
 	sv.SetJournalRespawner(&journalRespawner{store: s, reg: ctrlReg, cfg: cfg})

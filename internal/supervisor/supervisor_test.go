@@ -21,7 +21,8 @@ func (f *fakeSessionStore) ListLiveSessions(_ context.Context) ([]supervisor.Liv
 }
 
 // fakeEmitter records every supervisor event so tests can assert
-// what would have been written to the per-session JSONL file.
+// what would have been delivered to the tailer. Pass em.Sink as the
+// EventSink callback to supervisor.New / NewWithRunner.
 type fakeEmitter struct {
 	emitted []emittedEvent
 }
@@ -31,7 +32,7 @@ type emittedEvent struct {
 	Payload   string
 }
 
-func (f *fakeEmitter) EmitSupervisorEvent(_ context.Context, sessionID, _, _ string, payload []byte) error {
+func (f *fakeEmitter) Sink(sessionID string, payload []byte) error {
 	f.emitted = append(f.emitted, emittedEvent{SessionID: sessionID, Payload: string(payload)})
 	return nil
 }
@@ -90,7 +91,7 @@ func TestSupervisor_emitsPidExitForRunningWithGoneWindow(t *testing.T) {
 		ID: "sess-dead", TmuxSession: "gru-av-sim", TmuxWindow: "feat·11111111", Status: "running",
 	}}}
 	em := &fakeEmitter{}
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.ReconcileOnce(context.Background())
 
 	if len(em.emitted) != 1 {
@@ -117,7 +118,7 @@ func TestSupervisor_emitsWasIdleForGoneIdleSession(t *testing.T) {
 		ID: "sess-idle", TmuxSession: "gru-av-sim", TmuxWindow: "w1", Status: "idle",
 	}}}
 	em := &fakeEmitter{}
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.ReconcileOnce(context.Background())
 
 	if len(em.emitted) != 1 {
@@ -135,7 +136,7 @@ func TestSupervisor_deadPaneCountsAsGone(t *testing.T) {
 		ID: "sess-dead-pane", TmuxSession: "gru-foo", TmuxWindow: "w1", Status: "running",
 	}}}
 	em := &fakeEmitter{}
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, deadPaneTmuxRunner{})
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, deadPaneTmuxRunner{})
 	sv.ReconcileOnce(context.Background())
 	if len(em.emitted) != 1 {
 		t.Fatalf("expected dead-pane session to emit pid_exit, got %d events", len(em.emitted))
@@ -148,7 +149,7 @@ func TestSupervisor_aliveWindowEmitsNothing(t *testing.T) {
 		ID: "sess-alive", TmuxSession: "gru-av-sim", TmuxWindow: "w1", Status: "running",
 	}}}
 	em := &fakeEmitter{}
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.ReconcileOnce(context.Background())
 	if len(em.emitted) != 0 {
 		t.Fatalf("alive window should emit nothing; got %v", em.emitted)
@@ -164,7 +165,7 @@ func TestSupervisor_doesNotDoubleEmit(t *testing.T) {
 		ID: "sess-once", TmuxSession: "gru-av-sim", TmuxWindow: "w1", Status: "running",
 	}}}
 	em := &fakeEmitter{}
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.ReconcileOnce(context.Background())
 	sv.ReconcileOnce(context.Background())
 	sv.ReconcileOnce(context.Background())
@@ -179,7 +180,7 @@ func TestSupervisor_RunPollsRepeatedly(t *testing.T) {
 		ID: "sess-poll", TmuxSession: "gru-myproject", TmuxWindow: "w1", Status: "starting",
 	}}}
 	em := &fakeEmitter{}
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	sv.Run(ctx)

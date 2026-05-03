@@ -40,9 +40,11 @@ const (
 	// SourceNotification is a line from ~/.gru/notify/<sid>.jsonl
 	// (the residual permission hook's append target).
 	SourceNotification
-	// SourceSupervisor is an in-band synthetic line emitted by the
-	// supervisor when a tmux pane disappears. Carries a "claude_pid_exit"
-	// signal that maps to errored/completed.
+	// SourceSupervisor is an in-band synthetic event emitted by the
+	// supervisor goroutine (in this process) when a tmux pane
+	// disappears. Carries a "claude_pid_exit" signal that maps to
+	// errored/completed. Delivered via Tailer.HandleSupervisorEvent;
+	// not read from a file.
 	SourceSupervisor
 )
 

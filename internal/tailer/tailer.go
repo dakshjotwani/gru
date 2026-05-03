@@ -55,7 +55,6 @@ type Config struct {
 	Runtime        string
 	TranscriptPath string // ~/.claude/projects/<hash>/<sid>.jsonl
 	NotifyPath     string // ~/.gru/notify/<sid>.jsonl
-	SupervisorPath string // ~/.gru/supervisor/<sid>.jsonl (synthetic events)
 
 	Store    *store.Store
 	Notifier Notifier
@@ -80,7 +79,6 @@ type Tailer struct {
 	// in-memory offsets — never persisted (anti-pattern #12).
 	transcriptOffset int64
 	notifyOffset     int64
-	supervisorOffset int64
 
 	// derived state, advanced inside the commit transaction.
 	state state.State
@@ -90,7 +88,13 @@ type Tailer struct {
 	// lines.
 	transcriptBuf []byte
 	notifyBuf     []byte
-	supervisorBuf []byte
+
+	// supervisorCh delivers synthetic supervisor events (pane death,
+	// etc.) from the per-server Supervisor goroutine via Manager
+	// dispatch. Buffered: supervisor events are rare (≤1 per session
+	// lifetime in practice) so even a small buffer prevents the
+	// dispatcher blocking on a busy tailer.
+	supervisorCh chan []byte
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -107,7 +111,28 @@ func New(cfg Config) *Tailer {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "tailer: ", log.LstdFlags|log.Lmsgprefix)
 	}
-	return &Tailer{cfg: cfg, state: state.Initial(), done: make(chan struct{})}
+	return &Tailer{
+		cfg:          cfg,
+		state:        state.Initial(),
+		supervisorCh: make(chan []byte, 8),
+		done:         make(chan struct{}),
+	}
+}
+
+// HandleSupervisorEvent enqueues a synthetic supervisor event for
+// processing in the Run goroutine. Non-blocking; if the buffer is
+// full the event is dropped with a log line. Supervisor events are
+// rare enough that this is effectively never hit in practice.
+//
+// Called by Manager.DispatchSupervisorEvent — supervisor → tailer
+// routing happens through Manager because Manager owns the tailer
+// registry.
+func (t *Tailer) HandleSupervisorEvent(payload []byte) {
+	select {
+	case t.supervisorCh <- payload:
+	default:
+		t.cfg.Logger.Printf("session %s: supervisor channel full; dropping event", t.cfg.SessionID)
+	}
 }
 
 // Run blocks until ctx is cancelled. Owns its own goroutine. Resets
@@ -174,10 +199,6 @@ func (t *Tailer) Run(ctx context.Context) error {
 			_ = os.MkdirAll(dir, 0o755)
 			_ = watcher.Add(dir)
 		}
-		if dir := filepath.Dir(t.cfg.SupervisorPath); dir != "" {
-			_ = os.MkdirAll(dir, 0o755)
-			_ = watcher.Add(dir)
-		}
 	}
 
 	ticker := time.NewTicker(t.cfg.PollInterval)
@@ -195,14 +216,13 @@ func (t *Tailer) Run(ctx context.Context) error {
 				watcher = nil
 				continue
 			}
-			// Filter to exactly our three files. We watch parent dirs
+			// Filter to exactly our two files. We watch parent dirs
 			// so fsnotify fires on Create (the file may not exist at
 			// startup), but ev.Name carries the full path — a map
 			// lookup is enough to skip sibling sessions' writes.
 			watched := map[string]struct{}{
 				t.cfg.TranscriptPath: {},
 				t.cfg.NotifyPath:     {},
-				t.cfg.SupervisorPath: {},
 			}
 			if _, ok := watched[ev.Name]; ok {
 				t.drain(ctx)
@@ -211,6 +231,8 @@ func (t *Tailer) Run(ctx context.Context) error {
 			if err != nil {
 				t.cfg.Logger.Printf("fsnotify error for %s: %v", t.cfg.SessionID, err)
 			}
+		case payload := <-t.supervisorCh:
+			t.applySupervisorEvent(ctx, payload)
 		}
 	}
 }
@@ -245,11 +267,6 @@ func (t *Tailer) drain(ctx context.Context) {
 	}
 	if err := t.drainOne(ctx, t.cfg.TranscriptPath, &t.transcriptOffset, &t.transcriptBuf, state.SourceTranscript); err != nil {
 		t.cfg.Logger.Printf("drain transcript %s: %v", t.cfg.TranscriptPath, err)
-	}
-	if t.cfg.SupervisorPath != "" {
-		if err := t.drainOne(ctx, t.cfg.SupervisorPath, &t.supervisorOffset, &t.supervisorBuf, state.SourceSupervisor); err != nil {
-			t.cfg.Logger.Printf("drain supervisor %s: %v", t.cfg.SupervisorPath, err)
-		}
 	}
 }
 
@@ -441,6 +458,40 @@ func (t *Tailer) drainOne(ctx context.Context, path string, offset *int64, parti
 		t.state = state.Initial()
 	}
 	return nil
+}
+
+// applySupervisorEvent runs derivation against one synthetic
+// supervisor payload and commits the resulting transition row.
+// Symmetric with drainOne's inner loop but without file I/O —
+// supervisor events are delivered through a Go channel by the
+// per-server Supervisor goroutine, so there is no offset to
+// advance and no partial-line carry.
+func (t *Tailer) applySupervisorEvent(ctx context.Context, payload []byte) {
+	prevState := t.state
+	next, p := state.Derive(prevState, state.SourceSupervisor, payload)
+	var batch []pendingEvent
+	if next.Status != prevState.Status {
+		t.cfg.Logger.Printf("session %s: status %s -> %s (via supervisor)", t.cfg.SessionID, prevState.Status, next.Status)
+	}
+	if p != nil {
+		ts := p.Timestamp
+		if ts == "" {
+			ts = time.Now().UTC().Format(time.RFC3339)
+		}
+		body := p.Payload
+		if body == nil {
+			body = payload
+		}
+		batch = append(batch, pendingEvent{evtType: p.Type, timestamp: ts, payload: body})
+	}
+	if err := t.commit(ctx, batch, next); err != nil {
+		t.cfg.Logger.Printf("session %s: commit supervisor event: %v", t.cfg.SessionID, err)
+		return
+	}
+	if len(batch) > 0 {
+		t.cfg.Notifier.Notify(t.cfg.SessionID)
+	}
+	t.state = next
 }
 
 // pendingEvent is one projected row queued during a drain pass; the

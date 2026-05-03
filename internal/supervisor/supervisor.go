@@ -1,22 +1,19 @@
 // Package supervisor is a tmux-pane liveness probe. It does NOT write
 // session.status — that's the tailer's job. When a pane disappears
-// the supervisor emits a synthetic `claude_pid_exit` event into the
-// events projection (via the publisher's tailer-event injection); the
-// derivation function turns that into the right terminal status.
+// the supervisor emits a synthetic `claude_pid_exit` event through a
+// caller-supplied EventSink; production wiring routes that to the
+// matching session's tailer (which feeds it through the standard
+// derivation path). The supervisor and the tailers live in the same
+// gru server process, so no on-disk IPC is involved.
 package supervisor
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/dakshjotwani/gru/internal/state"
 )
 
 type LiveSession struct {
@@ -31,12 +28,15 @@ type SessionStore interface {
 	ListLiveSessions(ctx context.Context) ([]LiveSession, error)
 }
 
-// EventEmitter is how the supervisor injects synthetic events into the
-// projection. The tailer picks these up via the standard derivation
-// path, so the supervisor never needs to know about session statuses.
-type EventEmitter interface {
-	EmitSupervisorEvent(ctx context.Context, sessionID, projectID, runtime string, payload []byte) error
-}
+// EventSink delivers a synthetic supervisor event to the right
+// per-session tailer. The tailer feeds the payload through the
+// standard derivation path, so the supervisor never needs to know
+// about session statuses or care how the sink reaches the tailer.
+//
+// Production wiring is `tailerMgr.DispatchSupervisorEvent` (see
+// cmd/gru/server.go); tests pass a function literal that records
+// payloads for assertion.
+type EventSink func(sessionID string, payload []byte) error
 
 type tmuxOutputRunner interface {
 	Output(args ...string) ([]byte, error)
@@ -56,7 +56,7 @@ type JournalRespawner interface {
 
 type Supervisor struct {
 	store    SessionStore
-	emitter  EventEmitter
+	sink     EventSink
 	interval time.Duration
 	tmux     tmuxOutputRunner
 
@@ -69,10 +69,10 @@ type Supervisor struct {
 }
 
 // New constructs a supervisor.
-func New(s SessionStore, e EventEmitter, interval time.Duration) *Supervisor {
+func New(s SessionStore, sink EventSink, interval time.Duration) *Supervisor {
 	return &Supervisor{
 		store:    s,
-		emitter:  e,
+		sink:     sink,
 		interval: interval,
 		tmux:     &realTmuxRunner{},
 		emitted:  make(map[string]bool),
@@ -80,10 +80,10 @@ func New(s SessionStore, e EventEmitter, interval time.Duration) *Supervisor {
 }
 
 // NewWithRunner is the test-friendly constructor.
-func NewWithRunner(s SessionStore, e EventEmitter, interval time.Duration, tmux tmuxOutputRunner) *Supervisor {
+func NewWithRunner(s SessionStore, sink EventSink, interval time.Duration, tmux tmuxOutputRunner) *Supervisor {
 	return &Supervisor{
 		store:    s,
-		emitter:  e,
+		sink:     sink,
 		interval: interval,
 		tmux:     tmux,
 		emitted:  make(map[string]bool),
@@ -150,7 +150,7 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 			"was_needs_attention": sess.Status == "needs_attention",
 			"tmux_session":        sess.TmuxSession,
 		})
-		if err := s.emitter.EmitSupervisorEvent(ctx, sess.ID, "", "supervisor", payload); err != nil {
+		if err := s.sink(sess.ID, payload); err != nil {
 			// On error we leave alreadyEmitted=true; we'll retry next
 			// tick by clearing the flag.
 			s.mu.Lock()
@@ -205,46 +205,3 @@ func (s *Supervisor) Run(ctx context.Context) {
 	}
 }
 
-// ── file-based emitter: supervisor → ~/.gru/supervisor/<sid>.jsonl ───
-
-// FileEmitter appends supervisor events to a per-session JSONL file
-// under <homeDir>/.gru/supervisor/. The session's tailer also watches
-// this file (as state.SourceSupervisor) so the derivation function
-// turns claude_pid_exit into the right terminal status.
-//
-// File-based delivery keeps the supervisor decoupled from the
-// publisher/store and matches the spec's "producer never makes
-// network calls" property.
-type FileEmitter struct {
-	dir string
-}
-
-// NewFileEmitter constructs a FileEmitter that writes under
-// <homeDir>/.gru/supervisor/. The directory is created on first
-// emit; callers should not pre-create it.
-func NewFileEmitter(homeDir string) *FileEmitter {
-	return &FileEmitter{dir: filepath.Join(homeDir, ".gru", "supervisor")}
-}
-
-func (e *FileEmitter) EmitSupervisorEvent(_ context.Context, sessionID, _, _ string, payload []byte) error {
-	if err := os.MkdirAll(e.dir, 0o755); err != nil {
-		return err
-	}
-	path := filepath.Join(e.dir, sessionID+".jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("supervisor emit: open %s: %w", path, err)
-	}
-	defer f.Close()
-	if _, err := f.Write(append(payload, '\n')); err != nil {
-		return fmt.Errorf("supervisor emit: write: %w", err)
-	}
-	return nil
-}
-
-// Compile-time interface check.
-var _ EventEmitter = (*FileEmitter)(nil)
-
-// ── compile-time helpers (avoid unused-import warnings) ──────────────
-
-var _ = state.SourceSupervisor // referenced by the design contract

@@ -59,7 +59,6 @@ func TestEndToEnd_fakeClaude(t *testing.T) {
 		SessionID: "sess-e2e", ProjectID: "p", Runtime: "claude-code",
 		TranscriptPath: transcript,
 		NotifyPath:     filepath.Join(dir, "notify.jsonl"),
-		SupervisorPath: filepath.Join(dir, "sup.jsonl"),
 		Store:          s,
 		Notifier:       pub,
 		PollInterval:   25 * time.Millisecond,

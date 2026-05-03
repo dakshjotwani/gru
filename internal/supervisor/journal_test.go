@@ -25,7 +25,7 @@ func TestSupervisor_RespawnsDeadJournal(t *testing.T) {
 	em := &fakeEmitter{}
 	r := &fakeRespawner{}
 
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.SetJournalRespawner(r)
 
 	sv.ReconcileOnce(context.Background())
@@ -45,7 +45,7 @@ func TestSupervisor_DoesNotRespawnWhenJournalAlive(t *testing.T) {
 	em := &fakeEmitter{}
 	r := &fakeRespawner{}
 
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.SetJournalRespawner(r)
 
 	sv.ReconcileOnce(context.Background())
@@ -60,7 +60,7 @@ func TestSupervisor_BackoffOnRespawnFailure(t *testing.T) {
 	em := &fakeEmitter{}
 	r := &fakeRespawner{err: errors.New("boom")}
 
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.SetJournalRespawner(r)
 
 	sv.ReconcileOnce(context.Background())
@@ -78,7 +78,7 @@ func TestSupervisor_RespawnDisabledWhenNoRespawner(t *testing.T) {
 	store := &fakeSessionStore{sessions: nil}
 	em := &fakeEmitter{}
 
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	// No SetJournalRespawner — should be a no-op.
 	sv.ReconcileOnce(context.Background())
 }
@@ -92,7 +92,7 @@ func TestSupervisor_DeadJournalRowEmitsPidExitAndRespawns(t *testing.T) {
 	em := &fakeEmitter{}
 	r := &fakeRespawner{}
 
-	sv := supervisor.NewWithRunner(store, em, 50*time.Millisecond, tmux)
+	sv := supervisor.NewWithRunner(store, em.Sink, 50*time.Millisecond, tmux)
 	sv.SetJournalRespawner(r)
 
 	sv.ReconcileOnce(context.Background())

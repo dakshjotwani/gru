@@ -230,7 +230,6 @@ func (m *Manager) spawn(ctx context.Context, a spawnArgs) {
 			Runtime:        a.Runtime,
 			TranscriptPath: a.TranscriptPath,
 			NotifyPath:     a.NotifyPath,
-			SupervisorPath: m.supervisorPath(a.SessionID),
 			Store:          m.store,
 			Notifier:       m.notifier,
 		})
@@ -315,11 +314,22 @@ func (m *Manager) notifyPath(sessionID string) string {
 	return filepath.Join(m.homeDir, ".gru", "notify", sessionID+".jsonl")
 }
 
-// supervisorPath returns the per-session supervisor-event file path.
-// The supervisor's FileEmitter appends here when a tmux pane goes
-// away; the tailer reads it as a third input source.
-func (m *Manager) supervisorPath(sessionID string) string {
-	return filepath.Join(m.homeDir, ".gru", "supervisor", sessionID+".jsonl")
+// DispatchSupervisorEvent routes a synthetic supervisor event to the
+// matching session's tailer. Pass this method value as the
+// supervisor.EventSink — the supervisor goroutine doesn't need to
+// know how routing happens, just that it has a callback. Returns nil
+// (and silently drops) when the session has no live tailer; the
+// supervisor's own retry logic clears its already-emitted flag on
+// error, and missing-tailer is *not* something we want it to retry.
+func (m *Manager) DispatchSupervisorEvent(sessionID string, payload []byte) error {
+	m.mu.Lock()
+	t, ok := m.tailers[sessionID]
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	t.HandleSupervisorEvent(payload)
+	return nil
 }
 
 // exactTranscriptPath returns the path of <sessionID>.jsonl under the
