@@ -238,6 +238,10 @@ func TestService_LaunchSession(t *testing.T) {
 }
 
 func TestService_KillSession(t *testing.T) {
+	// Redirect HOME so the killed_by_user event lands in a temp
+	// directory instead of polluting the real ~/.gru/events/.
+	t.Setenv("HOME", t.TempDir())
+
 	svc, s := newTestService(t)
 
 	reg := controller.NewRegistry()
@@ -279,7 +283,6 @@ func TestService_KillSession(t *testing.T) {
 	// session row.
 	homeDir, _ := os.UserHomeDir()
 	logPath := ingest.LogPath(homeDir, sessionID)
-	t.Cleanup(func() { _ = os.Remove(logPath) })
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("read log %s: %v", logPath, err)
