@@ -60,6 +60,22 @@ func TestDerive_ToolCompletedDoesNotFlipStatus(t *testing.T) {
 	wantProjections(t, projs, "tool.completed")
 }
 
+// After a permission_prompt is approved, Claude resumes by running
+// the tool — there is no UserPromptSubmit between the approval and
+// the next PostToolUse. tool_completed must unstick the session
+// from needs_attention.
+func TestDerive_ToolCompletedExitsNeedsAttention(t *testing.T) {
+	prev := state.State{Status: state.StatusNeedsAttention}
+	st, projs := state.Derive(prev, ingest.Event{
+		Type: ingest.TypeToolCompleted, Tool: "Bash", Ok: boolPtr(true),
+	})
+	if st.Status != state.StatusRunning {
+		t.Fatalf("status = %s, want running", st.Status)
+	}
+	wantProjections(t, projs, "tool.completed", "session.transition")
+	wantTransition(t, projs, state.StatusNeedsAttention, state.StatusRunning)
+}
+
 func TestDerive_AttentionRequestedFlipsToNeedsAttention(t *testing.T) {
 	prev := state.State{Status: state.StatusIdle}
 	st, projs := state.Derive(prev, ingest.Event{

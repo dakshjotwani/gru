@@ -103,8 +103,13 @@ func Derive(prev State, ev ingest.Event) (State, []Projected) {
 
 	case ingest.TypeToolCompleted:
 		// A tool returned. Claude is still mid-turn; the next Stop
-		// hook will flip us to idle. Keep status unchanged but emit a
-		// projection for the dashboard.
+		// hook will flip us to idle. If we were in needs_attention
+		// (e.g. a permission_prompt the user just approved), the
+		// fact that a tool ran means the agent is unblocked —
+		// flip back to running. Otherwise keep status unchanged.
+		if prev.Status == StatusNeedsAttention {
+			next.Status = StatusRunning
+		}
 		typed.Type = "tool.completed"
 
 	case ingest.TypeAttentionRequested:
