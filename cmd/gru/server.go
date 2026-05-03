@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/artifacts"
+	"github.com/dakshjotwani/gru/internal/ingest"
 	"github.com/dakshjotwani/gru/internal/ingestion"
 	"github.com/dakshjotwani/gru/internal/config"
 	"github.com/dakshjotwani/gru/internal/controller"
@@ -159,14 +160,17 @@ func runServer(portFilePath string) error {
 		log.Printf("journal: ensure failed at startup: %v (supervisor will retry)", err)
 	}
 
-	// Supervisor → tailer routing is in-process: the supervisor calls
-	// tailerMgr.DispatchSupervisorEvent directly when a tmux pane
-	// disappears, and the tailer's run goroutine picks it up via its
-	// supervisorCh. No on-disk IPC; both writer and reader live in
-	// this process.
+	// Supervisor → tailer routing in rev-3: the supervisor appends a
+	// process_exited event to the per-session ingest log via
+	// ingest.Append; the tailer reads its log on the next drain and
+	// applies derivation. Same path as Claude hooks; durable across
+	// server restarts (the supervisor's reconcile loop also re-emits
+	// on startup if the row is still non-terminal).
 	sv := supervisor.New(
 		&supervisorStoreAdapter{store: s},
-		tailerMgr.DispatchSupervisorEvent,
+		func(sessionID string, ev ingest.Event) error {
+			return ingest.Append(homeDir, sessionID, ev)
+		},
 		10*time.Second,
 	)
 	sv.SetJournalRespawner(&journalRespawner{store: s, reg: ctrlReg, cfg: cfg})

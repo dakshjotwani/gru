@@ -9,11 +9,12 @@ package supervisor
 
 import (
 	"context"
-	"encoding/json"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dakshjotwani/gru/internal/ingest"
 )
 
 type LiveSession struct {
@@ -28,15 +29,14 @@ type SessionStore interface {
 	ListLiveSessions(ctx context.Context) ([]LiveSession, error)
 }
 
-// EventSink delivers a synthetic supervisor event to the right
-// per-session tailer. The tailer feeds the payload through the
-// standard derivation path, so the supervisor never needs to know
-// about session statuses or care how the sink reaches the tailer.
+// EventSink delivers a synthetic supervisor event to the per-session
+// ingest log. Production wiring is a closure around ingest.Append
+// (see cmd/gru/server.go); tests pass a function literal that records
+// events for assertion.
 //
-// Production wiring is `tailerMgr.DispatchSupervisorEvent` (see
-// cmd/gru/server.go); tests pass a function literal that records
-// payloads for assertion.
-type EventSink func(sessionID string, payload []byte) error
+// Typed (ingest.Event) rather than bytes — the supervisor knows
+// gru's grammar; there is no Claude payload to pass through.
+type EventSink func(sessionID string, ev ingest.Event) error
 
 type tmuxOutputRunner interface {
 	Output(args ...string) ([]byte, error)
@@ -144,13 +144,16 @@ func (s *Supervisor) ReconcileOnce(ctx context.Context) {
 			continue
 		}
 
-		payload, _ := json.Marshal(map[string]interface{}{
-			"kind":                "claude_pid_exit",
-			"was_idle":            sess.Status == "idle",
-			"was_needs_attention": sess.Status == "needs_attention",
-			"tmux_session":        sess.TmuxSession,
-		})
-		if err := s.sink(sess.ID, payload); err != nil {
+		// "Graceful" exit = the agent was at a calm state (idle or
+		// needs_attention) when the pane went away — likely the user
+		// closed it intentionally. running/starting → errored.
+		graceful := sess.Status == "idle" || sess.Status == "needs_attention"
+		ev := ingest.Event{
+			Type:        ingest.TypeProcessExited,
+			Graceful:    &graceful,
+			PriorStatus: sess.Status,
+		}
+		if err := s.sink(sess.ID, ev); err != nil {
 			// On error we leave alreadyEmitted=true; we'll retry next
 			// tick by clearing the flag.
 			s.mu.Lock()

@@ -19,6 +19,7 @@ import (
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/env"
 	"github.com/dakshjotwani/gru/internal/env/spec"
+	"github.com/dakshjotwani/gru/internal/ingest"
 	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/store"
 	"github.com/dakshjotwani/gru/internal/store/db"
@@ -275,7 +276,7 @@ func (s *Service) LaunchSession(
 	// hasn't been resolved yet — fsnotify watches the parent dir and
 	// picks up the file on create.
 	if s.tailerMgr != nil {
-		s.tailerMgr.AddSession(ctx, sessionID, projectID, runtimeID, "")
+		s.tailerMgr.AddSession(ctx, sessionID, projectID, runtimeID)
 	}
 
 	return connect.NewResponse(&gruv1.LaunchSessionResponse{
@@ -327,20 +328,16 @@ func (s *Service) KillSession(
 		}
 	}
 
-	// Stop the tailer BEFORE writing the DB status. RemoveSession blocks
-	// until the tailer goroutine exits, so no derivation can overwrite
-	// the "killed" row after this point (eliminates the killed→errored
-	// race from a concurrent claude_pid_exit replay).
-	if s.tailerMgr != nil {
-		s.tailerMgr.RemoveSession(sessionID)
-	}
-
-	_, err = s.store.Queries().UpdateSessionStatus(ctx, store.UpdateSessionStatusParams{
-		Status: "killed",
-		ID:     sessionID,
-	})
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("update status: %w", err))
+	// Single-writer property (rev-3): the tailer is the only writer of
+	// sessions.status. Append a killed_by_user event to the ingest
+	// log; the tailer's next drain (~poll interval) commits status=killed
+	// and emits session.transition. Frontend learns of the kill via the
+	// gRPC stream, not via this RPC's response. Derive's terminal-state
+	// guard prevents a later supervisor process_exited from
+	// overwriting killed → errored.
+	homeDir, _ := os.UserHomeDir()
+	if err := ingest.Append(homeDir, sessionID, ingest.Event{Type: ingest.TypeKilledByUser}); err != nil {
+		log.Printf("KillSession: append killed_by_user: %v", err)
 	}
 
 	transPayload, _ := json.Marshal(map[string]string{

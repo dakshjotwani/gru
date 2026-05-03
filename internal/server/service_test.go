@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/dakshjotwani/gru/internal/controller"
 	"github.com/dakshjotwani/gru/internal/env"
+	"github.com/dakshjotwani/gru/internal/ingest"
 	"github.com/dakshjotwani/gru/internal/publisher"
 	"github.com/dakshjotwani/gru/internal/server"
 	"github.com/dakshjotwani/gru/internal/store"
@@ -271,12 +273,19 @@ func TestService_KillSession(t *testing.T) {
 		t.Error("KillSession: Success = false, want true")
 	}
 
-	stored, err := s.Queries().GetSession(context.Background(), sessionID)
+	// Rev-3 contract: the handler appends killed_by_user to the
+	// per-session ingest log; the tailer (not running in this unit
+	// test) is what flips status. So we assert on the log, not the
+	// session row.
+	homeDir, _ := os.UserHomeDir()
+	logPath := ingest.LogPath(homeDir, sessionID)
+	t.Cleanup(func() { _ = os.Remove(logPath) })
+	data, err := os.ReadFile(logPath)
 	if err != nil {
-		t.Fatalf("GetSession after kill: %v", err)
+		t.Fatalf("read log %s: %v", logPath, err)
 	}
-	if stored.Status != "killed" {
-		t.Errorf("status after kill = %q, want killed", stored.Status)
+	if !bytes.Contains(data, []byte(`"killed_by_user"`)) {
+		t.Errorf("log %s missing killed_by_user event:\n%s", logPath, data)
 	}
 	_ = s
 }

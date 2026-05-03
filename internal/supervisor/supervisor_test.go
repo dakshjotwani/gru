@@ -2,11 +2,11 @@ package supervisor_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/dakshjotwani/gru/internal/ingest"
 	"github.com/dakshjotwani/gru/internal/supervisor"
 )
 
@@ -21,19 +21,19 @@ func (f *fakeSessionStore) ListLiveSessions(_ context.Context) ([]supervisor.Liv
 }
 
 // fakeEmitter records every supervisor event so tests can assert
-// what would have been delivered to the tailer. Pass em.Sink as the
-// EventSink callback to supervisor.New / NewWithRunner.
+// what would have been delivered to the ingest log. Pass em.Sink as
+// the EventSink callback to supervisor.New / NewWithRunner.
 type fakeEmitter struct {
 	emitted []emittedEvent
 }
 
 type emittedEvent struct {
 	SessionID string
-	Payload   string
+	Event     ingest.Event
 }
 
-func (f *fakeEmitter) Sink(sessionID string, payload []byte) error {
-	f.emitted = append(f.emitted, emittedEvent{SessionID: sessionID, Payload: string(payload)})
+func (f *fakeEmitter) Sink(sessionID string, ev ingest.Event) error {
+	f.emitted = append(f.emitted, emittedEvent{SessionID: sessionID, Event: ev})
 	return nil
 }
 
@@ -100,15 +100,12 @@ func TestSupervisor_emitsPidExitForRunningWithGoneWindow(t *testing.T) {
 	if em.emitted[0].SessionID != "sess-dead" {
 		t.Fatalf("emitted for wrong session: %s", em.emitted[0].SessionID)
 	}
-	var p map[string]interface{}
-	if err := json.Unmarshal([]byte(em.emitted[0].Payload), &p); err != nil {
-		t.Fatalf("emitted payload not JSON: %v (raw=%s)", err, em.emitted[0].Payload)
+	ev := em.emitted[0].Event
+	if ev.Type != ingest.TypeProcessExited {
+		t.Fatalf("emitted type = %s, want process_exited", ev.Type)
 	}
-	if p["kind"] != "claude_pid_exit" {
-		t.Fatalf("emitted kind = %v, want claude_pid_exit", p["kind"])
-	}
-	if p["was_idle"] != false {
-		t.Fatalf("running session should not have was_idle=true; got %v", p["was_idle"])
+	if ev.Graceful == nil || *ev.Graceful != false {
+		t.Fatalf("running session should yield graceful=false; got %v", ev.Graceful)
 	}
 }
 
@@ -124,10 +121,9 @@ func TestSupervisor_emitsWasIdleForGoneIdleSession(t *testing.T) {
 	if len(em.emitted) != 1 {
 		t.Fatalf("expected 1 emitted event, got %d", len(em.emitted))
 	}
-	var p map[string]interface{}
-	_ = json.Unmarshal([]byte(em.emitted[0].Payload), &p)
-	if p["was_idle"] != true {
-		t.Fatalf("idle session pid_exit should set was_idle=true; got %v", p["was_idle"])
+	ev := em.emitted[0].Event
+	if ev.Graceful == nil || *ev.Graceful != true {
+		t.Fatalf("idle session pid_exit should yield graceful=true; got %v", ev.Graceful)
 	}
 }
 

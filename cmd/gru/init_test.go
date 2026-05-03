@@ -53,17 +53,20 @@ func TestRunInit_CreatesHookScriptAndSettings(t *testing.T) {
 
 	// Rev-2 installs only the Notification hook. Everything else is
 	// derived by tailing Claude's transcript JSONL.
-	expected := []string{"Notification"}
+	// Rev 3 (ADR-0002): every status-affecting hook is registered
+	// against `gru hook ingest`. PreToolUse + Subagent* + PreCompact
+	// are deliberately omitted; they don't drive status.
+	expected := []string{
+		"SessionStart", "UserPromptSubmit", "Notification",
+		"PostToolUse", "PostToolUseFailure", "Stop", "StopFailure",
+	}
 	for _, key := range expected {
 		if _, exists := hooks[key]; !exists {
 			t.Errorf("hooks missing key %q", key)
 		}
 	}
 	if _, ok := hooks["PreToolUse"]; ok {
-		t.Errorf("rev 2 must NOT install the PreToolUse hook (transcript-tailer covers it)")
-	}
-	if _, ok := hooks["Stop"]; ok {
-		t.Errorf("rev 2 must NOT install the Stop hook (transcript-tailer covers it)")
+		t.Errorf("rev 3 must NOT install the PreToolUse hook (no status effect)")
 	}
 }
 

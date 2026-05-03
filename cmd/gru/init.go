@@ -26,11 +26,24 @@ var hookScriptSrc = func() string {
 	return filepath.Join("hooks", "claude-notify.sh")
 }()
 
-// hookTypes is the rev-2 hook list: only Notification. The transcript
-// tailer covers everything else by reading Claude's per-session JSONL.
-// See docs/superpowers/specs/2026-04-24-state-pipeline-design.md.
+// hookTypes is the rev-3 hook list. Every status-affecting hook
+// Claude Code fires is registered against `gru hook ingest`, which
+// translates the payload into gru's grammar and appends to the
+// per-session event log. See docs/adr/0002-rev3-hook-driven-event-log.md.
+//
+// PreToolUse and SubagentStart/Stop are deliberately omitted — they
+// don't drive status. PreCompact / PostCompact are also omitted (gru
+// doesn't care about Claude's internal context management today;
+// can be added when a use case appears, in which case translateEvent
+// gains an arm and these strings get added here).
 var hookTypes = []string{
+	"SessionStart",
+	"UserPromptSubmit",
 	"Notification",
+	"PostToolUse",
+	"PostToolUseFailure",
+	"Stop",
+	"StopFailure",
 }
 
 // runInit implements the `gru init <project-dir>` subcommand.
