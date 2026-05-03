@@ -2,6 +2,7 @@ package tailer
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -31,6 +32,11 @@ type Manager struct {
 
 	mu      sync.Mutex
 	tailers map[string]*Tailer
+	// cancels[sessionID] cancels the per-session run-ctx. Used by
+	// RemoveSession / StopAll to break out of the restart-with-backoff
+	// loop in spawn() — Tailer.Stop alone only ends one Run iteration,
+	// the loop would just respawn.
+	cancels map[string]context.CancelFunc
 }
 
 // NewManager constructs a Manager. notifier is signalled after every
@@ -49,6 +55,7 @@ func NewManager(s *store.Store, notifier Notifier, homeDir string) *Manager {
 		homeDir:  homeDir,
 		logger:   log.New(os.Stderr, "tailer-mgr: ", log.LstdFlags|log.Lmsgprefix),
 		tailers:  make(map[string]*Tailer),
+		cancels:  make(map[string]context.CancelFunc),
 	}
 }
 
@@ -136,25 +143,36 @@ func (m *Manager) AddSession(ctx context.Context, sessionID, projectID, runtime,
 // RemoveSession stops a session's tailer. Idempotent.
 func (m *Manager) RemoveSession(sessionID string) {
 	m.mu.Lock()
-	t, ok := m.tailers[sessionID]
-	if ok {
-		delete(m.tailers, sessionID)
-	}
+	cancel, hasCancel := m.cancels[sessionID]
+	delete(m.cancels, sessionID)
+	t, hasTailer := m.tailers[sessionID]
+	delete(m.tailers, sessionID)
 	m.mu.Unlock()
-	if ok {
-		t.Stop()
+	if hasCancel {
+		cancel() // breaks the restart loop
+	}
+	if hasTailer {
+		t.Stop() // ends the current Run iteration
 	}
 }
 
 // StopAll halts every running tailer. Used at server shutdown.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(m.cancels))
+	for _, c := range m.cancels {
+		cancels = append(cancels, c)
+	}
+	m.cancels = map[string]context.CancelFunc{}
 	all := make([]*Tailer, 0, len(m.tailers))
 	for _, t := range m.tailers {
 		all = append(all, t)
 	}
 	m.tailers = map[string]*Tailer{}
 	m.mu.Unlock()
+	for _, c := range cancels {
+		c()
+	}
 	for _, t := range all {
 		t.Stop()
 	}
@@ -188,28 +206,87 @@ func (m *Manager) spawn(ctx context.Context, a spawnArgs) {
 		m.mu.Unlock()
 		return
 	}
-	t := New(Config{
-		SessionID:      a.SessionID,
-		ProjectID:      a.ProjectID,
-		Runtime:        a.Runtime,
-		TranscriptPath: a.TranscriptPath,
-		NotifyPath:     a.NotifyPath,
-		SupervisorPath: m.supervisorPath(a.SessionID),
-		Store:          m.store,
-		Notifier:       m.notifier,
-	})
+	runCtx, cancel := context.WithCancel(ctx)
+	m.cancels[a.SessionID] = cancel
+	mkTailer := func() *Tailer {
+		return New(Config{
+			SessionID:      a.SessionID,
+			ProjectID:      a.ProjectID,
+			Runtime:        a.Runtime,
+			TranscriptPath: a.TranscriptPath,
+			NotifyPath:     a.NotifyPath,
+			SupervisorPath: m.supervisorPath(a.SessionID),
+			Store:          m.store,
+			Notifier:       m.notifier,
+		})
+	}
+	t := mkTailer()
 	m.tailers[a.SessionID] = t
 	m.mu.Unlock()
 
+	m.logger.Printf("spawned tailer for session %s (transcript=%q notify=%q)", a.SessionID, a.TranscriptPath, a.NotifyPath)
+
 	go func() {
-		if err := t.Run(ctx); err != nil {
-			m.logger.Printf("session %s tailer exited: %v", a.SessionID, err)
+		// Restart-with-backoff: a panicking/erroring Run shouldn't
+		// silently kill a session's pipeline. The per-session runCtx is
+		// cancelled by RemoveSession/StopAll, which breaks the loop;
+		// otherwise we keep respawning so the dashboard never goes
+		// permanently dark on a single session.
+		const minBackoff = 1 * time.Second
+		const maxBackoff = 30 * time.Second
+		backoff := minBackoff
+		current := t
+		for {
+			startedAt := time.Now()
+			err := current.Run(runCtx)
+			if runCtx.Err() != nil {
+				if err != nil && !errors.Is(err, context.Canceled) {
+					m.logger.Printf("session %s tailer exited on shutdown: %v", a.SessionID, err)
+				}
+				break
+			}
+			if err != nil {
+				m.logger.Printf("session %s tailer exited unexpectedly: %v (will restart in %s)", a.SessionID, err, backoff)
+			} else {
+				m.logger.Printf("session %s tailer returned nil while ctx alive (will restart in %s)", a.SessionID, backoff)
+			}
+			// If Run survived for a while, reset backoff — we're not
+			// in a tight crash loop.
+			if time.Since(startedAt) > 60*time.Second {
+				backoff = minBackoff
+			}
+			select {
+			case <-runCtx.Done():
+				break
+			case <-time.After(backoff):
+			}
+			if runCtx.Err() != nil {
+				break
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			current = mkTailer()
+			m.mu.Lock()
+			// If RemoveSession ran between iterations, the slot is gone
+			// or holds someone else; bail rather than reinstate.
+			if existing, ok := m.tailers[a.SessionID]; !ok || existing != t {
+				m.mu.Unlock()
+				return
+			}
+			m.tailers[a.SessionID] = current
+			t = current
+			m.mu.Unlock()
 		}
-		// Self-deregister on natural exit so a future AddSession with
-		// the same ID can re-spawn cleanly.
+		// Final cleanup on real exit.
 		m.mu.Lock()
-		if existing, ok := m.tailers[a.SessionID]; ok && existing == t {
+		if existing, ok := m.tailers[a.SessionID]; ok && existing == current {
 			delete(m.tailers, a.SessionID)
+		}
+		if c, ok := m.cancels[a.SessionID]; ok {
+			c()
+			delete(m.cancels, a.SessionID)
 		}
 		m.mu.Unlock()
 	}()

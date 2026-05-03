@@ -295,6 +295,18 @@ func NotificationTranscriptPath(line []byte) string {
 	if err := json.Unmarshal(line, &n); err != nil {
 		return ""
 	}
+	// Only the Notification hook is authoritative for transcript_path:
+	// it fires for the session-of-interest. Rev-1 leftover hooks
+	// (PostToolUse, PreToolUse, Stop, ...) may be appending to the
+	// same notify file from sibling Claude processes that happen to
+	// share the cwd (e.g. another Claude session in the same repo
+	// invoking these hooks). Trusting their transcript_path would
+	// hijack this session's tailer onto the wrong file. Until rev-1
+	// hooks are stripped from ~/.claude/settings.json, this guard
+	// prevents cross-session pollution.
+	if n.HookEventName != "Notification" {
+		return ""
+	}
 	return n.TranscriptPath
 }
 

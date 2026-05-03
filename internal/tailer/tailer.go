@@ -373,6 +373,12 @@ func (t *Tailer) drainOne(ctx context.Context, path string, offset *int64, parti
 				"why":  "transcript:" + sourceName(src),
 			})
 			batch = append(batch, pendingEvent{evtType: "session.transition", timestamp: ts, payload: tpayload})
+			t.cfg.Logger.Printf("session %s: status %s -> %s (via %s)", t.cfg.SessionID, prevState.Status, next.Status, sourceName(src))
+		} else if next.Status != prevState.Status && alreadyTransition {
+			// Notification/supervisor sources synthesize their own
+			// transition projection inside Derive; log here so the
+			// flip is still visible in server logs.
+			t.cfg.Logger.Printf("session %s: status %s -> %s (via %s)", t.cfg.SessionID, prevState.Status, next.Status, sourceName(src))
 		}
 		prevState = next
 		if p != nil {
