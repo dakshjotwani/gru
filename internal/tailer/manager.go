@@ -96,6 +96,21 @@ func (m *Manager) Start(ctx context.Context) error {
 				tp = ""
 			}
 		}
+		// Prefer the deterministic <sid>.jsonl exact match when it
+		// exists, even if a different (still-on-disk) path is
+		// persisted. A persisted-but-wrong path can happen when a
+		// sibling Claude process polluted the notify file in a prior
+		// build (before the Notification-only guard) and the tailer
+		// swapped onto the sibling's transcript. The exact-match file
+		// only exists when launch-time --session-id worked, so this
+		// self-heal is narrow: --resume'd sessions (whose <sid>.jsonl
+		// won't exist on disk) keep their stored path.
+		if exact := m.exactTranscriptPath(ctx, r.ID, r.ProjectID); exact != "" && exact != tp {
+			if tp != "" {
+				m.logger.Printf("session %s: preferring exact-match transcript %q over stored %q", r.ID, exact, tp)
+			}
+			tp = exact
+		}
 		if tp == "" {
 			tp = m.deriveTranscriptPath(ctx, r.ID, r.ProjectID)
 		}
@@ -305,6 +320,23 @@ func (m *Manager) notifyPath(sessionID string) string {
 // away; the tailer reads it as a third input source.
 func (m *Manager) supervisorPath(sessionID string) string {
 	return filepath.Join(m.homeDir, ".gru", "supervisor", sessionID+".jsonl")
+}
+
+// exactTranscriptPath returns the path of <sessionID>.jsonl under the
+// project's primary workdir's claude-projects dir, or "" if it doesn't
+// exist. Used by Start to prefer the deterministic --session-id-pinned
+// transcript over a possibly-stale stored path.
+func (m *Manager) exactTranscriptPath(ctx context.Context, sessionID, projectID string) string {
+	cwd := m.projectPrimaryWorkdir(ctx, projectID)
+	if cwd == "" {
+		return ""
+	}
+	dir := filepath.Join(m.homeDir, ".claude", "projects", encodeCwd(cwd))
+	exact := filepath.Join(dir, sessionID+".jsonl")
+	if _, err := os.Stat(exact); err != nil {
+		return ""
+	}
+	return exact
 }
 
 // deriveTranscriptPath maps a session to its Claude Code transcript

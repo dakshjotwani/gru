@@ -15,10 +15,8 @@ set -e
 # Claude Code passes the hook event JSON via stdin.
 HOOK_DATA=$(cat)
 
-# Resolve the GRU session id from the cwd-local lookup file written
-# at launch. If we can't, exit cleanly — this is informational; the
-# transcript itself is still being tailed and the session won't get
-# stuck.
+# Claude scrubs env vars before invoking hooks, so $GRU_SESSION_ID is
+# unreliable. Resolve via cwd-local lookup files written at launch.
 CWD=$(printf '%s' "$HOOK_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
 [ -n "$CWD" ] || exit 0
 
@@ -35,6 +33,22 @@ if [ -z "$GRU_SESSION_ID" ]; then
   fi
 fi
 [ -n "$GRU_SESSION_ID" ] || exit 0
+
+# Sibling-Claude guard: when multiple Claude processes share a cwd
+# (e.g. a developer running a bare `claude` in a repo that also hosts
+# a gru-launched session), every Claude's hook resolves to the same
+# cwd-file and would pollute the gru session's notify file with the
+# sibling's transcript_path — the tailer would then swap onto the
+# wrong transcript and misreport state. Reject when stdin's session_id
+# (Claude's own UUID — equals the gru session id when launched with
+# --session-id) doesn't match. This trades off Notification handling
+# for --resume'd sessions, where Claude mints a new UUID; that path
+# is broken anyway and tracked separately as the "session.id !=
+# transcript filename across --resume" ADR.
+CLAUDE_SID=$(printf '%s' "$HOOK_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null || true)
+if [ -n "$CLAUDE_SID" ] && [ "$CLAUDE_SID" != "$GRU_SESSION_ID" ]; then
+  exit 0
+fi
 
 # Append the payload as one JSONL line. POSIX guarantees atomic
 # appends for writes <= PIPE_BUF — Gru hook payloads are well under
