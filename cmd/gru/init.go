@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -101,6 +102,20 @@ func mergeHookSettings(settingsPath, hookScript string) error {
 		hooks = map[string]interface{}{}
 	}
 
+	// Self-heal: strip legacy rev-1 entries that point at gru-hook.sh.
+	// `gru init` was previously installed against many more hook events
+	// (PostToolUse, PreToolUse, SessionStart, Stop, ...). Rev 2 only
+	// uses Notification; the leftover entries fire from sibling Claude
+	// processes and either spawn no-op hooks (cosmetic noise) or, when
+	// gru-hook.sh still writes to ~/.gru/notify/, re-introduce the
+	// transcript-path hijack the tailer now defends against. Removing
+	// them here makes a re-run of `gru init` the canonical cleanup.
+	for evt, block := range hooks {
+		if hookHasGruScript(block) && !isRev2HookType(evt) {
+			delete(hooks, evt)
+		}
+	}
+
 	hookEntry := map[string]interface{}{
 		"type":    "command",
 		"command": hookScript,
@@ -121,6 +136,46 @@ func mergeHookSettings(settingsPath, hookScript string) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 	return os.WriteFile(settingsPath, out, 0o644)
+}
+
+// isRev2HookType reports whether the given hook event is part of the
+// current rev-2 install set. Anything else previously written by `gru
+// init` is a stale rev-1 entry to be removed.
+func isRev2HookType(evt string) bool {
+	for _, ht := range hookTypes {
+		if ht == evt {
+			return true
+		}
+	}
+	return false
+}
+
+// hookHasGruScript reports whether any command inside this hook block
+// points at a script under ~/.gru/hooks/. We only strip entries Gru
+// installed itself; never touch a third-party hook the user added.
+func hookHasGruScript(block interface{}) bool {
+	arr, ok := block.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, item := range arr {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		hs, _ := m["hooks"].([]interface{})
+		for _, h := range hs {
+			hm, ok := h.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cmd, _ := hm["command"].(string)
+			if strings.Contains(cmd, "/.gru/hooks/") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // copyFile copies src to dst with the given permission bits.
