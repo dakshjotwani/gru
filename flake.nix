@@ -39,12 +39,18 @@
 
           src = ./.;
 
-          # Run `nix build .#gru` once; the error output will contain the real
-          # hash. Replace lib.fakeHash below with that value.
-          vendorHash = lib.fakeHash;
+          # Hash of the vendored Go module set. Regenerate via:
+          #   nix build .#gru   # error output prints the new hash
+          vendorHash = "sha256-vu71H3XTr/vpf5UkXCuu1ccM06utP5GtamUl+Ha0u/U=";
 
           # Build only the CLI binary, not every package in the repo.
           subPackages = [ "cmd/gru" ];
+
+          # Skip tests in the package derivation: several touch $HOME (which is
+          # /homeless-shelter in the Nix sandbox) and would need a fixture
+          # rewrite to run hermetically. Run tests via `make test` or
+          # `nix develop -c go test ./...` instead.
+          doCheck = false;
 
           # buf and sqlc are go tools declared in go.mod — they don't need
           # separate nixpkgs entries.
