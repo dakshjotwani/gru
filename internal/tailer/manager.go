@@ -22,6 +22,13 @@ type Manager struct {
 
 	homeDir string
 
+	// rootCtx is the long-lived context every spawned tailer
+	// goroutine inherits from. Set in Start; AddSession uses it
+	// instead of the caller's ctx, because the caller is usually a
+	// gRPC handler whose ctx is cancelled the moment it returns —
+	// which would kill the tailer goroutine immediately.
+	rootCtx context.Context
+
 	mu      sync.Mutex
 	tailers map[string]*Tailer
 	cancels map[string]context.CancelFunc
@@ -45,14 +52,20 @@ func NewManager(s *store.Store, notifier Notifier, homeDir string) *Manager {
 }
 
 // Start spawns a tailer for each non-terminal session in the store.
-// Idempotent.
+// The given ctx is captured as the long-lived rootCtx for all
+// subsequent spawns (including those triggered by AddSession from
+// gRPC handlers). Idempotent.
 func (m *Manager) Start(ctx context.Context) error {
+	m.mu.Lock()
+	m.rootCtx = ctx
+	m.mu.Unlock()
+
 	rows, err := m.store.Queries().ListNonTerminalSessions(ctx)
 	if err != nil {
 		return err
 	}
 	for _, r := range rows {
-		m.spawn(ctx, spawnArgs{
+		m.spawn(spawnArgs{
 			SessionID: r.ID,
 			ProjectID: r.ProjectID,
 			Runtime:   r.Runtime,
@@ -61,9 +74,11 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// AddSession spawns a tailer for a freshly-launched session.
-func (m *Manager) AddSession(ctx context.Context, sessionID, projectID, runtime string) {
-	m.spawn(ctx, spawnArgs{
+// AddSession spawns a tailer for a freshly-launched session. The
+// caller's ctx is intentionally ignored — tailers run for the
+// lifetime of the server, not the lifetime of the launch RPC.
+func (m *Manager) AddSession(_ context.Context, sessionID, projectID, runtime string) {
+	m.spawn(spawnArgs{
 		SessionID: sessionID,
 		ProjectID: projectID,
 		Runtime:   runtime,
@@ -127,13 +142,17 @@ type spawnArgs struct {
 	Runtime   string
 }
 
-func (m *Manager) spawn(ctx context.Context, a spawnArgs) {
+func (m *Manager) spawn(a spawnArgs) {
 	m.mu.Lock()
 	if _, ok := m.tailers[a.SessionID]; ok {
 		m.mu.Unlock()
 		return
 	}
-	runCtx, cancel := context.WithCancel(ctx)
+	root := m.rootCtx
+	if root == nil {
+		root = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(root)
 	m.cancels[a.SessionID] = cancel
 	mkTailer := func() *Tailer {
 		return New(Config{
