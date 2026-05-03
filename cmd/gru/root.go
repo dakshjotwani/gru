@@ -73,6 +73,7 @@ func newRootCmd() *cobra.Command {
 		newProjectsCmd(state),
 		newArtifactCmd(state),
 		newLinkCmd(state),
+		newHookCmd(),
 	)
 
 	return root
