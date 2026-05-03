@@ -7,6 +7,7 @@ package claude
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,6 +20,14 @@ import (
 	"github.com/dakshjotwani/gru/internal/env/persistentpty"
 	"github.com/google/uuid"
 )
+
+// minionPrompt is appended to every Claude minion's system prompt so the
+// session knows it is gru-managed and which CLI commands surface things to
+// the operator's dashboard. The assistant (Profile=="journal") has its own
+// dedicated prompt and skips this blurb.
+//
+//go:embed minion_prompt.md
+var minionPrompt string
 
 // ClaudeController launches Claude Code inside an env.Environment instance,
 // wrapping the process in a detachable tmux session via PersistentPty.
@@ -261,8 +270,8 @@ func buildClaudeCmd(
 		args = append(args, "--agent", opts.Agent)
 	}
 	args = append(args, addDirArgs...)
-	if opts.ExtraPrompt != "" {
-		args = append(args, "--append-system-prompt", shellQuote(opts.ExtraPrompt))
+	if extra := composeExtraPrompt(opts); extra != "" {
+		args = append(args, "--append-system-prompt", shellQuote(extra))
 	}
 	if opts.Prompt != "" {
 		args = append(args, shellQuote(opts.Prompt))
@@ -283,6 +292,20 @@ func buildClaudeCmd(
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// composeExtraPrompt returns the full --append-system-prompt content for a
+// launch. Minions get the gru-awareness blurb prepended to whatever the
+// caller passed (typically per-profile skill content). The journal/assistant
+// has its own complete prompt and is left alone.
+func composeExtraPrompt(opts controller.LaunchOptions) string {
+	if opts.Profile == "journal" {
+		return opts.ExtraPrompt
+	}
+	if opts.ExtraPrompt == "" {
+		return minionPrompt
+	}
+	return minionPrompt + "\n\n" + opts.ExtraPrompt
 }
 
 // writeLookupFiles emits the per-session files that let gru-hook.sh resolve
