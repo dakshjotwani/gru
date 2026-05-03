@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# install-gru.sh — install/uninstall the gru server LaunchAgent.
+# install-gru.sh — install/uninstall the gru server supervisor unit.
 #
-# Layout after install:
+# Supports macOS (launchd LaunchAgent) and Linux (systemd user unit).
+#
+# Layout after install — macOS:
 #   binary:     ~/.local/share/gru/gru
 #   frontend:   ~/.local/share/gru/web/dist/
 #   CLI:        ~/.local/bin/gru -> ~/.local/share/gru/gru
@@ -9,33 +11,64 @@
 #   state:      ~/.gru/{deployed.sha,gru.db,server.yaml,...}
 #   logs:       ~/Library/Logs/gru/{server.log,autodeploy.log}
 #
+# Layout after install — Linux:
+#   binary:     ~/.local/share/gru/gru
+#   frontend:   ~/.local/share/gru/web/dist/
+#   CLI:        ~/.local/bin/gru -> ~/.local/share/gru/gru
+#   server:     gru-server.service (systemd user unit, Restart=always)
+#   state:      ~/.gru/{deployed.sha,gru.db,server.yaml,...}
+#   logs:       journald (journalctl --user -u gru-server)
+#               ~/.gru/logs/autodeploy.log (redeploy.sh only)
+#
 # After install, run scripts/redeploy.sh by hand whenever you want the
-# launchd-supervised server to pick up new code. No git-hook automation —
+# supervised server to pick up new code. No git-hook automation —
 # the deploy is an explicit operator action.
 #
 # Usage:
-#   scripts/install-gru.sh install     # build + place files + bootstrap launchd
-#   scripts/install-gru.sh uninstall   # bootout + remove install dir
+#   scripts/install-gru.sh install     # build + place files + enable unit
+#   scripts/install-gru.sh uninstall   # disable unit + remove install dir
 #   scripts/install-gru.sh status      # current state
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLIST_SRC="$ROOT/deploy/launchd/com.gru.server.plist"
-LAUNCHAGENTS_DIR="$HOME/Library/LaunchAgents"
 INSTALL_DIR="${GRU_INSTALL_DIR:-$HOME/.local/share/gru}"
 BIN_DIR="${GRU_BIN_DIR:-$HOME/.local/bin}"
 STATE_DIR="${GRU_STATE_DIR:-$HOME/.gru}"
-LOG_DIR="${GRU_LOG_DIR:-$HOME/Library/Logs/gru}"
 LABEL="com.gru.server"
 LEGACY_LABEL="com.gru.autodeploy"
 UID_NUM="$(id -u)"
 
-render_plist() {
+# Per-OS defaults and paths.
+OS="$(uname -s)"
+case "$OS" in
+  Darwin)
+    LOG_DIR="${GRU_LOG_DIR:-$HOME/Library/Logs/gru}"
+    UNIT_SRC="$ROOT/deploy/launchd/com.gru.server.plist"
+    UNIT_NAME="com.gru.server.plist"
+    UNIT_DST_DIR="$HOME/Library/LaunchAgents"
+    ;;
+  Linux)
+    LOG_DIR="${GRU_LOG_DIR:-$HOME/.gru/logs}"
+    UNIT_SRC="$ROOT/deploy/systemd/gru-server.service"
+    UNIT_NAME="gru-server.service"
+    UNIT_DST_DIR="$HOME/.config/systemd/user"
+    ;;
+  *)
+    echo "unsupported OS: $OS" >&2
+    exit 2
+    ;;
+esac
+
+# render_unit — substitute __HOME__ and __INSTALL__ placeholders in the
+# supervisor unit template (works for both plist and service files).
+render_unit() {
   sed \
     -e "s|__HOME__|${HOME}|g" \
     -e "s|__INSTALL__|${INSTALL_DIR}|g" \
-    "$PLIST_SRC"
+    "$UNIT_SRC"
 }
+
+# ---- macOS helpers ----
 
 bootout_if_loaded() {
   local label="$1"
@@ -44,16 +77,80 @@ bootout_if_loaded() {
   fi
 }
 
-cmd_install() {
-  mkdir -p "$LAUNCHAGENTS_DIR" "$INSTALL_DIR" "$INSTALL_DIR/web" "$BIN_DIR" "$STATE_DIR" "$LOG_DIR"
-
+supervisor_install_darwin() {
   bootout_if_loaded "$LABEL"
   # Retire the legacy polling agent if it's still around.
   if launchctl print "gui/${UID_NUM}/${LEGACY_LABEL}" >/dev/null 2>&1; then
     launchctl bootout "gui/${UID_NUM}/${LEGACY_LABEL}" 2>/dev/null || true
-    rm -f "$LAUNCHAGENTS_DIR/${LEGACY_LABEL}.plist"
+    rm -f "$UNIT_DST_DIR/${LEGACY_LABEL}.plist"
     echo "removed legacy ${LEGACY_LABEL} agent"
   fi
+
+  render_unit > "$UNIT_DST_DIR/${UNIT_NAME}"
+  echo "wrote plist       -> $UNIT_DST_DIR/${UNIT_NAME}"
+  launchctl bootstrap "gui/${UID_NUM}" "$UNIT_DST_DIR/${UNIT_NAME}"
+  launchctl enable "gui/${UID_NUM}/${LABEL}" 2>/dev/null || true
+  echo "bootstrapped      -> $LABEL"
+}
+
+supervisor_uninstall_darwin() {
+  bootout_if_loaded "$LABEL"
+  rm -f "$UNIT_DST_DIR/${UNIT_NAME}"
+
+  bootout_if_loaded "$LEGACY_LABEL"
+  rm -f "$UNIT_DST_DIR/${LEGACY_LABEL}.plist"
+}
+
+supervisor_status_darwin() {
+  local target="gui/${UID_NUM}/${LABEL}"
+  echo "--- $LABEL ---"
+  if launchctl print "$target" >/dev/null 2>&1; then
+    launchctl print "$target" | grep -E '^\s*(state|pid|last exit code|program) ' || true
+  else
+    echo "not loaded"
+  fi
+}
+
+# ---- Linux helpers ----
+
+supervisor_install_linux() {
+  # Fail fast if systemd --user is not functional. On WSL this means the user
+  # needs [boot] systemd=true in /etc/wsl.conf.
+  systemctl --user list-units >/dev/null 2>&1 || {
+    echo "ERROR: systemctl --user not functional. On WSL, ensure /etc/wsl.conf has [boot] systemd=true and run 'wsl --shutdown'." >&2
+    exit 1
+  }
+
+  mkdir -p "$UNIT_DST_DIR"
+  render_unit > "$UNIT_DST_DIR/${UNIT_NAME}"
+  echo "wrote unit        -> $UNIT_DST_DIR/${UNIT_NAME}"
+  systemctl --user daemon-reload
+  systemctl --user enable --now gru-server.service
+  echo "enabled + started -> gru-server.service"
+
+  # WSL-specific: without linger the service stops when the last shell exits.
+  if grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then
+    echo ""
+    echo "WSL detected: gru will stop when your last shell exits unless you enable lingering:"
+    echo "  sudo loginctl enable-linger $USER"
+  fi
+}
+
+supervisor_uninstall_linux() {
+  systemctl --user disable --now gru-server.service 2>/dev/null || true
+  rm -f "$UNIT_DST_DIR/${UNIT_NAME}"
+  systemctl --user daemon-reload
+}
+
+supervisor_status_linux() {
+  echo "--- gru-server.service ---"
+  systemctl --user status gru-server.service --no-pager 2>&1 | head -20 || echo "not loaded"
+}
+
+# ---- Shared commands ----
+
+cmd_install() {
+  mkdir -p "$UNIT_DST_DIR" "$INSTALL_DIR" "$INSTALL_DIR/web" "$BIN_DIR" "$STATE_DIR" "$LOG_DIR"
 
   echo "building gru..."
   cd "$ROOT"
@@ -69,11 +166,10 @@ cmd_install() {
   ln -sfn "$INSTALL_DIR/gru" "$BIN_DIR/gru"
   echo "linked CLI        -> $BIN_DIR/gru"
 
-  render_plist > "$LAUNCHAGENTS_DIR/${LABEL}.plist"
-  echo "wrote plist       -> $LAUNCHAGENTS_DIR/${LABEL}.plist"
-  launchctl bootstrap "gui/${UID_NUM}" "$LAUNCHAGENTS_DIR/${LABEL}.plist"
-  launchctl enable "gui/${UID_NUM}/${LABEL}" 2>/dev/null || true
-  echo "bootstrapped      -> $LABEL"
+  case "$OS" in
+    Darwin) supervisor_install_darwin ;;
+    Linux)  supervisor_install_linux ;;
+  esac
 
   chmod +x "$ROOT/scripts/redeploy.sh"
 
@@ -103,16 +199,23 @@ cmd_install() {
   esac
   echo
   echo "logs:"
-  echo "  tail -f $LOG_DIR/server.log"
-  echo "  tail -f $LOG_DIR/autodeploy.log"
+  case "$OS" in
+    Darwin)
+      echo "  tail -f $LOG_DIR/server.log"
+      echo "  tail -f $LOG_DIR/autodeploy.log"
+      ;;
+    Linux)
+      echo "  journalctl --user -u gru-server -f"
+      echo "  tail -f $LOG_DIR/autodeploy.log"
+      ;;
+  esac
 }
 
 cmd_uninstall() {
-  bootout_if_loaded "$LABEL"
-  rm -f "$LAUNCHAGENTS_DIR/${LABEL}.plist"
-
-  bootout_if_loaded "$LEGACY_LABEL"
-  rm -f "$LAUNCHAGENTS_DIR/${LEGACY_LABEL}.plist"
+  case "$OS" in
+    Darwin) supervisor_uninstall_darwin ;;
+    Linux)  supervisor_uninstall_linux ;;
+  esac
 
   rm -f "$BIN_DIR/gru"
   rm -rf "$INSTALL_DIR"
@@ -128,13 +231,11 @@ cmd_uninstall() {
 }
 
 cmd_status() {
-  local target="gui/${UID_NUM}/${LABEL}"
-  echo "--- $LABEL ---"
-  if launchctl print "$target" >/dev/null 2>&1; then
-    launchctl print "$target" | grep -E '^\s*(state|pid|last exit code|program) ' || true
-  else
-    echo "not loaded"
-  fi
+  case "$OS" in
+    Darwin) supervisor_status_darwin ;;
+    Linux)  supervisor_status_linux ;;
+  esac
+
   echo
   echo "--- repo state ---"
   echo "branch:         $(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"

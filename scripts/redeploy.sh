@@ -1,26 +1,36 @@
 #!/usr/bin/env bash
-# redeploy.sh — rebuild gru, install to $INSTALL_DIR, kickstart launchd service.
+# redeploy.sh — rebuild gru, install to $INSTALL_DIR, restart the supervisor service.
 #
-# Run by hand whenever you want the launchd-supervised server to pick up new
-# code on `main`. Holds a lock so concurrent invocations skip cleanly.
+# Supports macOS (launchd kickstart) and Linux (systemctl --user restart).
+# Run by hand whenever you want the supervised server to pick up new code on
+# `main`. Holds a lock so concurrent invocations skip cleanly.
 #
 # Env overrides:
 #   GRU_AUTODEPLOY_REPO     repo path             (default: $HOME/workspace/gru)
 #   GRU_INSTALL_DIR         binary + frontend     (default: $HOME/.local/share/gru)
 #   GRU_BIN_DIR             CLI symlink dir       (default: $HOME/.local/bin)
 #   GRU_STATE_DIR           state dir             (default: $HOME/.gru)
-#   GRU_LOG_DIR             log dir               (default: $HOME/Library/Logs/gru)
-#   GRU_AUTODEPLOY_LABEL    launchd label         (default: com.gru.server)
+#   GRU_LOG_DIR             log dir               (default: macOS: ~/Library/Logs/gru
+#                                                            Linux: ~/.gru/logs)
+#   GRU_AUTODEPLOY_LABEL    supervisor label      (default: com.gru.server)
 #   GRU_AUTODEPLOY_BRANCH   tracking branch       (default: main)
 set -euo pipefail
+
+OS="$(uname -s)"
 
 REPO="${GRU_AUTODEPLOY_REPO:-$HOME/workspace/gru}"
 INSTALL_DIR="${GRU_INSTALL_DIR:-$HOME/.local/share/gru}"
 BIN_DIR="${GRU_BIN_DIR:-$HOME/.local/bin}"
 STATE_DIR="${GRU_STATE_DIR:-$HOME/.gru}"
-LOG_DIR="${GRU_LOG_DIR:-$HOME/Library/Logs/gru}"
 LABEL="${GRU_AUTODEPLOY_LABEL:-com.gru.server}"
 BRANCH="${GRU_AUTODEPLOY_BRANCH:-main}"
+
+# Per-OS log directory default.
+case "$OS" in
+  Darwin) LOG_DIR="${GRU_LOG_DIR:-$HOME/Library/Logs/gru}" ;;
+  *)      LOG_DIR="${GRU_LOG_DIR:-$HOME/.gru/logs}" ;;
+esac
+
 LOG="${LOG_DIR}/autodeploy.log"
 LOCK="${STATE_DIR}/autodeploy.lock"
 DEPLOYED_FILE="${STATE_DIR}/deployed.sha"
@@ -38,7 +48,7 @@ die() {
 
 # When invoked from a git hook running under a desktop session, PATH usually
 # carries everything we need. Belt-and-suspenders for the rare case it doesn't:
-# resolve nvm-managed node and add brew + system paths.
+# resolve nvm-managed node and (on macOS) add brew + system paths.
 if [ -f "$HOME/.nvm/alias/default" ]; then
   NVM_V="$(cat "$HOME/.nvm/alias/default")"
   NVM_BIN="$HOME/.nvm/versions/node/${NVM_V}/bin"
@@ -48,7 +58,10 @@ if [ -f "$HOME/.nvm/alias/default" ]; then
   fi
   [ -d "$NVM_BIN" ] && case ":$PATH:" in *":$NVM_BIN:"*) ;; *) export PATH="$NVM_BIN:$PATH" ;; esac
 fi
-case ":$PATH:" in *":/opt/homebrew/bin:"*) ;; *) export PATH="/opt/homebrew/bin:$PATH" ;; esac
+# Homebrew is macOS-only; skip on Linux to avoid a spurious PATH entry.
+if [ "$OS" = "Darwin" ]; then
+  case ":$PATH:" in *":/opt/homebrew/bin:"*) ;; *) export PATH="/opt/homebrew/bin:$PATH" ;; esac
+fi
 case ":$PATH:" in *":/usr/bin:"*) ;; *) export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin" ;; esac
 
 # Lock — concurrent invocations skip. PID-file based; macOS lacks a portable
@@ -131,16 +144,28 @@ fi
 mkdir -p "$BIN_DIR"
 ln -sfn "$INSTALL_DIR/gru" "$BIN_DIR/gru"
 
-target="gui/$(id -u)/$LABEL"
-if launchctl print "$target" >/dev/null 2>&1; then
-  if launchctl kickstart -k "$target" >> "$LOG" 2>&1; then
-    log "kickstarted $LABEL"
-  else
-    log "WARN: kickstart $target returned non-zero"
-  fi
-else
-  log "WARN: $LABEL not loaded in launchd — server not restarted (run scripts/install-gru.sh install)"
-fi
+case "$OS" in
+  Darwin)
+    target="gui/$(id -u)/$LABEL"
+    if launchctl print "$target" >/dev/null 2>&1; then
+      if launchctl kickstart -k "$target" >> "$LOG" 2>&1; then
+        log "kickstarted $LABEL"
+      else
+        log "WARN: kickstart $target returned non-zero"
+      fi
+    else
+      log "WARN: $LABEL not loaded in launchd — server not restarted (run scripts/install-gru.sh install)"
+    fi
+    ;;
+  Linux)
+    if systemctl --user is-enabled gru-server.service >/dev/null 2>&1; then
+      systemctl --user restart gru-server.service
+      log "restarted gru-server"
+    else
+      log "WARN: gru-server.service not enabled — run scripts/install-gru.sh install"
+    fi
+    ;;
+esac
 
 echo "$current" > "$DEPLOYED_FILE"
 log "done: deployed.sha=$current"
