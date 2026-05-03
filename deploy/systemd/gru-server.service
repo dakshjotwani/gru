@@ -1,0 +1,48 @@
+# gru-server.service — systemd user unit that supervises the gru server on Linux.
+#
+# Install via scripts/install-gru.sh, which renders __HOME__ and __INSTALL__
+# before enabling the unit. The rendered unit lands at:
+#   ~/.config/systemd/user/gru-server.service
+#
+# The deployed binary + frontend live in __INSTALL__ (default
+# ~/.local/share/gru), separate from the dev repo. Run scripts/redeploy.sh
+# by hand to rebuild and restart the service after `main` moves.
+#
+# Environment notes:
+#   TERM=xterm-256color  systemd user units start processes with no TERM. gru
+#                        spawns tmux for sessions, which fails with "open
+#                        terminal failed: terminal does not support clear" when
+#                        TERM is unset. xterm-256color has a complete terminfo
+#                        entry on every modern Linux distro.
+#
+#   LANG=C.UTF-8         Ubuntu ships C.UTF-8 without locale-gen; en_US.UTF-8
+#                        requires locale-gen to have been run. C.UTF-8 is
+#                        sufficient for UTF-8 multi-byte handling (box-drawing,
+#                        emoji, powerline glyphs) without that prerequisite.
+#
+#   GRU_WEB_DIST         Pins web/dist to the install dir; otherwise
+#                        FindWebDist falls back to <cwd>/web/dist or
+#                        <exe-dir>/web/dist, both wrong when running outside
+#                        the repo.
+#
+# Logs go to journald (not a file). To follow:
+#   journalctl --user -u gru-server -f
+
+[Unit]
+Description=gru server (mission control for Claude Code session fleets)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=__INSTALL__/gru server
+WorkingDirectory=__INSTALL__
+Environment=HOME=__HOME__
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+Environment=TERM=xterm-256color
+Environment=LANG=C.UTF-8
+Environment=GRU_WEB_DIST=__INSTALL__/web/dist
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
