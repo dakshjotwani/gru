@@ -15,7 +15,17 @@
  * really does cover the whole screen on iPad / iPhone. */
 .panelFullscreen {
   position: fixed;
-  inset: 0;
+  /* iOS Safari anchors `position: fixed` to the *layout* viewport, not the
+   * visual viewport — when the soft keyboard appears, visualViewport.offsetTop
+   * shifts but a fixed top:0 element stays put, leaving its bottom hidden
+   * behind the keyboard. Track the offset so the panel follows the visible
+   * area as iOS scrolls a focused input into view. */
+  top: var(--app-offset-top, 0);
+  left: 0;
+  right: 0;
+  /* Match --app-height so the soft keyboard shrinks the terminal instead
+   * of covering its bottom rows. */
+  height: var(--app-height, 100dvh);
   z-index: 1000;
 }
 
@@ -92,6 +102,16 @@
   /* Bottom safe-area inset in fullscreen so the home indicator on
    * iPhone doesn't sit on top of the bottom row of output. */
   padding-bottom: max(8px, env(safe-area-inset-bottom));
+  /* Take all touch gestures ourselves — TerminalPanel.tsx translates
+   * vertical drags into term.scrollLines(). Without this, iOS would
+   * try to pan the page underneath and our scrollback drag would
+   * fight rubber-banding. */
+  touch-action: none;
+  /* Block the iOS long-press callout (copy / look up) and text selection
+   * — both interrupt a drag mid-gesture so touchmove never fires. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .terminal:focus-within {
@@ -105,24 +125,27 @@
 
 /* Touch-scroll the scrollback on mobile.
  *
- * xterm.js layers an absolute-positioned .xterm-viewport (which has
- * the terminal background color) BEHIND the .xterm-screen that
- * holds the actual rendered text. Do NOT bump the viewport's
- * z-index — doing that paints the empty viewport over the text and
- * the terminal goes black. Default stacking is correct.
- *
- * For iOS / Android, telling the browser that vertical drags inside
- * the viewport are scroll gestures (touch-action: pan-y) plus
- * momentum scrolling is enough — xterm's pointer handling already
- * forwards drag deltas to the viewport. */
+ * xterm.js layers an absolute-positioned .xterm-viewport BEHIND the
+ * .xterm-screen that holds the actual rendered text, so a touch on
+ * the visible terminal lands on the screen — never on the viewport.
+ * That means iOS native pan-y on the viewport never fires from a
+ * touch on the terminal text. Instead, TerminalPanel.tsx attaches
+ * touchmove handlers that translate vertical drag deltas into
+ * term.scrollLines() calls. We set touch-action: none on the screen
+ * so the browser doesn't try to pan the page underneath while we
+ * scroll the buffer. */
 .terminal :global(.xterm-viewport) {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
 }
 
-.terminal :global(.xterm-screen) {
-  touch-action: pan-y;
+.terminal :global(.xterm-screen),
+.terminal :global(.xterm-rows),
+.terminal :global(.xterm-viewport),
+.terminal :global(.xterm) {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* A visible scrollbar is helpful on touch — without it there's no

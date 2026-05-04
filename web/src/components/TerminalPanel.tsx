@@ -150,14 +150,98 @@ export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscree
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
+        let lastTouchY = 0;
         let touchCount = 0;
+        // Carries fractional line scroll between touchmove events so slow
+        // drags still accumulate into a one-line scroll instead of being
+        // rounded away each frame.
+        let scrollAccumLines = 0;
+
+        // ── Optional debug overlay (?debug=touch) ──
+        // Floating pill in the corner that prints the most recent touch
+        // delta + scroll attempt. Lets us diagnose touch-scroll on iOS
+        // without remote DevTools — just append ?debug=touch to the URL.
+        const debugOn =
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('debug') === 'touch';
+        let debugEl: HTMLDivElement | null = null;
+        if (debugOn) {
+          debugEl = document.createElement('div');
+          debugEl.style.cssText =
+            'position:fixed;top:8px;right:8px;z-index:99999;' +
+            'background:#000c;color:#3fb950;font:11px/1.2 monospace;' +
+            'padding:4px 6px;border-radius:4px;pointer-events:none;' +
+            'max-width:60vw;white-space:pre;';
+          debugEl.textContent = 'touch debug ready';
+          document.body.appendChild(debugEl);
+        }
+        const dbg = (s: string) => {
+          if (debugEl) debugEl.textContent = s;
+        };
 
         const onTouchStart = (e: TouchEvent) => {
           touchCount = e.touches.length;
           if (touchCount !== 1) return;
           touchStartX = e.touches[0].clientX;
           touchStartY = e.touches[0].clientY;
+          lastTouchY = touchStartY;
+          scrollAccumLines = 0;
           touchStartTime = Date.now();
+          dbg(`start ${touchStartX|0},${touchStartY|0}`);
+        };
+
+        // Translate vertical drag deltas into synthetic wheel events on
+        // the xterm screen. Why wheel rather than buffer scroll?
+        //   xterm's local scrollback is empty when the inner program uses
+        //   the alternate screen (tmux, vim, less, claude code's TUI):
+        //   the visible content lives in the program's buffer; xterm only
+        //   knows about the live `rows` lines. Desktop wheel works because
+        //   xterm's mouse handler forwards wheel events to the PTY as SGR
+        //   mouse-wheel escape sequences (`\x1b[<64..` / `<65..`), which
+        //   tmux interprets as "scroll this pane". Synthesizing wheel
+        //   here rides the same pipeline so touch behaves like wheel.
+        const onTouchMove = (e: TouchEvent) => {
+          if (touchCount !== 1 || e.touches.length !== 1 || !term) return;
+          const t = e.touches[0];
+          const dy = t.clientY - lastTouchY;
+          lastTouchY = t.clientY;
+          e.preventDefault();
+
+          const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+          if (!screen) return;
+          const rect = screen.getBoundingClientRect();
+          const cellHeight = rect.height / term.rows;
+          if (cellHeight <= 0) return;
+
+          // -dy because finger down (dy>0) reveals earlier content
+          // (scroll up = negative wheel deltaY).
+          scrollAccumLines += -dy / cellHeight;
+          const lines =
+            scrollAccumLines > 0
+              ? Math.floor(scrollAccumLines)
+              : Math.ceil(scrollAccumLines);
+          if (lines === 0) {
+            dbg(`dy=${dy.toFixed(1)} accum=${scrollAccumLines.toFixed(2)}`);
+            return;
+          }
+          scrollAccumLines -= lines;
+
+          // tmux's SGR mouse handler scrolls one line per wheel event
+          // regardless of deltaY magnitude, so dispatch |lines| events.
+          const count = Math.abs(lines);
+          const deltaPerEvent = lines > 0 ? 100 : -100;
+          for (let i = 0; i < count; i++) {
+            const wheel = new WheelEvent('wheel', {
+              bubbles: true,
+              cancelable: true,
+              deltaY: deltaPerEvent,
+              deltaMode: 0, // DOM_DELTA_PIXEL
+              clientX: t.clientX,
+              clientY: t.clientY,
+            });
+            screen.dispatchEvent(wheel);
+          }
+          dbg(`dy=${dy.toFixed(1)} lines=${lines} → ${count}× wheel`);
         };
 
         const onTouchEnd = (e: TouchEvent) => {
@@ -231,12 +315,17 @@ export function TerminalPanel({ session, focusRef, fullscreen, onToggleFullscree
           return null;
         };
 
-        container.addEventListener('touchstart', onTouchStart, { passive: true });
-        container.addEventListener('touchend', onTouchEnd, { passive: false });
+        // Use capture so we run before xterm's own pointer handlers (which
+        // can otherwise start a text-selection drag and swallow touchmove).
+        container.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
+        container.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
+        container.addEventListener('touchend', onTouchEnd, { passive: false, capture: true });
 
         touchListenerCleanup = () => {
-          container.removeEventListener('touchstart', onTouchStart);
-          container.removeEventListener('touchend', onTouchEnd);
+          container.removeEventListener('touchstart', onTouchStart, { capture: true } as EventListenerOptions);
+          container.removeEventListener('touchmove', onTouchMove, { capture: true } as EventListenerOptions);
+          container.removeEventListener('touchend', onTouchEnd, { capture: true } as EventListenerOptions);
+          debugEl?.remove();
         };
       }
 

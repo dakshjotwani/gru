@@ -1,5 +1,10 @@
 .app {
-  height: 100vh;
+  /* --app-height is set from window.visualViewport.height in main.tsx so
+   * the app shrinks when the iOS soft keyboard appears (100vh / 100dvh
+   * both keep the layout viewport behind the keyboard, hiding the
+   * terminal's bottom row). Falls back to 100dvh on browsers without
+   * VisualViewport support. */
+  height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
   background: #0d1117;
@@ -295,4 +300,13 @@ kbd {
   .sessionCount {
     display: none;
   }
+}
+
+/* Soft keyboard up — give every visible pixel to the terminal.
+ * main.tsx adds .kbd-up to <html> when visualViewport shrinks > 150px
+ * (the keyboard threshold). Header + sidebar would otherwise eat half
+ * the visible area on iPhone, leaving a 3-row terminal sliver. */
+:global(html.kbd-up) .header,
+:global(html.kbd-up) .sidebar {
+  display: none;
 }
